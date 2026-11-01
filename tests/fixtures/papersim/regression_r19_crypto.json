@@ -1,65 +1,66 @@
 {
-  "schema": "papersim.regression.r19_crypto.v1",
-  "provenance": {
-    "canonical_lineage": "r19 crypto (current head round19/model19.py)",
-    "source_files": [
-      "/home/ubuntu/paper-sim/round19/raw/crypto_scan.json",
-      "/home/ubuntu/paper-sim/round19/crypto_recommendations.json"
-    ],
-    "verification": "every numeric field below was read directly from the listed raw files and asserted equal before freezing (WP-P1 P0, 2026-10-31)"
+ "schema": "papersim.regression.r19_crypto.v1",
+ "provenance": {
+  "canonical_lineage": "r19 crypto (current head round19/model19.py)",
+  "source_files": [
+   "/home/ubuntu/paper-sim/round19/raw/crypto_scan.json",
+   "/home/ubuntu/paper-sim/round19/crypto_recommendations.json"
+  ],
+  "verification": "every numeric field below was read directly from the listed raw files and asserted equal before freezing (WP-P1 P0, 2026-10-31)"
+ },
+ "anchor": {
+  "raw_scan_generated_at": "2026-10-26T12:51:40+00:00",
+  "horizon_anchor": "2026-10-26T12:58:37+00:00",
+  "horizon_anchor_utc": "2026-10-26T12:58:37Z",
+  "terminal_horizon": "Dec31_2359",
+  "terminal_label": "Dec-31 23:59 market close",
+  "horizon_anchor_note": "anchor timestamp is recommendations generated_at; horizons in raw were computed from scan NOW=2026-10-26T12:51:40Z (delta ~0.11h, prob impact <1.6e-5)"
+ },
+ "inputs": {
+  "spot": {
+   "ETH": 2326.84,
+   "BTC": 80342.38
   },
-  "anchor": {
-    "raw_scan_generated_at": "2026-10-26T12:51:40+00:00",
-    "horizon_anchor": "2026-10-26T12:58:37+00:00",
-    "horizon_anchor_utc": "2026-10-26T12:58:37Z",
-    "terminal_horizon": "Dec31_2359",
-    "terminal_label": "Dec-31 23:59 market close"
+  "realized_vol_daily": {
+   "ETH": {
+    "30d": 0.02430307766195731
+   },
+   "BTC": {
+    "30d": 0.01583874457257652
+   }
   },
-  "inputs": {
-    "spot": {
-      "ETH": 2326.84,
-      "BTC": 80342.38
-    },
-    "realized_vol_daily": {
-      "ETH": {
-        "30d": 0.02430307766195731
-      },
-      "BTC": {
-        "30d": 0.01583874457257652
-      }
-    },
-    "sig_table": "30d",
-    "conventions": [
-      "A: zero-log-drift GBM",
-      "B: median-flat (mu_log=-sigma^2/2)"
-    ],
-    "touch": "drifted first-passage (reflection principle form)",
-    "vol_source": "Binance 6h klines (complete bars), RMS log-ret x sqrt(4); spot Coinbase (live partial 6h bar close)"
+  "sig_table": "30d",
+  "conventions": [
+   "A: zero-log-drift GBM (identically median-flat: median(S_T)=S_0)",
+   "B: mean-flat / zero-arithmetic-drift (mu_log=-sigma^2/2, E[S_T]=S_0)"
+  ],
+  "touch": "drifted first-passage (reflection principle form)",
+  "vol_source": "Binance 6h klines (complete bars), RMS log-ret x sqrt(4); spot Coinbase (live partial 6h bar close)"
+ },
+ "cases": {
+  "ETH-2000": {
+   "asset": "ETH",
+   "barrier": 2000.0,
+   "horizon_hours": 1595.12,
+   "horizon_days": 66.46,
+   "A": 0.4449,
+   "B": 0.4788
   },
-  "cases": {
-    "ETH-2000": {
-      "asset": "ETH",
-      "barrier": 2000.0,
-      "horizon_hours": 1595.12,
-      "horizon_days": 66.46,
-      "A": 0.4449,
-      "B": 0.4788
-    },
-    "ETH-2250": {
-      "asset": "ETH",
-      "barrier": 2250.0,
-      "horizon_hours": 1595.12,
-      "horizon_days": 66.46,
-      "A": 0.8654,
-      "B": 0.8795
-    },
-    "BTC-65k": {
-      "asset": "BTC",
-      "barrier": 65000.0,
-      "horizon_hours": 1595.12,
-      "horizon_days": 66.46,
-      "A": 0.1008,
-      "B": 0.1119
-    }
+  "ETH-2250": {
+   "asset": "ETH",
+   "barrier": 2250.0,
+   "horizon_hours": 1595.12,
+   "horizon_days": 66.46,
+   "A": 0.8654,
+   "B": 0.8795
+  },
+  "BTC-65k": {
+   "asset": "BTC",
+   "barrier": 65000.0,
+   "horizon_hours": 1595.12,
+   "horizon_days": 66.46,
+   "A": 0.1008,
+   "B": 0.1119
   }
+ }
 }

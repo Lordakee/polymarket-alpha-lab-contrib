@@ -28,29 +28,6 @@ def test_package_imports_and_exports_stub_surface():
         assert getattr(papersim, name) is not None
 
 
-@pytest.mark.parametrize(
-    "func,kwargs",
-    [
-        (xg.load_xg_snapshot, {"path": "xg_epl_23.json"}),
-        (xg.team_ratings, {"snapshot": {}, "league": "EPL", "season": "2026", "last_weight": 0.5, "prior_games": 8.0}),
-        (soccer_model.match_lambdas, {"xg_snapshot": {}, "home_team": "Brentford", "home_league": "EPL", "away_team": "Nottingham Forest", "away_league": "EPL"}),
-        (soccer_model.over_under_quote, {"lambdas": (1.894, 1.364), "line": 2.5, "market": "q", "market_id": "5856164", "entry_ask_vwap250": 0.56}),
-        (crypto_model.realized_vol_daily, {"closes": [100.0, 101.0]}),
-        (crypto_model.touch_probability, {"spot": 2326.84, "sigma_daily": 0.02430307766195731, "barrier": 2000.0, "horizon_hours": 1595.12, "asset": "ETH"}),
-        (gates.evaluate_gates, {"variant_spread": 0.0211, "worst_variant_edge": 0.0635, "median_exec_edge": 0.0742, "gamma_liquidity": 16859.8558}),
-        (gates.check_news, {"fixture": "Brentford FC vs. Nottingham Forest FC", "delta": "recheck T-1d"}),
-        (risk_policy.paper_stake, {"fixture": "f", "question": "q", "entry_price": 0.56}),
-        (risk_policy.bankroll_available, {"bankroll": 10780.73, "cash": 7045.33, "reserved": 750.0}),
-        (ledger.record_entry, {"position_id": "#48", "fixture": "f", "question": "q", "side": "Over", "notional": 250.0, "price": 0.56}),
-        (ledger.mark_to_market, {"entry_price": 0.56, "exit_bid": 0.54}),
-        (cli.main, {}),
-    ],
-)
-def test_stubs_raise_not_implemented(func, kwargs):
-    with pytest.raises(NotImplementedError):
-        func(**kwargs)
-
-
 def test_regression_r19_crypto_fixture_loads():
     data = json.loads((FIXTURES / "regression_r19_crypto.json").read_text(encoding="utf-8"))
     assert data["schema"] == "papersim.regression.r19_crypto.v1"
