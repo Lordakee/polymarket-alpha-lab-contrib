@@ -1,0 +1,453 @@
+"""WP-P1 W1 tests: 10-variant xG-Poisson soccer model.
+
+Two layers:
+
+- Unit invariants on synthetic rates: the Dixon-Coles tau touches ONLY
+  the 0-0 / 0-1 / 1-0 / 1-1 cells, preserves row and column marginals
+  and total mass (the four corrections cancel exactly for independent
+  Poisson cells), the sweep set matches the frozen lineage list, and the
+  market helpers follow the lineage push semantics.
+- Regression anchors: recompute the four frozen round-23 EPL cases from
+  ``tests/fixtures/papersim/regression_r23_soccer.json`` and assert the
+  medians, ranges and all ten per-variant quotes within 1e-4, plus the
+  banned cross-league path (HOF-LYO) asserting ``None``.
+"""
+
+from __future__ import annotations
+
+import json
+import math
+from pathlib import Path
+
+import pytest
+
+from polymarket_alpha_lab.papersim import soccer_model, xg
+
+FIXTURES = Path(__file__).parent / "fixtures" / "papersim"
+
+# EPL 2025-26 prior-season aggregates frozen at full float precision from
+# /home/ubuntu/paper-sim/round23/raw/xg_epl_23.json key "EPL_2025" (380
+# isResult dates, 38-row team histories; computed once during WP-P1 W1).
+# The P0 excerpt froze only the eight EPL_2026 team rows, so the
+# regression snapshot rebuilds the prior-season block from these
+# aggregates: the single synthetic date row reproduces the league base
+# rates exactly and the single-row histories reproduce each ever-present
+# team's 2025 mean xG / xGA exactly. Promoted sides (Hull, Ipswich) are
+# deliberately absent, exercising the league-average fallback exactly as
+# the r23 model did for teams missing from the prior season.
+EPL_2025_HOME_RATE = 1.6946258894736843
+EPL_2025_AWAY_RATE = 1.3643311084210525
+EPL_2025_TEAM_RATES = {
+    "Bournemouth": (1.758804, 1.4939418157894737),
+    "Brentford": (1.7435966842105264, 1.5555292368421054),
+    "Chelsea": (1.9003278947368418, 1.5294069210526315),
+    "Leeds": (1.5729118421052632, 1.4822607894736841),
+    "Manchester United": (1.8996939473684211, 1.3231953684210527),
+    "Nottingham Forest": (1.287795947368421, 1.7036741052631579),
+}
+
+LH, LA = 1.894, 1.364  # frozen BRE-FOR median rates
+DC_PAIRS = ((0, 0), (0, 1), (1, 0), (1, 1))
+
+
+def _raw_grids() -> tuple[list[list[float]], list[list[float]]]:
+    """Unnormalized rho0 / DC grids built from the public PMF and tau."""
+    plain = [
+        [soccer_model.poisson_pmf(LH, i) * soccer_model.poisson_pmf(LA, j) for j in range(11)]
+        for i in range(11)
+    ]
+    tau_00, tau_01, tau_10, tau_11 = soccer_model.dixon_coles_tau(LH, LA, soccer_model.RHO_DC)
+    adjusted = [row[:] for row in plain]
+    adjusted[0][0] *= tau_00
+    adjusted[0][1] *= tau_01
+    adjusted[1][0] *= tau_10
+    adjusted[1][1] *= tau_11
+    return plain, adjusted
+
+
+def test_dixon_coles_tau_factors_and_floor() -> None:
+    # (1 - lh*la*rho, 1 + lh*rho, 1 + la*rho, 1 - rho) at rho=-0.1.
+    factors = soccer_model.dixon_coles_tau(LH, LA, soccer_model.RHO_DC)
+    assert factors == pytest.approx(
+        (1 + 0.1 * LH * LA, 1 - 0.1 * LH, 1 - 0.1 * LA, 1.1), rel=1e-12
+    )
+    # Lineage safety clamp: factors never drop below DC_FLOOR.
+    assert soccer_model.dixon_coles_tau(5.0, 5.0, 0.9)[0] == soccer_model.DC_FLOOR
+    assert soccer_model.dixon_coles_tau(1.0, 1.0, 0.5) == pytest.approx((0.5, 1.5, 1.5, 0.5))
+
+
+def test_dc_changes_only_the_four_low_score_cells() -> None:
+    plain, adjusted = _raw_grids()
+    for i in range(11):
+        for j in range(11):
+            if (i, j) in DC_PAIRS:
+                assert adjusted[i][j] != plain[i][j]
+            else:
+                assert adjusted[i][j] == plain[i][j]
+
+
+def test_dc_preserves_row_and_column_marginals_and_mass() -> None:
+    plain, adjusted = _raw_grids()
+    for i in range(11):
+        assert sum(adjusted[i]) == pytest.approx(sum(plain[i]), rel=1e-12, abs=1e-15)
+    for j in range(11):
+        assert sum(adjusted[i][j] for i in range(11)) == pytest.approx(
+            sum(plain[i][j] for i in range(11)), rel=1e-12, abs=1e-15
+        )
+    # The four cell corrections sum to exactly zero.
+    correction = sum(
+        adjusted[i][j] - plain[i][j] for i, j in DC_PAIRS
+    )
+    assert correction == pytest.approx(0.0, abs=1e-15)
+    assert sum(sum(row) for row in adjusted) == pytest.approx(
+        sum(sum(row) for row in plain), rel=1e-12, abs=1e-15
+    )
+
+
+def test_score_grid_normalizes() -> None:
+    plain, _ = _raw_grids()
+    total = sum(sum(row) for row in plain)
+    grid = soccer_model.score_grid(LH, LA)
+    assert len(grid) == 11 and all(len(row) == 11 for row in grid)
+    assert sum(sum(row) for row in grid) == pytest.approx(1.0)
+    assert grid[0][0] == pytest.approx(plain[0][0] / total)
+    dc_grid = soccer_model.score_grid(LH, LA, rho=soccer_model.RHO_DC)
+    assert sum(sum(row) for row in dc_grid) == pytest.approx(1.0)
+
+
+def test_variant_outputs_distributions_and_relations() -> None:
+    outputs = soccer_model.variant_outputs(LH, LA)
+    assert outputs.home_win + outputs.draw + outputs.away_win == pytest.approx(1.0)
+    assert sum(outputs.totals) == pytest.approx(1.0)
+    assert sum(outputs.home_goals) == pytest.approx(1.0)
+    assert sum(outputs.away_goals) == pytest.approx(1.0)
+    assert sum(outputs.margins) == pytest.approx(1.0)
+    assert len(outputs.totals) == 21 and len(outputs.margins) == 21
+    assert len(outputs.home_goals) == 11 and len(outputs.away_goals) == 11
+    grid = soccer_model.score_grid(LH, LA)
+    for i in range(11):
+        assert outputs.home_goals[i] == pytest.approx(sum(grid[i]))
+        assert outputs.away_goals[i] == pytest.approx(sum(grid[j][i] for j in range(11)))
+    assert outputs.margins[10] == pytest.approx(outputs.draw)  # margin 0
+    # P(0-0) cell against the closed form (the 11x11 truncation mass is
+    # ~5e-6 relative at these rates, hence the loose tolerance).
+    assert outputs.totals[0] == pytest.approx(math.exp(-(LH + LA)), rel=1e-4)
+    # BTTS = 1 - P(home 0) - P(away 0) + P(0-0).
+    assert outputs.btts == pytest.approx(
+        1.0 - outputs.home_goals[0] - outputs.away_goals[0] + outputs.totals[0]
+    )
+
+
+def test_dc_preserves_team_totals_and_high_ou_lines() -> None:
+    plain_outputs = soccer_model.variant_outputs(LH, LA)
+    dc_outputs = soccer_model.variant_outputs(LH, LA, rho=soccer_model.RHO_DC)
+    # Marginal invariance: per-team goal distributions unchanged.
+    assert dc_outputs.home_goals == pytest.approx(plain_outputs.home_goals, abs=1e-12)
+    assert dc_outputs.away_goals == pytest.approx(plain_outputs.away_goals, abs=1e-12)
+    # Every adjusted cell has total <= 2, so O/U lines >= 2.0 are invariant...
+    for line in (2.0, 2.5, 3.5):
+        assert soccer_model.over_probability(dc_outputs, line) == pytest.approx(
+            soccer_model.over_probability(plain_outputs, line), abs=1e-12
+        )
+    # ...while low lines do move (0-0 / 1-1 mass is redistributed).
+    assert soccer_model.over_probability(dc_outputs, 1.5) != pytest.approx(
+        soccer_model.over_probability(plain_outputs, 1.5), abs=1e-6
+    )
+    assert dc_outputs.totals[0] > plain_outputs.totals[0]  # rho=-0.1 boosts 0-0
+
+
+def test_over_probability_push_semantics() -> None:
+    outputs = soccer_model.variant_outputs(LH, LA)
+    assert soccer_model.over_probability(outputs, 2.5) == pytest.approx(
+        1.0 - sum(outputs.totals[:3])
+    )
+    # Integer lines exclude the push: O3.0 and O3.5 both need 4+ goals.
+    assert soccer_model.over_probability(outputs, 3.0) == pytest.approx(
+        soccer_model.over_probability(outputs, 3.5)
+    )
+    assert soccer_model.over_probability(outputs, 0.5) == pytest.approx(1.0 - outputs.totals[0])
+
+
+def test_team_total_over_and_side_validation() -> None:
+    outputs = soccer_model.variant_outputs(LH, LA)
+    assert soccer_model.team_total_over(outputs, "home", 0.5) == pytest.approx(
+        1.0 - outputs.home_goals[0]
+    )
+    assert soccer_model.team_total_over(outputs, "away", 1.5) == pytest.approx(
+        1.0 - outputs.away_goals[0] - outputs.away_goals[1]
+    )
+    with pytest.raises(ValueError):
+        soccer_model.team_total_over(outputs, "bogus", 1.5)
+    with pytest.raises(ValueError):
+        soccer_model.cover_probability(outputs, "bogus", -1.5)
+
+
+def test_cover_probability_margins() -> None:
+    outputs = soccer_model.variant_outputs(LH, LA)
+    # Home -1.5: needs margin >= 2 (indexes 12.. of the margin table).
+    assert soccer_model.cover_probability(outputs, "home", -1.5) == pytest.approx(
+        sum(outputs.margins[12:])
+    )
+    # Away -1.5: needs margin <= -2 (indexes 0..8).
+    assert soccer_model.cover_probability(outputs, "away", -1.5) == pytest.approx(
+        sum(outputs.margins[:9])
+    )
+    # Home +0 (moneyline equivalence): margin >= 1.
+    assert soccer_model.cover_probability(outputs, "home", 0.0) == pytest.approx(outputs.home_win)
+    assert soccer_model.cover_probability(outputs, "away", 0.0) == pytest.approx(outputs.away_win)
+
+
+def test_median_lineage_semantics() -> None:
+    assert soccer_model.median([3.0, 1.0, 2.0]) == 2.0
+    assert soccer_model.median([1.0, 2.0, 3.0, 4.0]) == 2.5
+    values = [float(i) for i in range(10)]
+    assert soccer_model.median(values) == 4.5  # mean of the middle pair
+    with pytest.raises(ValueError):
+        soccer_model.median([])
+
+
+def test_sweep_set_matches_frozen_lineage() -> None:
+    sweeps = soccer_model.SWEEPS
+    assert len(sweeps) == 10
+    assert soccer_model.SWEEP_NAMES == (
+        "blend w=.5 p=8 rho0",
+        "blend w=.5 p=8 DC",
+        "blend w=1.0 p=8",
+        "blend w=.25 p=8",
+        "blend w=.5 p=16",
+        "blend w=.5 p=4",
+        "current-only",
+        "last-only",
+        "cross-shrink .8",
+        "cross-shrink 1.1",
+    )
+    assert [s.rho for s in sweeps].count(0.0) == 9
+    assert sweeps[1].rho == soccer_model.RHO_DC == -0.1
+    assert [(s.last_weight, s.prior_games) for s in sweeps[:6]] == [
+        (0.5, 8.0),
+        (0.5, 8.0),
+        (1.0, 8.0),
+        (0.25, 8.0),
+        (0.5, 16.0),
+        (0.5, 4.0),
+    ]
+    assert [s.mode for s in sweeps] == ["blend"] * 6 + ["cur", "last"] + ["blend"] * 2
+    assert [s.shrink for s in sweeps] == [1.0] * 8 + [0.8, 1.1]
+
+
+def _mini_snapshot() -> dict[str, object]:
+    return {
+        "EPL_2025": {
+            "dates": [{"isResult": True, "xG": {"h": 1.5, "a": 1.5}}],
+            "teams": {
+                "1": {"title": "Alpha", "history": [{"xG": 1.5, "xGA": 1.5}]},
+                "2": {"title": "Beta", "history": [{"xG": 2.0, "xGA": 1.0}]},
+            },
+        },
+        "EPL_2026": {
+            "dates": [],
+            "teams": {
+                "1": {
+                    "title": "Alpha",
+                    "history": [{"xG": 2.0, "xGA": 1.0}, {"xG": 1.0, "xGA": 2.0}],
+                },
+                "2": {
+                    "title": "Beta",
+                    "history": [{"xG": 3.0, "xGA": 0.0}, {"xG": 1.0, "xGA": 2.0}],
+                },
+            },
+        },
+        "bundesliga_2025": {
+            "dates": [{"isResult": True, "xG": {"h": 1.7, "a": 1.4}}],
+            "teams": {"3": {"title": "TSG 1899 Hoffenheim", "history": [{"xG": 1.5, "xGA": 1.5}]}},
+        },
+        "bundesliga_2026": {
+            "dates": [],
+            "teams": {"3": {"title": "TSG 1899 Hoffenheim", "history": [{"xG": 1.5, "xGA": 1.5}]}},
+        },
+        "ligue_1_2025": {
+            "dates": [{"isResult": True, "xG": {"h": 1.6, "a": 1.3}}],
+            "teams": {"4": {"title": "Olympique Lyonnais", "history": [{"xG": 1.4, "xGA": 1.4}]}},
+        },
+        "ligue_1_2026": {
+            "dates": [],
+            "teams": {"4": {"title": "Olympique Lyonnais", "history": [{"xG": 1.4, "xGA": 1.4}]}},
+        },
+    }
+
+
+def test_fixture_variants_evaluate_all_ten_in_order() -> None:
+    variants = soccer_model.fixture_variants(_mini_snapshot(), "Alpha", "EPL", "Beta", "EPL")
+    assert variants is not None
+    assert [v.spec.name for v in variants] == list(soccer_model.SWEEP_NAMES)
+    # Variant 0 (blend w=.5 p=8): lh = 1.5 * 1 * (22/29), la = 1.5 * (36/29).
+    assert variants[0].lambdas == pytest.approx((33 / 29, 54 / 29))
+    # Variant 6 (current-only): lh = 1.5 * 1 * (2/3), la = 1.5 * (4/3) * 1.
+    assert variants[6].lambdas == pytest.approx((1.0, 2.0))
+    # DC variant differs from rho0 only through the grid, not the rates.
+    assert variants[1].lambdas == variants[0].lambdas
+    # Shrink variants scale the multipliers by their exponent.
+    blend_att = 1.5  # league average baseline
+    ratio_home = variants[0].lambdas[0] / blend_att
+    assert variants[8].lambdas[0] == pytest.approx(blend_att * ratio_home ** 0.8)
+    assert variants[9].lambdas[0] == pytest.approx(blend_att * ratio_home ** 1.1)
+    # Outputs present for every variant.
+    assert all(v.outputs.home_win + v.outputs.draw + v.outputs.away_win == pytest.approx(1.0) for v in variants)
+
+
+def test_match_lambdas_returns_per_side_median() -> None:
+    snapshot = _mini_snapshot()
+    lambdas = soccer_model.match_lambdas(snapshot, "Alpha", "EPL", "Beta", "EPL")
+    variants = soccer_model.fixture_variants(snapshot, "Alpha", "EPL", "Beta", "EPL")
+    assert variants is not None and lambdas is not None
+    assert lambdas[0] == soccer_model.median([v.lambdas[0] for v in variants])
+    assert lambdas[1] == soccer_model.median([v.lambdas[1] for v in variants])
+
+
+def test_match_lambdas_unresolvable_inputs_return_none() -> None:
+    snapshot = _mini_snapshot()
+    assert soccer_model.match_lambdas(snapshot, "Alpha", "Serie_A", "Beta", "Serie_A") is None
+    assert soccer_model.match_lambdas(snapshot, "Alpha", "EPL", "Ghost", "EPL") is None
+    assert soccer_model.fixture_variants(snapshot, "Alpha", "EPL", "Ghost", "EPL") is None
+
+
+def test_banned_cross_league_path_returns_none() -> None:
+    data = json.loads((FIXTURES / "regression_banned_path.json").read_text(encoding="utf-8"))
+    case = data["case"]
+    snapshot = _mini_snapshot()
+    home = case["home"]
+    away = case["away"]
+    assert soccer_model.match_lambdas(
+        snapshot, home["team"], home["league"], away["team"], away["league"]
+    ) is None
+    assert soccer_model.fixture_variants(
+        snapshot, home["team"], home["league"], away["team"], away["league"]
+    ) is None
+    assert case["expected_match_lambdas"] is None
+
+
+def _r23_snapshot_bytes() -> bytes:
+    fixture = json.loads((FIXTURES / "regression_r23_soccer.json").read_text(encoding="utf-8"))
+    excerpt = fixture["xg_snapshot_excerpt"]
+    prior_teams = {
+        team_id: {
+            "id": team_id,
+            "title": row["title"],
+            "history": [
+                {"xG": EPL_2025_TEAM_RATES[row["title"]][0], "xGA": EPL_2025_TEAM_RATES[row["title"]][1]}
+            ],
+        }
+        for team_id, row in excerpt["teams"].items()
+        if row["title"] in EPL_2025_TEAM_RATES
+    }
+    snapshot = {
+        "EPL_2025": {
+            "dates": [{"isResult": True, "xG": {"h": EPL_2025_HOME_RATE, "a": EPL_2025_AWAY_RATE}}],
+            "teams": prior_teams,
+        },
+        "EPL_2026": {"dates": [], "teams": excerpt["teams"]},
+    }
+    return json.dumps(snapshot).encode("utf-8")
+
+
+def _load_r23_snapshot(tmp_path: Path) -> dict[str, object]:
+    path = tmp_path / "r23_snapshot.json"
+    path.write_bytes(_r23_snapshot_bytes())
+    return xg.load_xg_snapshot(str(path))
+
+
+R23_CASES = [
+    ("BRE-FOR_O2.5", "Brentford", "Nottingham Forest", 2.5),
+    ("HUL-IPS_O2.5", "Hull", "Ipswich", 2.5),
+    ("CHE-MUN_O3.5", "Chelsea", "Manchester United", 3.5),
+    ("BOU-LEE_O2.5", "Bournemouth", "Leeds", 2.5),
+]
+
+
+@pytest.mark.parametrize("case_id,home,away,line", R23_CASES)
+def test_r23_regression_anchor(
+    case_id: str, home: str, away: str, line: float, tmp_path: Path
+) -> None:
+    fixture = json.loads((FIXTURES / "regression_r23_soccer.json").read_text(encoding="utf-8"))
+    case = fixture["cases"][case_id]
+    snapshot = _load_r23_snapshot(tmp_path)
+
+    variants = soccer_model.fixture_variants(snapshot, home, "EPL", away, "EPL")
+    assert variants is not None
+    assert len(variants) == 10
+    quotes = [soccer_model.over_probability(v.outputs, line) for v in variants]
+
+    # All ten per-variant quotes, in frozen sweep order.
+    for got, want in zip(quotes, case["qs_variants"]):
+        assert abs(got - want) <= 1e-4, f"{case_id} variant quote drifted"
+    # Median / range aggregation.
+    assert abs(soccer_model.median(quotes) - case["model_median"]) <= 1e-4
+    assert abs(min(quotes) - case["model_range"][0]) <= 1e-4
+    assert abs(max(quotes) - case["model_range"][1]) <= 1e-4
+
+    # Median lambdas (fixture rows round to 3 decimals).
+    lambdas = soccer_model.match_lambdas(snapshot, home, "EPL", away, "EPL")
+    assert lambdas is not None
+    assert abs(lambdas[0] - case["lambda_home"]) <= 5e-4
+    assert abs(lambdas[1] - case["lambda_away"]) <= 5e-4
+    assert abs(lambdas[0] + lambdas[1] - case["lambda_total"]) <= 1e-2
+
+
+@pytest.mark.parametrize(
+    "case_id,expected_median,expected_range",
+    [
+        ("BOU-LEE_O2.5", 0.6096, (0.5714, 0.6323)),
+        ("BRE-FOR_O2.5", 0.6342, (0.6235, 0.6446)),
+        ("HUL-IPS_O2.5", 0.6130, (0.5899, 0.6488)),
+        ("CHE-MUN_O3.5", 0.4514, (0.4306, 0.4668)),
+    ],
+)
+def test_r23_regression_anchor_literals(
+    case_id: str,
+    expected_median: float,
+    expected_range: tuple[float, float],
+    tmp_path: Path,
+) -> None:
+    """Anchor literals from the W1 brief, independent of fixture parsing."""
+    home, away, line = next(
+        (h, a, ln) for cid, h, a, ln in R23_CASES if cid == case_id
+    )
+    snapshot = _load_r23_snapshot(tmp_path)
+    variants = soccer_model.fixture_variants(snapshot, home, "EPL", away, "EPL")
+    assert variants is not None
+    quotes = [soccer_model.over_probability(v.outputs, line) for v in variants]
+    assert soccer_model.median(quotes) == pytest.approx(expected_median, abs=1e-4)
+    assert min(quotes) == pytest.approx(expected_range[0], abs=1e-4)
+    assert max(quotes) == pytest.approx(expected_range[1], abs=1e-4)
+
+
+def test_over_under_quote_builds_candidate() -> None:
+    candidate = soccer_model.over_under_quote(
+        (1.894, 1.364),
+        2.5,
+        market="Brentford FC vs. Nottingham Forest FC",
+        market_id="5856164",
+        entry_ask_vwap250=0.56,
+    )
+    assert isinstance(candidate, soccer_model.SoccerCandidate)
+    assert candidate.match == "Brentford FC vs. Nottingham Forest FC"
+    assert candidate.question == "Brentford FC vs. Nottingham Forest FC: O/U 2.5"
+    assert candidate.kind == "total"
+    assert candidate.side == 0
+    assert candidate.market_id == "5856164"
+    assert candidate.entry_ask_vwap250 == 0.56
+    assert (candidate.lambda_home, candidate.lambda_away) == (1.894, 1.364)
+    assert len(candidate.qs_variants) == 10
+    assert candidate.model_median == soccer_model.median(candidate.qs_variants)
+    assert candidate.model_range == (min(candidate.qs_variants), max(candidate.qs_variants))
+    # Pair-level scope: for O/U >= 2.0 the ten slots coincide (DC-neutral,
+    # rating dims not re-derivable from a bare pair) - documented behavior.
+    assert max(candidate.qs_variants) == pytest.approx(min(candidate.qs_variants), abs=1e-12)
+    low_line = soccer_model.over_under_quote(
+        (1.894, 1.364),
+        1.5,
+        market="m",
+        market_id="1",
+        entry_ask_vwap250=0.9,
+    )
+    assert low_line.qs_variants[1] != low_line.qs_variants[0]
