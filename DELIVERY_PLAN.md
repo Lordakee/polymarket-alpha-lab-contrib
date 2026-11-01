@@ -3157,3 +3157,108 @@ _decoder_stage 陈旧诊断（其真实位置为 tests/claude_cli_probe.py 的
 helper-gates 恒 9/3）。**工程面自此无剩余可做项**——V1 的下一里程
 （G2 真实半段→G3→G4→G5→G6）唯余所有者凭据供应（D-4）与最终
 go/no-go。
+
+## 69. WP-P1: paper-sim core library migration（2026-11-01）
+
+**Owner 授权（verbatim）**：
+
+- "这个模拟盘系统的规则和原理和方法等内容，完全可以后面真实盘使用啊，为什么不加入到项目中"（2026-11-01，范围授权：把 /home/ubuntu/paper-sim 模拟盘系统的规则、原理与方法迁入本项目为可复用核心库）。
+- "做完之后让本地的codex进行审核，通过后推送github"（2026-11-01，评审+推送授权：完成后交本地 codex 审核，通过后推送 GitHub）。
+
+**范围（六个已落地实现提交 + 本收尾节）**：模拟盘核心库迁入
+`src/polymarket_alpha_lab/papersim/`（六模块 + CLI）：
+
+- P0 `4f64a292`：包骨架、P0 stub 类型接口、四份冻结回归 fixture
+  （`tests/fixtures/papersim/`：regression_r19_crypto /
+  regression_r23_soccer / regression_banned_path /
+  regression_gate_arithmetic，各带 provenance 与 verification 注记）。
+- R1 `63152f51`：计划评审 R1 发现 1/2/4/5 关闭——convention-B 标签更正
+  为 mean-flat、horizon-anchor provenance 注记、BOU-LEE 来源措辞、共享
+  stub 测试剥离以便并行波次。
+- W1 `76faac81`：`xg.py`（Understat 快照加载、league goal fit、shrinkage
+  blend 评级、recent_form、cross-league 守卫）与 `soccer_model.py`
+  （11x11 Poisson 网格、Dixon-Coles tau 仅触四低分格、十变体 SWEEPS、
+  O/U/BTTS/队总数/1X2/spreads 概率、median 聚合）。
+- W2 `dd1253d9`：`crypto_model.py`（r19 A/B GBM 约定、30 日已实现波动率
+  签名表、drifted first-passage touch、terminal 概率、逐侧保守边
+  conservative_edges——2026-10-30 审计修复）。
+- W3 `b429455d`：`gates.py`（冻结门槛 GATES、$250-VWAP walk_book、50-50
+  haircut 先于 exec bar、under_risk 8c、news 一致性、suspension 注册表、
+  evaluate_candidate / rank_candidates）与 `risk_policy.py`（paper_stake、
+  sizing tiers、team cap、held-fixture 相关性规则、bankroll 恒等式）。
+- W4 `b3931b6f`：`ledger.py`（settle_natural / settle_exit / 分类、
+  bankroll_identity、papersim_dsn 边界、ddl() 镜像）+
+  `supabase_papersim_config.py` + 迁移
+  `20261101000000_papersim_ledger.sql`（镜像在用 paper_sim 簇
+  decisions/resolutions/bankroll 三表与 model_performance /
+  forecast_calibration 两固定视图，加 repo 约定的
+  paper_only/report_only/readonly 边界列）。
+- W5（本节所在提交，哈希以 git log 为准）：`cli.py` 三子命令
+  （selfcheck / schema / validate-dsn）、`__init__.py` 最终导出面（六模块
+  全部公开名 138 项，cli_main 惰性导出避免 -m 双导入）、
+  `tests/test_papersim_cli.py`（15 项）、`docs/paper-sim/usage.md` 与本节。
+
+**验收门**：
+
+- 测试绿：papersim 测试面 8 文件 **185 passed / 1 skipped**（skip 为
+  opt-in `PAPERSIM_PG_DSN` 集成检查，默认不开任何数据库连接）；
+  selfcheck **10/10 PASS**（进程内与 `python -m
+  polymarket_alpha_lab.papersim.cli` 子进程双路径验证）。
+- 计划评审 R1 发现全部关闭（见证据 trail）。
+- **本地 codex 审核：PENDING——本工作包的未决门**。按 owner 2026-11-01
+  授权，收尾后交本地 codex 审核，通过后方可推送 GitHub；审核通过前不
+  声明 WP-P1 完成、不推送。
+
+**证据 trail**：
+
+- 提交序列：P0 `4f64a292` → R1 `63152f51` → W1 `76faac81` → W2
+  `dd1253d9` → W3 `b429455d` → W4 `b3931b6f` → W5（本提交）。
+- Fixture provenance：四份 fixture 的 provenance 块逐份记录 canonical
+  lineage、source_files 与 verification 声明（冻结前对原始文件断言相等，
+  2026-10-31/11-01）。selfcheck 用真实现复算全部锚点：crypto r19 三锚
+  （ETH-2000/ETH-2250/BTC-65k 的 A/B，|d|≤1e-4，horizon 由 scan 时间戳
+  重导出 1595.12h）；soccer r23 四锚（BRE-FOR/HUL-IPS/CHE-MUN/BOU-LEE
+  十变体逐槽 1e-4、median/range 1e-4、λ 5e-4；EPL_2025 先验由
+  xg_epl_23.json 冻结聚合重建，升班马走 league-average 回退）；banned
+  path（HOF-LYO 断言 match_lambdas / fixture_variants 均 None 且注册表
+  cross-league match_winner policy=BANNED）；gate #48（代表梯重建 r24 walk
+  摘要：ask best/vwap 0.56、depth_near2c $16,076；bid 0.54、$13,759；
+  exec +7.4c / worst +6.3c / spread 2.11c 恒等式与冻结门槛
+  evaluate_gates 通过）。
+- 计划评审 R1 发现与处置（体现于 `63152f51`）：(1) convention-B 标签
+  更正为 mean-flat / zero-arithmetic-drift（A=zero-log-drift 兼
+  median-flat，两者数学等价；B 与 A 是真不同约定）；(2) horizon-anchor
+  provenance 注记（recommendations generated_at 与 scan NOW 差 ~0.11h，
+  概率影响 <1.6e-5，锚点不敏感）；(4) BOU-LEE 案例来源措辞修正；(5)
+  共享 stub 测试剥离（test_papersim_package.py 中会与实现波次冲突的
+  stub 断言移除，避免并行写冲突）。
+- 运行证据：`python -m polymarket_alpha_lab.papersim.cli selfcheck` →
+  "selfcheck: PASS (10/10 checks)"，exit 0；`schema` 输出与迁移文件字节
+  一致；`validate-dsn` 对本地 DSN PASS、对 hosted DSN FAIL 且不回显值。
+
+**已知缺口登记（known-gaps，验收标准取自计划与 2026-10-30 评审）**：
+
+1. **league-strength 系数（跨联赛桥）**：以 league-Elo 或 UEFA 系数锚
+   bridging domestic xG，标定前封顶客队侧 edge。验收：共享
+   strength-adjusted 跨联赛路径实现并带自己的回归锚点。
+2. **UCL/UEL walk-forward 回测**：2-3 个赛季 walk-forward 通过前，
+   跨联赛 match_winner 维持 BANNED（gates.py
+   REASON_CROSS_LEAGUE_MATCH_WINNER）。
+3. **xG shrinkage 影子实验**（w=.5/p=16、w=.25/p=8、w=.75/p=8 对基线）：
+   接入下一次 soccer scan 作影子列。验收：影子变体与基线并行产出且在
+   评审前不改变入场决策。
+4. **阈值回放基础设施**：需要冻结的入场预测、可执行价格、gate 版本与
+   被拒候选（不止已入场）的结果字段（2026-10-30 codex 评审 action
+   item）。验收：settled ledger 先核验字段完备，之后才可重选门槛；此前
+   exec≥+5c / worst≥+4c / spread≤6c 维持 provisional。
+5. **ledger store-adapter**：record_entry / mark_to_market 仍为冻结 stub
+   （NotImplementedError，测试钉定）；持久化写入路径待后续提交。验收：
+   store-adapter 落地且两函数实现后 stub 测试同步改写。
+
+**Paper-only 边界声明**：papersim 全部表面为 paper-only / report-only /
+readonly——只建模概率、给纸面入场过门、记录纸面仓位、产出研究报告；
+不认证账户、不经手凭据或私钥、不签名、不提交、不撤销任何订单。持久化
+仅为项目私有原生 PostgreSQL（铁律 1：DSN 经唯一受审
+validate_local_postgres_dsn，SCRAM 密码经 PAPERSIM_PG_PASSWORD_FILE 带外
+注入且从不被读入、打印或提交）；不新增文件日志。本工作包不激活任何
+真实执行。
