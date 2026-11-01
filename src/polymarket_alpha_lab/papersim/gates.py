@@ -27,7 +27,8 @@ contract changed.
 WP-P1 codex-review fixes (F2/F3/F6, 2026-11-01): the composite
 :func:`evaluate_candidate` acceptance decision now independently
 establishes a completed $250 ASK walk over the passed book -- the
-caller-configurable ``side``/``notional`` parameters no longer feed any
+entry evaluation is ask-only (non-ask ``side`` raises); configurable
+``notional`` no longer feeds any
 acceptance check and are recorded only as a supplementary
 ``valuation_walk``. :func:`evaluate_gates` rejects non-finite (NaN/inf)
 numeric inputs instead of letting them slip past the comparisons, and
@@ -463,18 +464,18 @@ def evaluate_candidate(
     completed $250 walk (real-depth intent), the Gamma liquidity floor
     and a concordant :class:`NewsCheck`.
 
-    Acceptance walk (codex-review F2 fix): every acceptance check --
-    ``fill_250``, ``entry_window``, the exec/worst-variant edges and
-    ``entry_price`` -- is computed from a walk this function performs
-    itself: ``walk_book(book, side='ask', notional=250)`` over the passed
-    book. The caller-configurable ``side``/``notional`` parameters never
-    feed an acceptance check (a caller must not be able to pass a $50
-    book by asking for a $50 walk, or pass a bid-side walk as if it were
-    the executable ask); when they differ from the hardcoded acceptance
-    parameters the configured walk is computed anyway and recorded as
-    ``GateReport.valuation_walk`` -- supplementary valuation information
-    only -- and invalid values still raise :class:`ValueError` from
-    :func:`walk_book`.
+    Acceptance walk (codex-review F2 fix + round-3 contract): this entry
+    API is ASK-ONLY -- every non-``"ask"`` ``side`` raises
+    :class:`ValueError` immediately (a bid ladder must never be walked as
+    a pseudo-ask acceptance walk; use :func:`walk_book` directly for
+    bid-side valuation). Every acceptance check -- ``fill_250``,
+    ``entry_window``, the exec/worst-variant edges and ``entry_price`` --
+    is computed from a walk this function performs itself:
+    ``walk_book(book, side='ask', notional=250)`` over the passed book. A
+    custom ``notional`` (ask side) never feeds an acceptance check; it
+    only produces a supplementary ``GateReport.valuation_walk`` for
+    valuation information, and invalid values still raise
+    :class:`ValueError` from :func:`walk_book`.
 
     ``model_quote`` is any object or mapping exposing ``model_median``
     and ``qs_variants`` for the side being bought (e.g.

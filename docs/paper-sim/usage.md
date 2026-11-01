@@ -104,4 +104,4 @@ Two ledger functions (`record_entry`, `mark_to_market`) remain frozen
 stubs by design until the store-adapter commit lands; everything else
 in the package surface is implemented and regression-anchored.
 
-**Gate-safe candidate construction:** build gateable soccer candidates with `soccer_model.candidate_from_variants(...)` (snapshot-driven, carries the true ten-variant quotes). The pair-level `candidate_from_variants(...)` collapses sweep variance for O/U >= 2.0 and is NOT gate-safe — see its docstring warning.
+**Gate-safe candidate construction:** build gateable soccer candidates with `soccer_model.candidate_from_variants(...)` (snapshot-driven, carries the true ten-variant quotes). The pair-level `over_under_quote(...)` collapses sweep variance for O/U >= 2.0 and is NOT gate-safe — see its docstring warning.
