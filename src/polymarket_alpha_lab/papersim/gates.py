@@ -494,6 +494,22 @@ def evaluate_candidate(
         liq = float(
             _quote_optional(model_quote, ("gamma_liquidity", "liq_gamma", "liq"), 0.0)
         )
+    # N1 fix: every numeric input must be finite BEFORE any min/max/comparison --
+    # non-leading NaN inside qs_variants is silently skipped by min()/max(), and
+    # infinite medians/liquidity pass threshold comparisons outright.
+    import math as _math
+    _nonfinite = [name for name, val in (("model_median", median), ("gamma_liquidity", liq)) if not _math.isfinite(val)]
+    _nonfinite += [f"qs_variants[{i}]" for i, v in enumerate(variants) if not _math.isfinite(v)]
+    if _nonfinite:
+        raise ValueError(f"non-finite model evidence rejected: {', '.join(_nonfinite)}")
+    # F2 residual fix (review round 2): the single-ladder entry API is ASK-ONLY.
+    # A caller passing a bid ladder with side="bid" would otherwise get an
+    # ascending pseudo-ask walk over bids (false entry eligibility); callers
+    # wanting bid valuation must call walk_book directly.
+    if side != "ask":
+        raise ValueError(
+            "evaluate_candidate acceptance is ask-only; use walk_book directly for bid-side valuation"
+        )
     # Materialize once: the acceptance walk and the optional supplementary
     # walk must see the same levels even when ``book`` is a generator.
     levels = list(book)

@@ -47,7 +47,7 @@ rewrites:
 2. **Price a soccer fixture**: `soccer_model.fixture_variants(snapshot,
    home, home_league, away, away_league)` evaluates all ten sweep
    variants (or returns `None` when the fixture is refused — see the
-   guard below); `soccer_model.over_under_quote(...)` builds a
+   guard below); `soccer_model.candidate_from_variants(...)` builds a
    candidate quote; `xg.recent_form(...)` adds form context.
 3. **Price a crypto barrier**: `crypto_model.realized_vol_windows(
    closes)` builds the 7/30/60/87d vol table from complete 6h bars,
@@ -104,4 +104,4 @@ Two ledger functions (`record_entry`, `mark_to_market`) remain frozen
 stubs by design until the store-adapter commit lands; everything else
 in the package surface is implemented and regression-anchored.
 
-**Gate-safe candidate construction:** build gateable soccer candidates with `soccer_model.candidate_from_variants(...)` (snapshot-driven, carries the true ten-variant quotes). The pair-level `over_under_quote(...)` collapses sweep variance for O/U >= 2.0 and is NOT gate-safe — see its docstring warning.
+**Gate-safe candidate construction:** build gateable soccer candidates with `soccer_model.candidate_from_variants(...)` (snapshot-driven, carries the true ten-variant quotes). The pair-level `candidate_from_variants(...)` collapses sweep variance for O/U >= 2.0 and is NOT gate-safe — see its docstring warning.

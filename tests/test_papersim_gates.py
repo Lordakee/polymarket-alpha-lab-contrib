@@ -752,32 +752,52 @@ def test_f2_thin_book_with_caller_notional_50_still_fails():
     )
 
 
-def test_f2_bid_walk_bypass_counterexample_fails():
-    # codex F2 counterexample 2: side="bid" against the deep bid at .56
-    # while the executable ask ladder sits at .64. The old code computed
-    # entry/edges from the caller-configured walk, so a candidate that
-    # clears every bar at a .56 walk passed despite the real ask being
-    # .64; the fixed gate performs the acceptance $250 ASK walk over the
-    # passed book itself, so the .64-ask candidate fails no matter which
-    # side the caller requests.
+def test_f2_bid_walk_bypass_counterexample_rejected():
+    # codex F2 counterexample 2, original input preserved (review round 2):
+    # side="bid" against a deep bid ladder at .56 while the executable ask
+    # sits at .64. The single-ladder entry API is now ASK-ONLY, so a bid
+    # request is rejected outright instead of manufacturing a pseudo-ask
+    # walk over bids (which previously established false entry eligibility
+    # at .56). Bid-side valuation is walk_book's job, not the entry gate's.
     deep_bid = walk_book([(0.56, 5000.0)], "bid")
     assert (deep_bid.vwap, deep_bid.filled) == (0.56, True)  # the old bypass
     quote = dict(model_median=0.62, qs_variants=(0.60, 0.63))  # passes at .56 only
-    ask_ladder = [(0.64, 5000.0)]  # the real executable ask
+    bid_ladder = [(0.56, 5000.0)]  # the original codex input: a bid ladder
+    with pytest.raises(ValueError, match="ask-only"):
+        evaluate_candidate(
+            quote, bid_ladder, "bid", gamma_liquidity=20000.0, news=_concordant_news()
+        )
+    # and the genuinely executable .64 ask ladder still fails the edges
     report = evaluate_candidate(
-        quote, ask_ladder, "bid", gamma_liquidity=20000.0, news=_concordant_news()
+        quote, [(0.64, 5000.0)], gamma_liquidity=20000.0, news=_concordant_news()
     )
     assert report.decision.passed is False
-    assert (report.walk.side, report.walk.notional, report.walk.vwap) == (
-        "ask",
-        250.0,
-        0.64,
-    )
-    assert report.entry_price == 0.64
+    assert (report.walk.side, report.walk.vwap) == ("ask", 0.64)
     assert report.decision.failed == ("worst_edge", "exec_edge")
-    # the caller's bid walk survives only as supplementary valuation info
-    assert report.valuation_walk is not None
-    assert report.valuation_walk.side == "bid"
+
+
+def test_n1_composite_rejects_nonfinite_model_evidence():
+    # codex round-2 N1: evaluate_candidate must validate every variant, the
+    # median and liquidity BEFORE reductions -- min()/max() silently skip a
+    # non-leading NaN, and infinities pass threshold comparisons outright.
+    base_book = [(0.56, 5000.0)]
+    nan_variant = dict(model_median=0.62, qs_variants=(0.60, float("nan"), 0.63))
+    with pytest.raises(ValueError, match="qs_variants\[1\]"):
+        evaluate_candidate(
+            nan_variant, base_book, gamma_liquidity=20000.0, news=_concordant_news()
+        )
+    inf_median = dict(model_median=float("inf"), qs_variants=(0.60, 0.63))
+    with pytest.raises(ValueError, match="model_median"):
+        evaluate_candidate(
+            inf_median, base_book, gamma_liquidity=20000.0, news=_concordant_news()
+        )
+    with pytest.raises(ValueError, match="gamma_liquidity"):
+        evaluate_candidate(
+            dict(model_median=0.62, qs_variants=(0.60, 0.63)),
+            base_book,
+            gamma_liquidity=float("inf"),
+            news=_concordant_news(),
+        )
 
 
 def test_f2_default_call_records_no_supplementary_walk():
