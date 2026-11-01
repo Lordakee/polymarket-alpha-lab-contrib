@@ -1,0 +1,88 @@
+{
+  "schema": "papersim.regression.gate_arithmetic.v1",
+  "provenance": {
+    "canonical_lineage": "gate thresholds frozen across soccer lineage r5c -> r15 -> r23 (rules.gates wording) and re-verified r24; applies to r19 crypto candidates unchanged",
+    "source_files": [
+      "/home/ubuntu/paper-sim/round23/epl_candidates.json",
+      "/home/ubuntu/paper-sim/round24/epl_candidates.json",
+      "/home/ubuntu/paper-sim/round24/raw/books24.json"
+    ],
+    "verification": "entry row, r24 recheck block and book ladder copied from the raw files; exec/worst/variance identities re-computed and asserted on the frozen bytes before writing (WP-P1 P0, 2026-10-31)"
+  },
+  "gates": {
+    "variant_spread_max": 0.06,
+    "worst_edge_min": 0.04,
+    "exec_edge_min": 0.05,
+    "liq_min": 5000,
+    "wording": "var<=6c; worst-variant exec >= +4c; median exec >= +5c (CLOB $250-VWAP ask); liq >= $5k; entry .10-.92; book fills $250"
+  },
+  "arithmetic": {
+    "edge_exec": "model_median - entry_ask_vwap250 ($250 CLOB VWAP ask)",
+    "edge_worst_variant": "min(qs_variants) - entry_ask_vwap250",
+    "variant_spread": "max(qs_variants) - min(qs_variants)"
+  },
+  "case": {
+    "position_id": "#48",
+    "position": "Brentford-Forest O2.5 Over $250 @ 0.560 (mkt 5856164, Sat 15:00Z)",
+    "verdict": "HOLD",
+    "market_id": "5856164",
+    "entry_r23": {
+      "question": "Brentford FC vs. Nottingham Forest FC: O/U 2.5",
+      "kickoff": "2026-10-31 15:00:00+00",
+      "side": "Over/Yes(side0)",
+      "entry_ask_vwap250": 0.56,
+      "model_median": 0.6342,
+      "model_range": [
+        0.6235,
+        0.6446
+      ],
+      "qs_variants": [
+        0.6321,
+        0.6321,
+        0.6363,
+        0.6279,
+        0.6245,
+        0.6373,
+        0.6422,
+        0.6446,
+        0.6235,
+        0.6364
+      ],
+      "var_spread": 0.0211,
+      "lambda_home": 1.894,
+      "lambda_away": 1.364,
+      "lambda_total": 3.26
+    },
+    "r24_recheck": {
+      "current_ask_vwap250": 0.56,
+      "current_exit_bid": 0.54,
+      "model_median": 0.6342,
+      "model_worst": 0.6235,
+      "edge_exec_now": 0.0742,
+      "edge_worst_now": 0.0635,
+      "mark_bid_vs_entry": -0.02,
+      "depth_near2c": 16076.0,
+      "expected_edge_exec_cents": 7.4,
+      "expected_edge_worst_cents": 6.3
+    },
+    "r24_book_ladder": {
+      "liq": 45453.1189,
+      "bid": 0.54,
+      "ask": 0.56,
+      "mid": 0.55,
+      "tok0_ask": {
+        "best": 0.56,
+        "vwap": 0.56,
+        "filled": true,
+        "depth_near2c": 16076.0
+      },
+      "tok0_bid": {
+        "best": 0.54,
+        "vwap": 0.54,
+        "filled": true,
+        "depth_near2c": 13759.0
+      },
+      "note": "aggregated ladder snapshot: best, $250-VWAP, fill flag and depth within 2c of best"
+    }
+  }
+}

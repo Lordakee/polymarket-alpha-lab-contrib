@@ -1,0 +1,60 @@
+{
+  "schema": "papersim.regression.banned_path.v1",
+  "provenance": {
+    "canonical_lineage": "guard carried in the soccer lineage r5c -> r15 -> r23; incident record fixed by review/FIXES.md sections 5-6 (2026-10-30)",
+    "source_files": [
+      "/home/ubuntu/paper-sim/round10/raw/model_round10.json",
+      "/home/ubuntu/paper-sim/review/FIXES.md"
+    ],
+    "verification": "favorite-flip numbers asserted equal to model_round10.json out['HOF-LYO UEL'] before freezing (WP-P1 P0, 2026-10-31)"
+  },
+  "case": {
+    "name": "HOF-LYO",
+    "match": "TSG 1899 Hoffenheim vs. Olympique Lyonnais",
+    "competition": "UEL (UEFA Europa League)",
+    "event_slug": "uel-hof-lyo-2026-10-22",
+    "home": {
+      "team": "TSG 1899 Hoffenheim",
+      "league": "bundesliga"
+    },
+    "away": {
+      "team": "Olympique Lyonnais",
+      "league": "ligue_1"
+    },
+    "expected_match_lambdas": null,
+    "expected_result": null,
+    "reason": "cross-league guard lgh != lga -> None: domestic xG multipliers are not cross-league comparable without a league-strength bridge"
+  },
+  "guard": {
+    "rule": "if lgh != lga: return None",
+    "policy": "cross-league (UCL/UEL/international) match_winner BANNED until a 2-3 season walk-forward backtest passes with a league-strength coefficient bridging domestic xG; bespoke scripts may NOT relax the guard",
+    "effective": "2026-10-30 (review/FIXES.md sections 5-6)"
+  },
+  "historical_favorite_flip": {
+    "description": "CONFIRMED STRUCTURAL DEFECT (round7/8/10 bespoke scripts relaxed the guard without league-strength adjustment): model made Lyon the favorite while the market correctly had Hoffenheim; pure Ligue1 x Bundesliga multiplier artifact. All 3 losses displaced home->away in the same direction; totals/BTTS from the same construction won, isolating the defect to the cross-league 1X2 H/A directional channel.",
+    "model_lambdas": [
+      1.6186145926927629,
+      1.666628617248003
+    ],
+    "model_1x2_home_win": {
+      "ask": 0.48,
+      "vwap": 0.48,
+      "rng": [
+        0.319,
+        0.39
+      ],
+      "edge": -0.161
+    },
+    "model_1x2_away_win": {
+      "ask": 0.29,
+      "vwap": 0.293,
+      "rng": [
+        0.375,
+        0.457
+      ],
+      "edge": 0.085
+    },
+    "market_verdict": "market correctly priced Hoffenheim (home) favorite at 0.48; model ranged Lyon (away) 0.375-0.457 above its own home range 0.319-0.39, flipping the modeled favorite",
+    "outcome_probability_note": "P(0/3 | model floor) = 0.28; model's all-5 floor calibration near-perfect (2.01 expected vs 2 actual) - mechanism, not calibration, was the defect"
+  }
+}
