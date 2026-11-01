@@ -46,8 +46,12 @@ WP-P1 ledger DSN, settlement arithmetic and DDL (W4):
   ``20261101000000_papersim_ledger.sql``: the live paper_sim
   ``decisions`` / ``resolutions`` / ``bankroll`` tables and the fixed
   ``model_performance`` / ``forecast_calibration`` views, mirrored
-  verbatim plus the documented repo-convention delta of
-  paper-only/report-only/readonly boundary columns on ``decisions``.
+  verbatim plus the documented repo-convention deltas of
+  paper-only/report-only/readonly boundary columns on ``decisions``
+  and the NO-basket clause added to the ``avg_prob_of_realized`` hit
+  predicate so it matches ``forecast_hits`` (codex-review F5; the LIVE
+  paper_sim cluster view still needs the same one-line fix applied
+  operationally - this module never touches the live cluster).
 """
 
 from __future__ import annotations
@@ -288,11 +292,19 @@ _MIGRATION_DDL = """\
 -- Mirrored verbatim: decisions / resolutions / bankroll tables and the
 -- FIXED model_performance / forecast_calibration views (exits separated
 -- from W/L; forecast calibration judged on natural resolutions only).
--- Documented repo-convention delta versus the live cluster: the
+-- Documented repo-convention deltas versus the live cluster: the
 -- paper_only / report_only / readonly boundary columns on decisions,
--- matching the repo paper_trade migration style. This schema is paper
--- evidence storage only; it grants no order, account or execution
--- authorization.
+-- matching the repo paper_trade migration style; and the
+-- avg_prob_of_realized hit predicate adds the NO-basket clause
+-- (codex-review F5) so it is identical to the forecast_hits predicate:
+-- a winning NO-basket row contributes model_prediction, not its
+-- complement.
+-- OPERATIONAL NOTE: the LIVE paper_sim cluster forecast_calibration
+-- view still carries the one-clause-short avg_prob_of_realized
+-- predicate and needs this same one-line fix applied operationally by
+-- an operator; this migration never touches the live cluster. This
+-- schema is paper evidence storage only; it grants no order, account
+-- or execution authorization.
 
 create table public.decisions (
   id bigserial primary key,
@@ -358,6 +370,7 @@ select d.market_type,
        round(avg(d.model_prediction), 3) as avg_forecast,
        round(avg(case when (d.side = any (array['YES'::text, 'YES-basket'::text])) and r.outcome = d.side
                        or d.side = 'NO'::text and r.outcome = 'NO'::text
+                       or d.side = 'NO-basket'::text and r.outcome = 'NO'::text
                   then d.model_prediction
                   else 1::numeric - d.model_prediction end), 3) as avg_prob_of_realized
 from public.decisions d

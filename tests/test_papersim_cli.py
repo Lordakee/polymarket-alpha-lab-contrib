@@ -4,13 +4,16 @@ The selfcheck invariant suite must run green end-to-end both in-process
 (``cli.main``) and as a real subprocess (``python -m
 polymarket_alpha_lab.papersim.cli``); the schema subcommand must emit the
 ledger migration text byte-identically; validate-dsn must accept local
-DSNs, reject hosted/file fallbacks, never print the DSN value and never
-read the password file. Everything here is read-only: no network, no
-database connection, no writes outside a temp dir.
+DSNs, reject hosted/file fallbacks, never print the DSN value, never
+read the password file and obtain env-source metadata only through the
+sanctioned ``supabase_papersim_config`` boundary (F9 static gate). Every
+test here is read-only: no network, no database connection, no writes
+outside a temp dir.
 """
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -176,6 +179,50 @@ def test_validate_dsn_never_reads_password_file(monkeypatch, capsys, tmp_path) -
     assert not bogus.exists()
     assert ledger.PAPERSIM_PG_PASSWORD_FILE_ENV_VAR in out
     assert "never read" in out
+
+
+def test_validate_dsn_source_metadata_comes_from_config_boundary(
+    monkeypatch, capsys
+) -> None:
+    # F9: the env-vs-default source label must come from the sanctioned
+    # supabase_papersim_config boundary (ledger.from_papersim_db_env),
+    # which normalizes whitespace-only values to the documented default
+    # instead of letting the CLI interpret raw env bytes itself.
+    monkeypatch.setenv(ledger.PAPERSIM_PG_DSN_ENV_VAR, "   ")
+    code = cli.main(["validate-dsn"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "validate-dsn: PASS" in out
+    assert "documented default" in out
+
+
+def test_cli_source_has_no_direct_dsn_environment_read() -> None:
+    """Static gate for the F9 review finding.
+
+    README boundary: DSN environment reads live only inside the
+    sanctioned ``supabase_*config.py`` modules. ``cli.py`` must obtain
+    env-source metadata through ``ledger.from_papersim_db_env`` (the
+    ``supabase_papersim_config`` boundary), so the CLI source may not
+    touch ``environ``/``getenv`` at all, and the DSN variable name may
+    appear only as the ``..._ENV_VAR`` name constants used for labels —
+    never as a bare read key.
+    """
+    source = Path(cli.__file__).read_text(encoding="utf-8")
+    assert re.search(r"\benviron\b", source) is None, (
+        "cli.py must not read the process environment; DSN env reads "
+        "belong to supabase_papersim_config only"
+    )
+    assert re.search(r"\bgetenv\b", source) is None, (
+        "cli.py must not read the process environment; DSN env reads "
+        "belong to supabase_papersim_config only"
+    )
+    bare = re.search(r"PAPERSIM_PG_DSN(?!_ENV_VAR)", source)
+    if bare is not None:
+        context = source[max(0, bare.start() - 60) : bare.end() + 60]
+        pytest.fail(
+            "cli.py references PAPERSIM_PG_DSN outside the _ENV_VAR name "
+            f"constant; direct reads belong to supabase_papersim_config only: {context!r}"
+        )
 
 
 # ---------------------------------------------------------------------------

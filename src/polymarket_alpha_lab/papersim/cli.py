@@ -29,11 +29,17 @@ Subcommands (WP-P1 final commit):
   Descriptive evidence only: applying migrations stays the exclusive
   job of the transactional native-Postgres migration ledger, never this
   command.
-- ``validate-dsn``: report-only validation of ``PAPERSIM_PG_DSN``
-  through the single audited ``validate_local_postgres_dsn`` (via
-  :func:`polymarket_alpha_lab.papersim.ledger.papersim_dsn`). Never
-  opens a connection, never reads ``PAPERSIM_PG_PASSWORD_FILE`` and
-  never prints the DSN value (repo redaction discipline).
+- ``validate-dsn``: report-only validation of the ledger DSN
+  environment variable through the single audited
+  ``validate_local_postgres_dsn`` (via
+  :func:`polymarket_alpha_lab.papersim.ledger.papersim_dsn`). This CLI
+  never reads the process environment itself: the env-vs-default source
+  metadata comes from the sanctioned
+  ``polymarket_alpha_lab.supabase_papersim_config`` boundary
+  (``from_papersim_db_env``), the only module allowed to read the DSN
+  environment. Never opens a connection, never reads
+  ``PAPERSIM_PG_PASSWORD_FILE`` and never prints the DSN value (repo
+  redaction discipline).
 """
 
 from __future__ import annotations
@@ -41,8 +47,6 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
-import os
-import tempfile
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
@@ -233,10 +237,7 @@ def _check_soccer_r23(case_id: str) -> tuple[str, bool, str]:
     home, away, line = next(
         (h, a, ln) for cid, h, a, ln in R23_CASES if cid == case_id
     )
-    with tempfile.TemporaryDirectory(prefix="papersim-selfcheck-") as tmp:
-        path = Path(tmp) / "r23_snapshot.json"
-        path.write_text(json.dumps(_r23_snapshot(fixture)), encoding="utf-8")
-        snapshot = xg.load_xg_snapshot(str(path))
+    snapshot = xg.load_xg_payload(_r23_snapshot(fixture))
     variants = soccer_model.fixture_variants(snapshot, home, "EPL", away, "EPL")
     if variants is None:
         return (f"soccer-r23:{case_id}", False, "fixture_variants returned None")
@@ -438,10 +439,22 @@ def _cmd_schema() -> int:
 
 def _cmd_validate_dsn() -> int:
     env_var = ledger.PAPERSIM_PG_DSN_ENV_VAR
-    raw = os.environ.get(env_var)
-    source = (
-        f"environment {env_var}" if raw else "documented default (env unset or empty)"
-    )
+    # This module never reads the process environment (F9 boundary: DSN
+    # environment reads live only inside supabase_papersim_config). The
+    # env-vs-default source metadata comes from that sanctioned module:
+    # ``dsn is None`` means the variable is unset, empty or whitespace
+    # only, so the documented example default is what would be used.
+    try:
+        source = (
+            f"environment {env_var}"
+            if ledger.from_papersim_db_env().dsn is not None
+            else "documented default (env unset or empty)"
+        )
+    except ValueError:
+        # The env-provided DSN already failed validation inside the
+        # sanctioned config boundary; report it via the shared failure
+        # path below, where papersim_dsn re-raises the exact reason.
+        source = f"environment {env_var}"
     lines = [
         "validate-dsn (report-only: no connection opened, no password read)",
         f"source: {source}",
@@ -483,7 +496,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     subparsers.add_parser(
         "validate-dsn",
-        help="report-only validation of PAPERSIM_PG_DSN (never connects)",
+        help="report-only validation of the ledger DSN environment variable (never connects)",
     )
     return parser
 

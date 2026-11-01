@@ -152,6 +152,7 @@ from polymarket_alpha_lab.papersim.risk_policy import (
     tier_notional,
 )
 from polymarket_alpha_lab.papersim.soccer_model import (
+    candidate_from_variants,
     DC_FLOOR,
     GRID_MAX_GOALS,
     LINEAGE_EPS,
@@ -315,6 +316,7 @@ __all__ = [
     "median",
     "news_concordance",
     "over_probability",
+    "candidate_from_variants",
     "over_under_quote",
     "pair_lambdas",
     "paper_stake",

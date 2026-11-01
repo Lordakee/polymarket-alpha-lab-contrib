@@ -224,6 +224,26 @@ def test_held_fixture_no_same_direction_adds():
     assert unknown.allowed is False
 
 
+def test_held_fixture_unclassifiable_prospective_side_blocks():
+    # codex review finding 7: a prospective side that cannot be classified
+    # (e.g. "draw") cannot be established as opposite to a held side, so it
+    # must get the same conservative block as an unclassifiable held side.
+    blocked = held_fixture_add_allowed(["Over/Yes(side0)"], "draw")
+    assert isinstance(blocked, CorrelationDecision)
+    assert blocked.allowed is False
+    assert "correlation" in blocked.reason
+    # the conservative block holds against any classifiable held direction.
+    assert held_fixture_add_allowed(["Under/No(side1)"], "draw").allowed is False
+    # unknown held direction still blocks (classification or no classification).
+    assert held_fixture_add_allowed(["draw"], "Over/Yes(side0)").allowed is False
+    # both sides unclassifiable also blocks.
+    assert held_fixture_add_allowed(["draw"], "tie").allowed is False
+    # a known-opposite add is still allowed.
+    assert held_fixture_add_allowed(["Over/Yes(side0)"], "Under/No(side1)").allowed is True
+    # with nothing held there is no held-fixture correlation rule to violate.
+    assert held_fixture_add_allowed([], "draw").allowed is True
+
+
 def test_nested_bets_count_as_one_risk_unit():
     fixture = "AFC Bournemouth vs. Leeds United FC"
     nested = [

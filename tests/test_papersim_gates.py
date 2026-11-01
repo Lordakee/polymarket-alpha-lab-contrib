@@ -5,7 +5,10 @@ Regression anchors:
 - ``tests/fixtures/papersim/regression_gate_arithmetic.json`` (the frozen
   #48 Brentford-Forest O2.5 record: entry 0.560, exec +7.4c / worst +6.3c);
 - the r15 finalize haircut/under_risk semantics and the r24 book-walk
-  arithmetic from the canonical lineage.
+  arithmetic from the canonical lineage;
+- the WP-P1 codex-review fixes (F2 hardcoded $250 ask acceptance walk,
+  F3 finite gate inputs, F6 survivors-only ranking) in the closing
+  section.
 """
 
 from __future__ import annotations
@@ -720,3 +723,147 @@ def test_rank_candidates_drops_unrankable_reports():
     )
     good = _report(0.60, 0.57, 0.61, 0.52)
     assert rank_candidates([empty, good]) == [good]
+
+
+# ---------------------------------------------------------------------------
+# WP-P1 codex-review fixes: F2 acceptance walk, F3 finite inputs, F6 survivors
+# ---------------------------------------------------------------------------
+
+
+def test_f2_thin_book_with_caller_notional_50_still_fails():
+    # codex F2 counterexample 1: notional=50 over a $50 book. The
+    # caller-configured walk fills, but acceptance must come from the
+    # hardcoded $250 ask walk, which cannot fill -> fill_250 fails.
+    quote = dict(model_median=0.60, qs_variants=(0.58, 0.62))
+    book = [(0.50, 100.0)]  # $50 resting
+    report = evaluate_candidate(
+        quote, book, notional=50.0, gamma_liquidity=20000.0, news=_concordant_news()
+    )
+    assert (report.walk.side, report.walk.notional) == ("ask", 250.0)
+    assert report.walk.filled is False
+    assert report.checks["fill_250"] is False
+    assert report.decision.passed is False
+    assert "fill_250" in report.decision.failed
+    # the caller's $50 walk survives only as supplementary valuation info
+    assert report.valuation_walk is not None
+    assert (report.valuation_walk.notional, report.valuation_walk.filled) == (
+        50.0,
+        True,
+    )
+
+
+def test_f2_bid_walk_bypass_counterexample_fails():
+    # codex F2 counterexample 2: side="bid" against the deep bid at .56
+    # while the executable ask ladder sits at .64. The old code computed
+    # entry/edges from the caller-configured walk, so a candidate that
+    # clears every bar at a .56 walk passed despite the real ask being
+    # .64; the fixed gate performs the acceptance $250 ASK walk over the
+    # passed book itself, so the .64-ask candidate fails no matter which
+    # side the caller requests.
+    deep_bid = walk_book([(0.56, 5000.0)], "bid")
+    assert (deep_bid.vwap, deep_bid.filled) == (0.56, True)  # the old bypass
+    quote = dict(model_median=0.62, qs_variants=(0.60, 0.63))  # passes at .56 only
+    ask_ladder = [(0.64, 5000.0)]  # the real executable ask
+    report = evaluate_candidate(
+        quote, ask_ladder, "bid", gamma_liquidity=20000.0, news=_concordant_news()
+    )
+    assert report.decision.passed is False
+    assert (report.walk.side, report.walk.notional, report.walk.vwap) == (
+        "ask",
+        250.0,
+        0.64,
+    )
+    assert report.entry_price == 0.64
+    assert report.decision.failed == ("worst_edge", "exec_edge")
+    # the caller's bid walk survives only as supplementary valuation info
+    assert report.valuation_walk is not None
+    assert report.valuation_walk.side == "bid"
+
+
+def test_f2_default_call_records_no_supplementary_walk():
+    # normal path still passes: the acceptance walk is exactly the
+    # historical default walk and no supplementary walk is recorded.
+    report = evaluate_candidate(
+        dict(model_median=0.62, qs_variants=(0.60, 0.63)),
+        [(0.56, 5000.0)],
+        gamma_liquidity=20000.0,
+        news=_concordant_news(),
+    )
+    assert report.decision.passed is True
+    assert report.walk == walk_book([(0.56, 5000.0)], "ask")
+    assert report.valuation_walk is None
+
+
+def test_f2_invalid_side_or_notional_still_raise():
+    # the caller-configured walk no longer feeds acceptance, but invalid
+    # side/notional values must still raise (supplementary walk validation).
+    quote = dict(model_median=0.62, qs_variants=(0.60, 0.63))
+    common = dict(gamma_liquidity=20000.0, news=_concordant_news())
+    with pytest.raises(ValueError):
+        evaluate_candidate(quote, [(0.56, 5000.0)], "mid", **common)
+    with pytest.raises(ValueError):
+        evaluate_candidate(quote, [(0.56, 5000.0)], notional=0.0, **common)
+
+
+def test_evaluate_gates_rejects_all_nan_inputs():
+    # codex F3: NaN compares False against every threshold, so all-NaN
+    # inputs previously returned GateDecision(passed=True).
+    nan = float("nan")
+    with pytest.raises(ValueError, match="non-finite"):
+        evaluate_gates(
+            variant_spread=nan,
+            worst_variant_edge=nan,
+            median_exec_edge=nan,
+            gamma_liquidity=nan,
+        )
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("variant_spread", float("nan")),
+        ("worst_variant_edge", float("nan")),
+        ("median_exec_edge", float("nan")),
+        ("gamma_liquidity", float("nan")),
+        ("variant_spread", float("inf")),
+        ("worst_variant_edge", float("-inf")),
+        ("gamma_liquidity", float("inf")),
+    ],
+)
+def test_evaluate_gates_rejects_single_non_finite_input(field, value):
+    base = dict(
+        variant_spread=0.05,
+        worst_variant_edge=0.05,
+        median_exec_edge=0.06,
+        gamma_liquidity=6000.0,
+    )
+    with pytest.raises(ValueError, match="non-finite"):
+        evaluate_gates(**{**base, field: value})
+
+
+def test_rank_candidates_orders_survivors_only():
+    # codex F6: ranking "orders the survivors" (docs/paper-sim/usage.md).
+    # High-edge candidates rejected on news (or liquidity) must not rank
+    # at all, let alone first.
+    rejected_news = evaluate_candidate(
+        dict(model_median=0.70, qs_variants=(0.67, 0.72)),
+        [(0.55, 5000.0)],
+        gamma_liquidity=20000.0,
+        news=check_news("F", "48h", news_delta=NEWS_WORSE),
+    )
+    assert rejected_news.decision.passed is False
+    assert rejected_news.checks["news_concordant"] is False
+    assert rejected_news.worst_variant_edge == 0.12  # highest margin in the pool
+    rejected_liq = evaluate_candidate(
+        dict(model_median=0.70, qs_variants=(0.67, 0.72)),
+        [(0.55, 5000.0)],
+        gamma_liquidity=100.0,  # liq>=5k fails
+        news=_concordant_news(),
+    )
+    assert rejected_liq.decision.passed is False
+    good_low = _report(0.60, 0.57, 0.61, 0.52)  # worst 0.05, exec 0.08
+    good_high = _report(0.70, 0.67, 0.72, 0.55)  # same edges as the rejected pair
+    ranked = rank_candidates([rejected_news, rejected_liq, good_low, good_high])
+    assert ranked == [good_high, good_low]
+    assert rejected_news not in ranked
+    assert rejected_liq not in ranked

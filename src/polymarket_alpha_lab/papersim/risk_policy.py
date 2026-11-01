@@ -339,10 +339,22 @@ def held_fixture_add_allowed(held_sides: Iterable[str], side: str) -> Correlatio
     No same-direction adds on held fixtures (r15/r24 goal-correlation
     concentration rule): an add in the same direction family as any held
     side on the fixture is blocked; an opposite-direction add is allowed.
-    A held side that cannot be classified blocks conservatively.
+    A held side OR a prospective side that cannot be classified blocks
+    conservatively: an unclassifiable prospective side cannot be
+    established as opposite to any held side.
     """
     new_direction = side_direction(side)
     for held in held_sides:
+        if new_direction == DIRECTION_UNKNOWN:
+            return CorrelationDecision(
+                allowed=False,
+                reason=(
+                    "held-fixture correlation rule (no same-direction adds on "
+                    f"held fixtures): new side {side!r} cannot be classified "
+                    "into a direction family, so it cannot be established as "
+                    "opposite to a held side"
+                ),
+            )
         held_direction = side_direction(held)
         if held_direction == DIRECTION_UNKNOWN or held_direction == new_direction:
             return CorrelationDecision(

@@ -138,6 +138,17 @@ class RecentForm:
     btts_hits: int
 
 
+def load_xg_payload(payload: object) -> dict[str, Mapping[str, object]]:
+    """Validate an already-parsed Understat snapshot payload without file I/O.
+
+    Same root-type contract as :func:`load_xg_snapshot`; lets read-only callers
+    (e.g. ``papersim selfcheck``) feed an in-memory snapshot without writes.
+    """
+    if not isinstance(payload, dict):
+        raise ValueError("xG snapshot root must be a JSON object")
+    return payload
+
+
 def load_xg_snapshot(path: str) -> dict[str, Mapping[str, object]]:
     """Load an Understat snapshot JSON from ``path`` without network access.
 
@@ -145,10 +156,7 @@ def load_xg_snapshot(path: str) -> dict[str, Mapping[str, object]]:
     structure unmodified so raw payloads are preserved before normalization.
     """
     with open(path, "r", encoding="utf-8") as handle:
-        payload = json.load(handle)
-    if not isinstance(payload, dict):
-        raise ValueError(f"xG snapshot root must be a JSON object: {path!r}")
-    return payload
+        return load_xg_payload(json.load(handle))
 
 
 def season_key(league: str, season: str) -> str:

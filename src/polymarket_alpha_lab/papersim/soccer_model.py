@@ -36,6 +36,15 @@ Implementation notes (frozen arithmetic, do not tune):
   :func:`polymarket_alpha_lab.papersim.xg.pair_lambdas`.
 - Aggregation: median over the ten per-variant quotes (mean of the two
   middle order statistics for the even count), with min/max range.
+- Candidate builders: :func:`candidate_from_variants` is the public,
+  GATE-SAFE builder — it re-derives every variant's lambdas from the xG
+  snapshot through :func:`fixture_variants`, so the candidate's fair
+  range carries the true ten-variant uncertainty. :func:`over_under_quote`
+  is the frozen pair-level stub: a bare lambda pair cannot re-derive the
+  rating-blend / shrink dimensions, so its ten sweep slots coincide for
+  O/U lines >= 2.0 — its range is NOT gate-safe evidence (codex review
+  2026-10-30, finding 1; regression: BOU-LEE must gate-reject at 6.09c
+  through the builder).
 - ``over``/``under`` semantics follow the lineage push convention:
   ``over(line) = P(total >= floor(line) + 1)``.
 """
@@ -61,6 +70,7 @@ __all__ = [
     "VariantResult",
     "VariantSpec",
     "both_teams_to_score",
+    "candidate_from_variants",
     "cover_probability",
     "dixon_coles_tau",
     "fixture_variants",
@@ -390,6 +400,69 @@ def match_lambdas(
     )
 
 
+def candidate_from_variants(
+    xg_snapshot: Mapping[str, object],
+    home_team: str,
+    home_league: str,
+    away_team: str,
+    away_league: str,
+    line: float,
+    market: str,
+    market_id: str,
+    entry_ask_vwap250: float,
+    *,
+    season: str | None = None,
+) -> SoccerCandidate | None:
+    """Snapshot-driven Over/Under ``line`` candidate quote — the public,
+    GATE-SAFE builder.
+
+    Evaluates all ten sweep variants through :func:`fixture_variants`
+    (each variant re-derives its own lambdas from ``xg_snapshot``) and
+    carries the TRUE per-variant quotes into the candidate's
+    ``qs_variants`` / ``model_median`` / ``model_range``, so the variant
+    spread and worst-variant edge seen by the entry gates reflect the
+    full rating-blend / shrink / rho uncertainty. ``lambda_home`` /
+    ``lambda_away`` are the per-side medians (identical to
+    :func:`match_lambdas`).
+
+    Returns ``None`` whenever the fixture is refused — cross-league
+    guard, missing season blocks or unknown teams — exactly like
+    :func:`fixture_variants` / :func:`match_lambdas`. Callers must NOT
+    fall back to :func:`over_under_quote` on a ``None`` here: that stub
+    collapses the sweep variance and would silently pass the variant
+    gates (codex review 2026-10-30, finding 1).
+
+    Frozen regression anchor (``tests/fixtures/papersim/
+    regression_r23_soccer.json``): BOU-LEE O2.5 built here reproduces
+    the true range 0.5714-0.6323 (spread 6.09c) and is the only
+    documented workflow path allowed to face the gates.
+    """
+    variants = fixture_variants(
+        xg_snapshot,
+        home_team,
+        home_league,
+        away_team,
+        away_league,
+        season=season,
+    )
+    if variants is None:
+        return None
+    quotes = tuple(over_probability(variant.outputs, line) for variant in variants)
+    return SoccerCandidate(
+        match=market,
+        question=f"{market}: O/U {line:g}",
+        kind="total",
+        side=0,
+        entry_ask_vwap250=entry_ask_vwap250,
+        model_median=median(quotes),
+        model_range=(min(quotes), max(quotes)),
+        qs_variants=quotes,
+        lambda_home=median([variant.lambdas[0] for variant in variants]),
+        lambda_away=median([variant.lambdas[1] for variant in variants]),
+        market_id=market_id,
+    )
+
+
 def over_under_quote(
     lambdas: tuple[float, float],
     line: float,
@@ -402,13 +475,21 @@ def over_under_quote(
 
     ``lambdas`` must come from :func:`match_lambdas` (same-league only).
 
-    Pair-level scope: the rating-blend and shrink dimensions of the sweep
-    vary team RATINGS, which cannot be re-derived from a bare lambda
-    pair, so at this level every variant slot re-evaluates the provided
-    rates and only the rho dimension differentiates — and for O/U lines
-    >= 2.0 the Dixon-Coles tau is provably neutral, so the ten quotes
-    coincide. Gateable variant variance must come from
-    :func:`fixture_variants` on the xG snapshot.
+    .. warning::
+
+        Pair-level stub — NOT gate-safe. The rating-blend and shrink
+        dimensions of the sweep vary team RATINGS, which cannot be
+        re-derived from a bare lambda pair, so every variant slot here
+        re-evaluates the SAME provided rates and only the rho dimension
+        differentiates. For O/U lines >= 2.0 the Dixon-Coles tau is
+        provably neutral, so all ten quotes coincide: the candidate's
+        ``model_range`` collapses to a point and the variant-spread /
+        worst-variant gates see fabricated certainty (a candidate truly
+        rejected for var>6c — e.g. frozen BOU-LEE, true spread 6.09c —
+        would pass the gates when built via this path). Use
+        :func:`candidate_from_variants` on the xG snapshot for anything
+        that faces the entry gates; this stub remains only for
+        pair-level inspection of a single already-chosen lambda pair.
     """
     lh, la = lambdas
     quotes = tuple(

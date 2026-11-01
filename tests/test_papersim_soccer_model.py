@@ -1,16 +1,24 @@
 """WP-P1 W1 tests: 10-variant xG-Poisson soccer model.
 
-Two layers:
+Three layers:
 
 - Unit invariants on synthetic rates: the Dixon-Coles tau touches ONLY
   the 0-0 / 0-1 / 1-0 / 1-1 cells, preserves row and column marginals
   and total mass (the four corrections cancel exactly for independent
   Poisson cells), the sweep set matches the frozen lineage list, and the
-  market helpers follow the lineage push semantics.
+  market helpers follow the lineage push semantics. The production
+  ``score_grid(..., rho=...)`` is additionally compared cell-by-cell
+  against a from-first-principles recomputation (FX1, codex finding 10).
 - Regression anchors: recompute the four frozen round-23 EPL cases from
   ``tests/fixtures/papersim/regression_r23_soccer.json`` and assert the
   medians, ranges and all ten per-variant quotes within 1e-4, plus the
   banned cross-league path (HOF-LYO) asserting ``None``.
+- Candidate-builder gates (FX1, codex finding 1): the public
+  snapshot-driven ``candidate_from_variants`` builder carries the TRUE
+  per-variant quotes into the fair range — BOU-LEE O2.5 must be
+  REJECTED by the frozen gates with the true 6.09c spread reproduced,
+  while the pair-level ``over_under_quote`` stub (documented NOT
+  gate-safe) collapses the same sweep to ten identical quotes.
 """
 
 from __future__ import annotations
@@ -21,7 +29,7 @@ from pathlib import Path
 
 import pytest
 
-from polymarket_alpha_lab.papersim import soccer_model, xg
+from polymarket_alpha_lab.papersim import gates, soccer_model, xg
 
 FIXTURES = Path(__file__).parent / "fixtures" / "papersim"
 
@@ -84,6 +92,50 @@ def test_dc_changes_only_the_four_low_score_cells() -> None:
                 assert adjusted[i][j] != plain[i][j]
             else:
                 assert adjusted[i][j] == plain[i][j]
+
+
+def test_production_score_grid_matches_first_principles() -> None:
+    """Every PRODUCTION grid cell vs an independent recomputation.
+
+    FX1 (codex finding 10): ``_raw_grids()`` above adjusts raw cells by
+    hand and never calls production, so a production change touching
+    extra cells would have passed unnoticed. Here the expected cells are
+    recomputed from first principles — plain ``math`` exp/factorial
+    Poisson masses, the tau formulas written out literally (floor 0.01,
+    non-binding at these rates), one shared normalization — and compared
+    cell-by-cell with ``soccer_model.score_grid`` output.
+    """
+    rho = soccer_model.RHO_DC
+    floor = 0.01  # lineage DC_FLOOR, spelled out to stay independent
+    raw = {
+        (i, j): (
+            math.exp(-LH) * LH**i / math.factorial(i)
+        ) * (
+            math.exp(-LA) * LA**j / math.factorial(j)
+        )
+        for i in range(11)
+        for j in range(11)
+    }
+    tau = {
+        (0, 0): max(1.0 - LH * LA * rho, floor),
+        (0, 1): max(1.0 + LH * rho, floor),
+        (1, 0): max(1.0 + LA * rho, floor),
+        (1, 1): max(1.0 - rho, floor),
+    }
+    total = sum(p * tau.get(cell, 1.0) for cell, p in raw.items())
+
+    grid = soccer_model.score_grid(LH, LA, rho=rho)
+    plain_grid = soccer_model.score_grid(LH, LA)
+    plain_total = sum(raw.values())
+    for i in range(11):
+        for j in range(11):
+            expected = raw[(i, j)] * tau.get((i, j), 1.0) / total
+            assert grid[i][j] == pytest.approx(expected, rel=1e-12, abs=1e-15), (
+                f"DC grid cell ({i},{j}) drifted from first principles"
+            )
+            assert plain_grid[i][j] == pytest.approx(
+                raw[(i, j)] / plain_total, rel=1e-12, abs=1e-15
+            ), f"plain grid cell ({i},{j}) drifted from first principles"
 
 
 def test_dc_preserves_row_and_column_marginals_and_mass() -> None:
@@ -421,7 +473,13 @@ def test_r23_regression_anchor_literals(
     assert max(quotes) == pytest.approx(expected_range[1], abs=1e-4)
 
 
-def test_over_under_quote_builds_candidate() -> None:
+def test_over_under_quote_builds_candidate(tmp_path: Path) -> None:
+    """Frozen pair-level stub contract, plus the TRUE spread via the
+    public snapshot-driven builder (FX1: this test previously pinned the
+    collapsed spread as if it were the candidate's uncertainty; it now
+    pins the true BRE-FOR range 0.6235-0.6446 through the gate-safe
+    path, keeping the stub collapse only as documented hazard behavior).
+    """
     candidate = soccer_model.over_under_quote(
         (1.894, 1.364),
         2.5,
@@ -440,8 +498,9 @@ def test_over_under_quote_builds_candidate() -> None:
     assert len(candidate.qs_variants) == 10
     assert candidate.model_median == soccer_model.median(candidate.qs_variants)
     assert candidate.model_range == (min(candidate.qs_variants), max(candidate.qs_variants))
-    # Pair-level scope: for O/U >= 2.0 the ten slots coincide (DC-neutral,
-    # rating dims not re-derivable from a bare pair) - documented behavior.
+    # Pair-level stub hazard (documented, NOT gate-safe): for O/U >= 2.0
+    # the ten slots coincide — DC-neutral, rating dims not re-derivable
+    # from a bare pair. The gateable fair range is pinned below instead.
     assert max(candidate.qs_variants) == pytest.approx(min(candidate.qs_variants), abs=1e-12)
     low_line = soccer_model.over_under_quote(
         (1.894, 1.364),
@@ -451,3 +510,158 @@ def test_over_under_quote_builds_candidate() -> None:
         entry_ask_vwap250=0.9,
     )
     assert low_line.qs_variants[1] != low_line.qs_variants[0]
+
+    # FX1 (codex finding 1): the same BRE-FOR market through the public
+    # snapshot-driven builder carries the TRUE per-variant quotes.
+    snapshot = _load_r23_snapshot(tmp_path)
+    built = soccer_model.candidate_from_variants(
+        snapshot,
+        "Brentford",
+        "EPL",
+        "Nottingham Forest",
+        "EPL",
+        2.5,
+        "Brentford FC vs. Nottingham Forest FC",
+        "5856164",
+        0.56,
+    )
+    assert built is not None
+    assert built.question == candidate.question
+    assert built.model_range == pytest.approx((0.6235, 0.6446), abs=1e-4)
+    assert max(built.qs_variants) - min(built.qs_variants) == pytest.approx(0.0211, abs=1e-4)
+    # The builder's spread is genuinely wider than the stub's collapse.
+    assert min(built.qs_variants) < max(built.qs_variants)
+
+
+def test_candidate_from_variants_mini_snapshot() -> None:
+    """Public builder field contract and consistency with fixture_variants."""
+    snapshot = _mini_snapshot()
+    variants = soccer_model.fixture_variants(snapshot, "Alpha", "EPL", "Beta", "EPL")
+    assert variants is not None
+    built = soccer_model.candidate_from_variants(
+        snapshot,
+        "Alpha",
+        "EPL",
+        "Beta",
+        "EPL",
+        2.5,
+        "Alpha vs. Beta",
+        "m1",
+        0.5,
+    )
+    assert built is not None
+    assert isinstance(built, soccer_model.SoccerCandidate)
+    assert built.match == "Alpha vs. Beta"
+    assert built.question == "Alpha vs. Beta: O/U 2.5"
+    assert built.kind == "total"
+    assert built.side == 0
+    assert built.market_id == "m1"
+    assert built.entry_ask_vwap250 == 0.5
+    # The ten quotes ARE the per-variant over probabilities, in sweep order.
+    assert built.qs_variants == tuple(
+        soccer_model.over_probability(v.outputs, 2.5) for v in variants
+    )
+    assert built.model_median == soccer_model.median(built.qs_variants)
+    assert built.model_range == (min(built.qs_variants), max(built.qs_variants))
+    # True uncertainty present: the sweep does not collapse on the snapshot.
+    assert min(built.qs_variants) < max(built.qs_variants)
+    # Lambda fields are the per-side medians, identical to match_lambdas.
+    lambdas = soccer_model.match_lambdas(snapshot, "Alpha", "EPL", "Beta", "EPL")
+    assert lambdas is not None
+    assert (built.lambda_home, built.lambda_away) == lambdas
+
+    # Refused fixtures return None exactly like fixture_variants:
+    # banned cross-league pairing and unknown teams.
+    banned = json.loads((FIXTURES / "regression_banned_path.json").read_text(encoding="utf-8"))["case"]
+    assert soccer_model.candidate_from_variants(
+        snapshot,
+        banned["home"]["team"],
+        banned["home"]["league"],
+        banned["away"]["team"],
+        banned["away"]["league"],
+        2.5,
+        "banned",
+        "m2",
+        0.5,
+    ) is None
+    assert soccer_model.candidate_from_variants(
+        snapshot, "Alpha", "EPL", "Ghost", "EPL", 2.5, "ghost", "m3", 0.5
+    ) is None
+
+
+def test_bou_lee_public_builder_to_gate_rejected_for_variant_spread(
+    tmp_path: Path,
+) -> None:
+    """FX1 headline regression (codex finding 1): BOU-LEE O2.5 through the
+    PUBLIC builder-to-gate path must be REJECTED for var>6c with the true
+    6.09c spread reproduced — while the frozen pair-level stub collapses
+    the same sweep and would pass (why the stub is documented NOT
+    gate-safe).
+    """
+    case = json.loads((FIXTURES / "regression_r23_soccer.json").read_text(encoding="utf-8"))[
+        "cases"
+    ]["BOU-LEE_O2.5"]
+    snapshot = _load_r23_snapshot(tmp_path)
+
+    candidate = soccer_model.candidate_from_variants(
+        snapshot,
+        "Bournemouth",
+        "EPL",
+        "Leeds",
+        "EPL",
+        2.5,
+        case["match"],
+        case["market_id"],
+        case["entry_ask_vwap250"],
+    )
+    assert candidate is not None
+
+    # True per-variant uncertainty carried into the candidate fair range.
+    assert candidate.model_median == pytest.approx(case["model_median"], abs=1e-4)
+    assert candidate.model_range[0] == pytest.approx(case["model_range"][0], abs=1e-4)
+    assert candidate.model_range[1] == pytest.approx(case["model_range"][1], abs=1e-4)
+    for got, want in zip(candidate.qs_variants, case["qs_variants"]):
+        assert abs(got - want) <= 1e-4
+    assert abs(candidate.lambda_home - case["lambda_home"]) <= 5e-4
+    assert abs(candidate.lambda_away - case["lambda_away"]) <= 5e-4
+
+    # Gate path: book fills $250 at the frozen 0.52 ask, liquidity and a
+    # concordant news check are supplied; the ONLY failing gate is the
+    # variant spread (worst +5.14c and exec +8.96c both pass).
+    book = [(case["entry_ask_vwap250"], 1000.0)]
+    news = gates.check_news("BOU-LEE", "48h", news_delta="unchanged")
+    report = gates.evaluate_candidate(
+        candidate,
+        book,
+        "ask",
+        gamma_liquidity=case["liq_gamma"],
+        news=news,
+    )
+    assert report.variant_spread == pytest.approx(case["var_spread"], abs=1e-4)
+    assert report.worst_variant_edge == pytest.approx(case["edge_worst_variant"], abs=1e-4)
+    assert report.exec_edge == pytest.approx(case["edge_exec"], abs=1e-4)
+    assert report.decision.passed is False
+    assert report.decision.failed == ("variant_spread",)
+    assert case["fail_reasons"] == ["var>6c"]
+
+    # Documented hazard contrast: the pair-level stub on the same fixture
+    # collapses O/U 2.5 to ten identical quotes (~0.61 every slot), so the
+    # same gates would PASS it. Pinned so any change to the frozen stub
+    # that alters this hazard surface fails consciously here.
+    stub = soccer_model.over_under_quote(
+        (candidate.lambda_home, candidate.lambda_away),
+        2.5,
+        market=case["match"],
+        market_id=case["market_id"],
+        entry_ask_vwap250=case["entry_ask_vwap250"],
+    )
+    stub_report = gates.evaluate_candidate(
+        stub,
+        book,
+        "ask",
+        gamma_liquidity=case["liq_gamma"],
+        news=news,
+    )
+    assert stub_report.variant_spread == 0.0
+    assert stub_report.checks["variant_spread<=6c"] is True
+    assert stub_report.decision.passed is True

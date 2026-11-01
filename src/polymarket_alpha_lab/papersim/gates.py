@@ -23,10 +23,20 @@ screen, the news-concordance overlay, the suspension-policy registry and
 the worst-variant-first ranking -- is added alongside the frozen surface
 as :func:`walk_book`, :func:`evaluate_candidate` and friends. No stub
 contract changed.
+
+WP-P1 codex-review fixes (F2/F3/F6, 2026-11-01): the composite
+:func:`evaluate_candidate` acceptance decision now independently
+establishes a completed $250 ASK walk over the passed book -- the
+caller-configurable ``side``/``notional`` parameters no longer feed any
+acceptance check and are recorded only as a supplementary
+``valuation_walk``. :func:`evaluate_gates` rejects non-finite (NaN/inf)
+numeric inputs instead of letting them slip past the comparisons, and
+:func:`rank_candidates` orders only the survivors (passed decisions).
 """
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -182,6 +192,14 @@ class GateReport:
     (``variant_spread<=6c`` ... ``news_concordant``) plus the explicit
     ``entry_window`` key; ``decision`` carries the frozen
     :class:`GateDecision` shape with stable failed-check ids.
+
+    ``walk`` is the acceptance walk: the hardcoded $250 ASK walk over the
+    passed book (``side='ask'``, ``notional=250``), the only walk any
+    acceptance check (``fill_250``, ``entry_window``, the exec/worst
+    edges, ``entry_price``) is computed from. ``valuation_walk`` records
+    the caller-configured ``side``/``notional`` walk as supplementary
+    valuation information only -- it feeds no acceptance check -- and is
+    ``None`` when the caller requested exactly the acceptance parameters.
     """
 
     decision: GateDecision
@@ -195,6 +213,7 @@ class GateReport:
     worst_variant_edge: float | None
     variant_spread: float
     under_risk: bool
+    valuation_walk: BookWalk | None = None
 
 
 # Canonical check order for ``GateDecision.failed`` assembly.
@@ -437,15 +456,29 @@ def evaluate_candidate(
     """Evaluate the full tightened gate set for one candidate.
 
     The composite entry point over the frozen :func:`evaluate_gates`
-    (whose numeric signature cannot take a book): walks ``book`` to the
-    $250 VWAP on ``side`` (default entry ask), computes the exec and
+    (whose numeric signature cannot take a book): computes the exec and
     worst-variant edges versus the walked price, applies the 50-50
     cancellation haircut BEFORE the exec bar, raises the exec bar to +8c
     when ``under_risk`` is set, and requires the entry window, a
     completed $250 walk (real-depth intent), the Gamma liquidity floor
-    and a concordant :class:`NewsCheck`. ``model_quote`` is any object or
-    mapping exposing ``model_median`` and ``qs_variants`` for the side
-    being bought (e.g. :class:`~polymarket_alpha_lab.papersim.soccer_model.SoccerCandidate`);
+    and a concordant :class:`NewsCheck`.
+
+    Acceptance walk (codex-review F2 fix): every acceptance check --
+    ``fill_250``, ``entry_window``, the exec/worst-variant edges and
+    ``entry_price`` -- is computed from a walk this function performs
+    itself: ``walk_book(book, side='ask', notional=250)`` over the passed
+    book. The caller-configurable ``side``/``notional`` parameters never
+    feed an acceptance check (a caller must not be able to pass a $50
+    book by asking for a $50 walk, or pass a bid-side walk as if it were
+    the executable ask); when they differ from the hardcoded acceptance
+    parameters the configured walk is computed anyway and recorded as
+    ``GateReport.valuation_walk`` -- supplementary valuation information
+    only -- and invalid values still raise :class:`ValueError` from
+    :func:`walk_book`.
+
+    ``model_quote`` is any object or mapping exposing ``model_median``
+    and ``qs_variants`` for the side being bought (e.g.
+    :class:`~polymarket_alpha_lab.papersim.soccer_model.SoccerCandidate`);
     liquidity falls back to quote fields ``gamma_liquidity``/``liq_gamma``/``liq``
     and missing liquidity counts as 0 (the liq gate fails, lineage
     ``liq = b['liq'] or 0``). Missing news evidence fails the
@@ -461,7 +494,14 @@ def evaluate_candidate(
         liq = float(
             _quote_optional(model_quote, ("gamma_liquidity", "liq_gamma", "liq"), 0.0)
         )
-    walk = walk_book(book, side=side, notional=notional)
+    # Materialize once: the acceptance walk and the optional supplementary
+    # walk must see the same levels even when ``book`` is a generator.
+    levels = list(book)
+    # Acceptance walk: hardcoded $250 ASK walk, immune to caller side/notional.
+    walk = walk_book(levels, side=SIDE_ASK, notional=DEFAULT_NOTIONAL_USD)
+    valuation_walk = None
+    if (side, notional) != (SIDE_ASK, DEFAULT_NOTIONAL_USD):
+        valuation_walk = walk_book(levels, side=side, notional=notional)
     variant_spread = round(max(variants) - min(variants), 4)
     worst_model = min(variants)
     if walk.vwap is None:
@@ -506,13 +546,18 @@ def evaluate_candidate(
         worst_variant_edge=worst_edge,
         variant_spread=variant_spread,
         under_risk=bool(under_risk),
+        valuation_walk=valuation_walk,
     )
 
 
 def rank_candidates(reports: Iterable[GateReport]) -> list[GateReport]:
     """Rank gated candidates: worst-variant margin first, then exec edge.
 
-    Lineage ordering (r15 finalize): ``sort(key=(-edge_worst_variant,
+    Orders the survivors (usage.md): only reports whose ``decision``
+    passed are ranked (codex-review F6 fix) -- a rejected candidate
+    (news-discordant, liquidity-failed, thin book, out-of-window entry)
+    is excluded no matter how high its edges are. Lineage ordering
+    (r15 finalize): ``sort(key=(-edge_worst_variant,
     -edge_exec_haircut))`` -- agreement margin dominates, the
     haircut-adjusted exec edge breaks ties. Reports without computable
     edges (empty book) are not rankable and are dropped.
@@ -520,7 +565,9 @@ def rank_candidates(reports: Iterable[GateReport]) -> list[GateReport]:
     rankable = [
         r
         for r in reports
-        if r.worst_variant_edge is not None and r.exec_edge_haircut is not None
+        if r.decision.passed
+        and r.worst_variant_edge is not None
+        and r.exec_edge_haircut is not None
     ]
     return sorted(rankable, key=lambda r: (-r.worst_variant_edge, -r.exec_edge_haircut))
 
@@ -538,7 +585,23 @@ def evaluate_gates(
     callers must apply the 50-50 cancellation haircut (:func:`haircut_edge`)
     BEFORE calling, per the r15 application order (edge halved first,
     then barred). Boundary values pass (round-24 epsilon tolerances).
+
+    Non-finite inputs (NaN, +/-inf) are rejected with :class:`ValueError`
+    (codex-review F3 fix): NaN compares False against every threshold and
+    would otherwise pass all four gates.
     """
+    inputs = {
+        "variant_spread": variant_spread,
+        "worst_variant_edge": worst_variant_edge,
+        "median_exec_edge": median_exec_edge,
+        "gamma_liquidity": gamma_liquidity,
+    }
+    non_finite = [name for name, value in inputs.items() if not math.isfinite(value)]
+    if non_finite:
+        raise ValueError(
+            "evaluate_gates inputs must be finite numbers; non-finite: "
+            + ", ".join(non_finite)
+        )
     failed: list[str] = []
     if variant_spread > GATES["variant_spread_max"] + GATE_EPSILON:
         failed.append("variant_spread")

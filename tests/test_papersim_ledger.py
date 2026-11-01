@@ -13,12 +13,14 @@ from dataclasses import fields
 from hashlib import sha256
 import json
 import os
+import re
 from pathlib import Path
 
 import pytest
 
 from polymarket_alpha_lab.papersim import ledger
 from polymarket_alpha_lab.supabase_local_dsn import validate_local_postgres_dsn
+from polymarket_alpha_lab.supabase_papersim_config import SupabasePapersimConfig
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION_PATH = ROOT / "supabase" / "migrations" / ledger.PAPERSIM_LEDGER_MIGRATION_NAME
@@ -65,6 +67,61 @@ def test_ddl_exits_separated_from_wl_and_calibration_natural_only():
         "where r.outcome = any (array['yes'::text, 'no'::text, "
         "'yes-basket'::text])" in text
     )
+
+
+def test_ddl_calibration_hit_predicates_identical_in_both_expressions():
+    # F5 regression: forecast_hits and avg_prob_of_realized must use the
+    # exact same hit predicate, so a winning NO-basket row contributes
+    # model_prediction to avg_prob_of_realized instead of its complement.
+    view_sql = ledger.ddl().lower().split(
+        "create view public.forecast_calibration", 1
+    )[1]
+    predicates = [
+        " ".join(fragment.split())
+        for fragment in re.findall(r"case when (.*?) then ", view_sql, flags=re.DOTALL)
+    ]
+    assert len(predicates) == 2
+    expected_predicate = (
+        "(d.side = any (array['yes'::text, 'yes-basket'::text])) "
+        "and r.outcome = d.side "
+        "or d.side = 'no'::text and r.outcome = 'no'::text "
+        "or d.side = 'no-basket'::text and r.outcome = 'no'::text"
+    )
+    assert predicates[0] == expected_predicate
+    assert predicates[1] == expected_predicate
+
+
+@pytest.mark.parametrize(
+    "side,outcome,expected_hit",
+    [
+        ("YES", "YES", True),
+        ("YES", "NO", False),
+        ("YES-basket", "YES-basket", True),
+        ("YES-basket", "NO", False),
+        ("NO", "NO", True),
+        ("NO", "YES", False),
+        ("NO-basket", "NO", True),
+        ("NO-basket", "YES", False),
+    ],
+)
+def test_calibration_hit_matrix_matches_sql_predicate_semantics(
+    side, outcome, expected_hit
+):
+    # Direct evaluation of the predicate the SQL mirrors: YES/YES-basket
+    # sides hit when the outcome equals the side; NO/NO-basket sides hit
+    # when the outcome is NO (basket legs resolve on the natural NO).
+    assert ledger._natural_hit(side, outcome) is expected_hit
+
+
+def test_calibration_no_basket_win_yields_avg_prob_of_realized_prediction():
+    # The F5 book-of-record example: side='NO-basket', outcome='NO',
+    # prediction=0.9 must report a hit and contribute 0.9 (not the 0.1
+    # complement) to avg_prob_of_realized.
+    prediction = 0.9
+    hit = ledger._natural_hit("NO-basket", "NO")
+    assert hit is True
+    prob_of_realized = prediction if hit else 1.0 - prediction
+    assert prob_of_realized == pytest.approx(0.9)
 
 
 def test_migration_registered_in_lock_manifest():
@@ -267,6 +324,61 @@ def test_papersim_dsn_rejects_non_local_through_repo_validator(monkeypatch, bad)
     monkeypatch.setenv(ledger.PAPERSIM_PG_DSN_ENV_VAR, bad)
     with pytest.raises(ValueError, match="PAPERSIM_PG_DSN"):
         ledger.papersim_dsn()
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "not-a-dsn ",
+        "  postgresql://paper_sim@db.internal.example.com:5432/paper_sim",
+        "\npostgresql://paper_sim@10.0.0.5:5432/paper_sim\t",
+        "\tpapersim-ledger.jsonl\n",
+        " sqlite:///papersim.db ",
+    ],
+)
+def test_papersim_dsn_rejects_padded_bad_overrides_not_silent_default(
+    monkeypatch, bad
+):
+    # F4 regression: a nonempty override must never silently select the
+    # documented loopback default. Padded malformed/hosted/file values
+    # are stripped once and then rejected through the repo validator.
+    monkeypatch.setenv(ledger.PAPERSIM_PG_DSN_ENV_VAR, bad)
+    with pytest.raises(ValueError, match="PAPERSIM_PG_DSN"):
+        ledger.papersim_dsn()
+
+
+@pytest.mark.parametrize(
+    "padded",
+    [
+        "  postgresql://paper_sim@127.0.0.1:55432/paper_sim  ",
+        "\npostgresql://paper_sim@localhost:55432/paper_sim\t",
+        " host=127.0.0.1 port=55432 dbname=paper_sim user=paper_sim ",
+    ],
+)
+def test_papersim_dsn_padded_local_override_stripped_then_validated(
+    monkeypatch, padded
+):
+    # A padded VALID local DSN is accepted after a single strip pass.
+    monkeypatch.setenv(ledger.PAPERSIM_PG_DSN_ENV_VAR, padded)
+    resolved = ledger.papersim_dsn()
+    assert resolved == padded.strip()
+    validate_local_postgres_dsn(resolved, env_var_name="PAPERSIM_PG_DSN")
+
+
+@pytest.mark.parametrize("empty", ["", "   ", "\t\n\r "])
+def test_papersim_dsn_empty_or_whitespace_only_keeps_documented_default(
+    monkeypatch, empty
+):
+    # Only unset / empty / whitespace-only selects the documented default.
+    monkeypatch.setenv(ledger.PAPERSIM_PG_DSN_ENV_VAR, empty)
+    assert ledger.papersim_dsn() == ledger.DEFAULT_PAPERSIM_PG_DSN
+
+
+def test_papersim_config_rejects_malformed_override_at_construction():
+    # The environment boundary rejects at construction time, before any
+    # caller can resolve or echo a connection target.
+    with pytest.raises(ValueError, match="PAPERSIM_PG_DSN"):
+        SupabasePapersimConfig(dsn="not-a-dsn ")
 
 
 def test_papersim_dsn_accepts_explicit_environment_mapping():

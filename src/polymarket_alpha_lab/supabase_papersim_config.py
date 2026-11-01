@@ -18,8 +18,12 @@ DEFAULT_PAPERSIM_PG_DSN = "postgresql://paper_sim@127.0.0.1:55432/paper_sim"
 class SupabasePapersimConfig:
     """Validated paper-sim ledger DSN environment boundary.
 
-    ``dsn`` is ``None`` when ``PAPERSIM_PG_DSN`` is unset or empty; the
-    documented example default is applied by ``resolved_dsn``. The SCRAM
+    ``dsn`` is ``None`` when ``PAPERSIM_PG_DSN`` is unset, empty or
+    whitespace-only; the documented example default is applied by
+    ``resolved_dsn``. Any other override is whitespace-stripped once and
+    must then pass the single audited ``validate_local_postgres_dsn``:
+    a malformed or non-local override raises a configuration error and
+    never silently falls back to the default (codex-review F4). The SCRAM
     password is deliberately not part of this config: it is supplied
     out-of-band via ``PAPERSIM_PG_PASSWORD_FILE`` (an environment
     variable holding the path of a one-line password file) and is never
@@ -61,15 +65,23 @@ def from_papersim_db_env(
 
 
 def _normalize_optional_dsn(value: object) -> str | None:
+    """Normalize an explicit override; never silently drop a nonempty one.
+
+    ``None`` (unset) and values that are empty after stripping mean "use
+    the documented default". Every other value is stripped once and
+    returned for validation: ``__post_init__`` / ``resolved_dsn`` run the
+    single audited ``validate_local_postgres_dsn`` on it, so a padded or
+    unpadded malformed/hosted override raises a clear configuration
+    error instead of selecting the loopback default (codex-review F4).
+    """
     if value is None:
         return None
     if type(value) is not str:
         raise ValueError(f"{PAPERSIM_PG_DSN_ENV_VAR} must be a string")
-    if not value:
+    stripped = value.strip()
+    if not stripped:
         return None
-    if value.strip() != value:
-        return None
-    return value
+    return stripped
 
 
 __all__ = (
