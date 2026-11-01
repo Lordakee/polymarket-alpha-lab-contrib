@@ -68,6 +68,7 @@
     {"name":"20260915000000_research_dispatch_turns.sql","sha256":"e2f377662c43f1894818d3064e91ff192966c3521d82bd305c8fd6fed117e5f0","transaction_wrapper":false},
     {"name":"20260915010000_research_model_budgets.sql","sha256":"1413e9479daf69e53bcadaed336d8ee28ff9e486b7319c7ed53a0b63c14f467e","transaction_wrapper":false},
     {"name":"20260915020000_research_paper_simulations.sql","sha256":"60ba1277e25caef5ba75f44f8c3974cee63a964f1c9b9c14ff72d68cf5c75d17","transaction_wrapper":false},
-    {"name":"20260919000000_research_uncapped_audit.sql","sha256":"fabfe9b925de658ccd67b95b3de1fbbf372a21a7f9631fd0b5f7e2f161d2c06d","transaction_wrapper":false}
+    {"name":"20260919000000_research_uncapped_audit.sql","sha256":"fabfe9b925de658ccd67b95b3de1fbbf372a21a7f9631fd0b5f7e2f161d2c06d","transaction_wrapper":false},
+    {"name":"20261101000000_papersim_ledger.sql","sha256":"2c5444b30b71e50f289aa4186736b7f8b26280126fe7affadf95f68717383509","transaction_wrapper":false}
   ]
 }
