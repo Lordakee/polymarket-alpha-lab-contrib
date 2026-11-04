@@ -42,8 +42,11 @@ time; a round script can migrate one stage per round without big-bang
 rewrites:
 
 1. **Load xG data**: `xg.load_xg_snapshot(path)` reads a pre-fetched
-   Understat snapshot (no network access inside the library; fetching
-   stays with the external research tooling).
+   Understat snapshot (no network access inside the loaders; fetching
+   stays with the external research tooling — FotMob is the one
+   sanctioned exception, see "FotMob Championship snapshots" below,
+   whose explicit fetch functions are the package's only network
+   surface).
 2. **Price a soccer fixture**: `soccer_model.fixture_variants(snapshot,
    home, home_league, away, away_league)` evaluates all ten sweep
    variants (or returns `None` when the fixture is refused — see the
@@ -82,6 +85,70 @@ regardless of the bridge — `gates.suspension_policy` still suspends
 them until a league-strength-bridged UCL/UEL walk-forward backtest
 passes. The bridge below only re-enables the totals/BTTS-style
 channels through the guarded modeling path.
+
+## FotMob Championship snapshots (WP-P3)
+
+`papersim.fotmob` adapts FotMob's public unofficial JSON API (no key,
+no credentials) into the same Understat snapshot wire shape
+`xg.load_xg_snapshot` consumes. It exists for domestic leagues OUTSIDE
+Understat's Big-5 coverage: the EFL Championship is the validated
+source (league key `"Championship"`, `xg.DOMESTIC_LEAGUES` documents
+the known keys); Eredivisie's league id is verified but the adapter
+has not been validated against it yet.
+
+```python
+from polymarket_alpha_lab.papersim import fotmob
+
+fixtures = fotmob.fetch_fotmob_league(fotmob.FotMobLeague.CHAMPIONSHIP)  # current season
+prior = fotmob.fetch_fotmob_league(48, "2025/2026")                      # explicit season
+details = {mid: fotmob.fetch_match_details(mid) for mid in kept_match_ids}
+block = fotmob.fotmob_to_understat(
+    {"fixtures": prior, "details": details},
+    fotmob.FotMobLeague.CHAMPIONSHIP, "2025",
+)
+snapshot = {}  # merge blocks season by season, then model via xg/soccer_model
+```
+
+- **Rate limit**: both fetch functions share one module-wide
+  1 request / 1.3 s guard (`SLEEP_S`), matching the Phase 1 fetch
+  policy. FotMob's API is unofficial — keep the spacing and expect no
+  stability guarantees.
+- **Fail-closed**: `fotmob_to_understat` refuses to emit a block on
+  season drift, malformed fixture rows, a team table that does not
+  match the league size, or an xG skip rate above 5%
+  (`FotMobSchemaError`); nothing is returned.
+- **Kept matches**: numeric league rounds only (playoffs excluded),
+  finished, not cancelled, with an xG row — identical to the Phase 1
+  adapter filters. Per-match gaps are skipped and counted, bounded by
+  the skip-rate ceiling.
+- **Pure loaders**: `fotmob.load_fotmob_snapshot(path)` validates the
+  block structure (`teams` + `dates`, xG on every dates row) and never
+  touches the network.
+- Championship is DOMESTIC: `pair_lambdas` / `fixture_variants` treat
+  `home_league == away_league == "Championship"` pairs through the
+  standard 10-variant path; the cross-league guard applies unchanged
+  (a Championship-vs-EPL fixture still yields `None` without a
+  bridge).
+
+### Validation status and the known 1X2 limitation
+
+WP-P3 Phase 1 validation (2026-11-03, report
+`paper-sim/round31/fotmob_validation_report.md`): gates A-D PASS
+(schema/coverage, league goal fit, xG-goal correlation, walk-forward
+backtest vs a league-average baseline); gate E (market comparison)
+FAIL — 5 of 12 fixtures flipped the 1X2 favorite, because teams new to
+the snapshot season (relegated/promoted sides) fall back to
+league-average multipliers and the model compresses strong away
+favorites. Until that is fixed, Championship snapshots are sanctioned
+for **O/U totals, BTTS and team totals only**; 1X2 stays deprioritized
+under the frozen domestic match_winner policy (and cross-league 1X2
+remains banned regardless of any bridge).
+
+On this host `www.fotmob.com` DNS is pinned: for actual backfills use
+the server-side Phase 1 tool (`paper-sim/tools/fotmob_adapter.py`:
+DoH + `curl --resolve`, resumable on-disk matchDetails cache). The
+library fetch functions target environments with normal DNS
+resolution.
 
 ## The cross-league bridge path (WP-P2a)
 
@@ -150,8 +217,11 @@ country-coefficient anchor). Behavior details:
 ## What stays server-side
 
 - Raw data fetching (Understat pages, Binance/Coinbase prints, CLOB
-  books) stays in the external research tooling; the library itself
-  performs zero network access and consumes local snapshot files only.
+  books) stays in the external research tooling; the library consumes
+  local snapshot files only, with one sanctioned exception: the FotMob
+  fetch functions above (`papersim.fotmob`) are the package's only
+  network surface. The Phase 1 FotMob adapter/validator tools remain
+  the server-side backfill path for this host.
 - The live `/home/ubuntu/paper-sim` round records remain the book of
   record for past rounds; the library is the canonical implementation
   new rounds copy from, not a retro-edit of history (r12/r13 boundary

@@ -1,0 +1,1934 @@
+{
+ "Championship_2025": {
+  "teams": {
+   "10004": {
+    "id": "10004",
+    "title": "Millwall",
+    "history": [
+     {
+      "h_a": "a",
+      "xG": 2.09,
+      "xGA": 1.04,
+      "npxG": 2.09,
+      "npxGA": 1.04,
+      "scored": 2,
+      "missed": 1,
+      "result": "w",
+      "date": "2025-08-09 14:00:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 0.6,
+      "xGA": 0.99,
+      "npxG": 0.6,
+      "npxGA": 0.99,
+      "scored": 0,
+      "missed": 3,
+      "result": "l",
+      "date": "2025-08-16 14:00:00"
+     },
+     {
+      "h_a": "a",
+      "xG": 1.03,
+      "xGA": 0.73,
+      "npxG": 1.03,
+      "npxGA": 0.73,
+      "scored": 1,
+      "missed": 1,
+      "result": "d",
+      "date": "2025-09-13 11:30:00"
+     }
+    ]
+   },
+   "10170": {
+    "id": "10170",
+    "title": "Derby County",
+    "history": [
+     {
+      "h_a": "h",
+      "xG": 0.5,
+      "xGA": 0.74,
+      "npxG": 0.5,
+      "npxGA": 0.74,
+      "scored": 1,
+      "missed": 1,
+      "result": "d",
+      "date": "2025-08-22 19:00:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 0.34,
+      "xGA": 0.9,
+      "npxG": 0.34,
+      "npxGA": 0.9,
+      "scored": 0,
+      "missed": 1,
+      "result": "l",
+      "date": "2025-09-20 14:00:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 1.45,
+      "xGA": 0.65,
+      "npxG": 1.45,
+      "npxGA": 0.65,
+      "scored": 1,
+      "missed": 1,
+      "result": "d",
+      "date": "2025-09-30 19:00:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 0.95,
+      "xGA": 1.11,
+      "npxG": 0.95,
+      "npxGA": 1.11,
+      "scored": 1,
+      "missed": 0,
+      "result": "w",
+      "date": "2025-10-21 18:45:00"
+     }
+    ]
+   },
+   "8411": {
+    "id": "8411",
+    "title": "Preston North End",
+    "history": [
+     {
+      "h_a": "a",
+      "xG": 1.01,
+      "xGA": 1.58,
+      "npxG": 1.01,
+      "npxGA": 1.58,
+      "scored": 0,
+      "missed": 1,
+      "result": "l",
+      "date": "2025-08-30 14:00:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 0.75,
+      "xGA": 1.52,
+      "npxG": 0.75,
+      "npxGA": 1.52,
+      "scored": 2,
+      "missed": 2,
+      "result": "d",
+      "date": "2025-09-13 11:30:00"
+     },
+     {
+      "h_a": "a",
+      "xG": 0.9,
+      "xGA": 0.34,
+      "npxG": 0.9,
+      "npxGA": 0.34,
+      "scored": 1,
+      "missed": 0,
+      "result": "w",
+      "date": "2025-09-20 14:00:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 0.43,
+      "xGA": 2.32,
+      "npxG": 0.43,
+      "npxGA": 2.32,
+      "scored": 0,
+      "missed": 0,
+      "result": "d",
+      "date": "2025-09-27 14:00:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 1.81,
+      "xGA": 0.54,
+      "npxG": 1.81,
+      "npxGA": 0.54,
+      "scored": 2,
+      "missed": 0,
+      "result": "w",
+      "date": "2025-10-04 14:00:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 1.38,
+      "xGA": 0.83,
+      "npxG": 1.38,
+      "npxGA": 0.83,
+      "scored": 0,
+      "missed": 1,
+      "result": "l",
+      "date": "2025-10-21 18:45:00"
+     }
+    ]
+   },
+   "8427": {
+    "id": "8427",
+    "title": "Bristol City",
+    "history": [
+     {
+      "h_a": "h",
+      "xG": 0.73,
+      "xGA": 0.96,
+      "npxG": 0.73,
+      "npxGA": 0.96,
+      "scored": 0,
+      "missed": 0,
+      "result": "d",
+      "date": "2025-08-16 14:00:00"
+     },
+     {
+      "h_a": "a",
+      "xG": 0.74,
+      "xGA": 0.5,
+      "npxG": 0.74,
+      "npxGA": 0.5,
+      "scored": 1,
+      "missed": 1,
+      "result": "d",
+      "date": "2025-08-22 19:00:00"
+     },
+     {
+      "h_a": "a",
+      "xG": 2.32,
+      "xGA": 0.43,
+      "npxG": 2.32,
+      "npxGA": 0.43,
+      "scored": 0,
+      "missed": 0,
+      "result": "d",
+      "date": "2025-09-27 14:00:00"
+     },
+     {
+      "h_a": "a",
+      "xG": 2.06,
+      "xGA": 0.58,
+      "npxG": 2.06,
+      "npxGA": 0.58,
+      "scored": 1,
+      "missed": 0,
+      "result": "w",
+      "date": "2025-10-18 14:00:00"
+     }
+    ]
+   },
+   "8451": {
+    "id": "8451",
+    "title": "Charlton Athletic",
+    "history": [
+     {
+      "h_a": "a",
+      "xG": 0.96,
+      "xGA": 0.73,
+      "npxG": 0.96,
+      "npxGA": 0.73,
+      "scored": 0,
+      "missed": 0,
+      "result": "d",
+      "date": "2025-08-16 14:00:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 0.73,
+      "xGA": 1.03,
+      "npxG": 0.73,
+      "npxGA": 1.03,
+      "scored": 1,
+      "missed": 1,
+      "result": "d",
+      "date": "2025-09-13 11:30:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 1.47,
+      "xGA": 0.55,
+      "npxG": 1.47,
+      "npxGA": 0.55,
+      "scored": 3,
+      "missed": 0,
+      "result": "w",
+      "date": "2025-09-27 14:00:00"
+     },
+     {
+      "h_a": "a",
+      "xG": 0.65,
+      "xGA": 1.45,
+      "npxG": 0.65,
+      "npxGA": 1.45,
+      "scored": 1,
+      "missed": 1,
+      "result": "d",
+      "date": "2025-09-30 19:00:00"
+     },
+     {
+      "h_a": "a",
+      "xG": 0.54,
+      "xGA": 1.81,
+      "npxG": 0.54,
+      "npxGA": 1.81,
+      "scored": 0,
+      "missed": 2,
+      "result": "l",
+      "date": "2025-10-04 14:00:00"
+     }
+    ]
+   },
+   "8462": {
+    "id": "8462",
+    "title": "Portsmouth",
+    "history": [
+     {
+      "h_a": "h",
+      "xG": 1.76,
+      "xGA": 1.96,
+      "npxG": 0.97,
+      "npxGA": 1.96,
+      "scored": 1,
+      "missed": 2,
+      "result": "l",
+      "date": "2025-08-16 11:30:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 1.58,
+      "xGA": 1.01,
+      "npxG": 1.58,
+      "npxGA": 1.01,
+      "scored": 1,
+      "missed": 0,
+      "result": "w",
+      "date": "2025-08-30 14:00:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 0.48,
+      "xGA": 1.0,
+      "npxG": 0.48,
+      "npxGA": 1.0,
+      "scored": 1,
+      "missed": 0,
+      "result": "w",
+      "date": "2025-10-04 14:00:00"
+     }
+    ]
+   },
+   "8549": {
+    "id": "8549",
+    "title": "Middlesbrough",
+    "history": [
+     {
+      "h_a": "a",
+      "xG": 0.99,
+      "xGA": 0.6,
+      "npxG": 0.99,
+      "npxGA": 0.6,
+      "scored": 3,
+      "missed": 0,
+      "result": "w",
+      "date": "2025-08-16 14:00:00"
+     },
+     {
+      "h_a": "a",
+      "xG": 1.51,
+      "xGA": 1.18,
+      "npxG": 1.51,
+      "npxGA": 1.18,
+      "scored": 2,
+      "missed": 1,
+      "result": "w",
+      "date": "2025-08-23 14:00:00"
+     },
+     {
+      "h_a": "a",
+      "xG": 1.52,
+      "xGA": 0.75,
+      "npxG": 1.52,
+      "npxGA": 0.75,
+      "scored": 2,
+      "missed": 2,
+      "result": "d",
+      "date": "2025-09-13 11:30:00"
+     },
+     {
+      "h_a": "a",
+      "xG": 1.0,
+      "xGA": 0.48,
+      "npxG": 1.0,
+      "npxGA": 0.48,
+      "scored": 0,
+      "missed": 1,
+      "result": "l",
+      "date": "2025-10-04 14:00:00"
+     }
+    ]
+   },
+   "8655": {
+    "id": "8655",
+    "title": "Blackburn Rovers",
+    "history": [
+     {
+      "h_a": "h",
+      "xG": 0.43,
+      "xGA": 2.0,
+      "npxG": 0.43,
+      "npxGA": 1.21,
+      "scored": 1,
+      "missed": 2,
+      "result": "l",
+      "date": "2025-08-16 14:00:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 1.92,
+      "xGA": 2.09,
+      "npxG": 1.92,
+      "npxGA": 1.3,
+      "scored": 0,
+      "missed": 2,
+      "result": "l",
+      "date": "2025-08-30 14:00:00"
+     },
+     {
+      "h_a": "a",
+      "xG": 0.55,
+      "xGA": 1.47,
+      "npxG": 0.55,
+      "npxGA": 1.47,
+      "scored": 0,
+      "missed": 3,
+      "result": "l",
+      "date": "2025-09-27 14:00:00"
+     }
+    ]
+   },
+   "8658": {
+    "id": "8658",
+    "title": "Birmingham City",
+    "history": [
+     {
+      "h_a": "a",
+      "xG": 2.0,
+      "xGA": 0.43,
+      "npxG": 1.21,
+      "npxGA": 0.43,
+      "scored": 2,
+      "missed": 1,
+      "result": "w",
+      "date": "2025-08-16 14:00:00"
+     },
+     {
+      "h_a": "a",
+      "xG": 0.83,
+      "xGA": 1.38,
+      "npxG": 0.83,
+      "npxGA": 1.38,
+      "scored": 1,
+      "missed": 0,
+      "result": "w",
+      "date": "2025-10-21 18:45:00"
+     }
+    ]
+   },
+   "9850": {
+    "id": "9850",
+    "title": "Norwich City",
+    "history": [
+     {
+      "h_a": "h",
+      "xG": 1.04,
+      "xGA": 2.09,
+      "npxG": 1.04,
+      "npxGA": 2.09,
+      "scored": 1,
+      "missed": 2,
+      "result": "l",
+      "date": "2025-08-09 14:00:00"
+     },
+     {
+      "h_a": "a",
+      "xG": 1.96,
+      "xGA": 1.76,
+      "npxG": 1.96,
+      "npxGA": 0.97,
+      "scored": 2,
+      "missed": 1,
+      "result": "w",
+      "date": "2025-08-16 11:30:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 1.18,
+      "xGA": 1.51,
+      "npxG": 1.18,
+      "npxGA": 1.51,
+      "scored": 1,
+      "missed": 2,
+      "result": "l",
+      "date": "2025-08-23 14:00:00"
+     },
+     {
+      "h_a": "a",
+      "xG": 2.09,
+      "xGA": 1.92,
+      "npxG": 1.3,
+      "npxGA": 1.92,
+      "scored": 2,
+      "missed": 0,
+      "result": "w",
+      "date": "2025-08-30 14:00:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 0.58,
+      "xGA": 2.06,
+      "npxG": 0.58,
+      "npxGA": 2.06,
+      "scored": 0,
+      "missed": 1,
+      "result": "l",
+      "date": "2025-10-18 14:00:00"
+     },
+     {
+      "h_a": "a",
+      "xG": 1.11,
+      "xGA": 0.95,
+      "npxG": 1.11,
+      "npxGA": 0.95,
+      "scored": 0,
+      "missed": 1,
+      "result": "l",
+      "date": "2025-10-21 18:45:00"
+     }
+    ]
+   }
+  },
+  "dates": [
+   {
+    "id": "4825024",
+    "isResult": true,
+    "h": {
+     "id": "9850",
+     "title": "Norwich City",
+     "short_title": "Norwich"
+    },
+    "a": {
+     "id": "10004",
+     "title": "Millwall",
+     "short_title": "Millwall"
+    },
+    "goals": {
+     "h": "1",
+     "a": "2"
+    },
+    "xG": {
+     "h": "1.04",
+     "a": "2.09"
+    },
+    "datetime": "2025-08-09 14:00:00"
+   },
+   {
+    "id": "4825051",
+    "isResult": true,
+    "h": {
+     "id": "8462",
+     "title": "Portsmouth",
+     "short_title": "Portsmouth"
+    },
+    "a": {
+     "id": "9850",
+     "title": "Norwich City",
+     "short_title": "Norwich"
+    },
+    "goals": {
+     "h": "1",
+     "a": "2"
+    },
+    "xG": {
+     "h": "1.76",
+     "a": "1.96"
+    },
+    "datetime": "2025-08-16 11:30:00"
+   },
+   {
+    "id": "4825045",
+    "isResult": true,
+    "h": {
+     "id": "8655",
+     "title": "Blackburn Rovers",
+     "short_title": "Blackburn"
+    },
+    "a": {
+     "id": "8658",
+     "title": "Birmingham City",
+     "short_title": "Birmingham"
+    },
+    "goals": {
+     "h": "1",
+     "a": "2"
+    },
+    "xG": {
+     "h": "0.43",
+     "a": "2.00"
+    },
+    "datetime": "2025-08-16 14:00:00"
+   },
+   {
+    "id": "4825046",
+    "isResult": true,
+    "h": {
+     "id": "8427",
+     "title": "Bristol City",
+     "short_title": "Bristol City"
+    },
+    "a": {
+     "id": "8451",
+     "title": "Charlton Athletic",
+     "short_title": "Charlton"
+    },
+    "goals": {
+     "h": "0",
+     "a": "0"
+    },
+    "xG": {
+     "h": "0.73",
+     "a": "0.96"
+    },
+    "datetime": "2025-08-16 14:00:00"
+   },
+   {
+    "id": "4825050",
+    "isResult": true,
+    "h": {
+     "id": "10004",
+     "title": "Millwall",
+     "short_title": "Millwall"
+    },
+    "a": {
+     "id": "8549",
+     "title": "Middlesbrough",
+     "short_title": "Middlesbrough"
+    },
+    "goals": {
+     "h": "0",
+     "a": "3"
+    },
+    "xG": {
+     "h": "0.60",
+     "a": "0.99"
+    },
+    "datetime": "2025-08-16 14:00:00"
+   },
+   {
+    "id": "4825060",
+    "isResult": true,
+    "h": {
+     "id": "10170",
+     "title": "Derby County",
+     "short_title": "Derby"
+    },
+    "a": {
+     "id": "8427",
+     "title": "Bristol City",
+     "short_title": "Bristol City"
+    },
+    "goals": {
+     "h": "1",
+     "a": "1"
+    },
+    "xG": {
+     "h": "0.50",
+     "a": "0.74"
+    },
+    "datetime": "2025-08-22 19:00:00"
+   },
+   {
+    "id": "4825062",
+    "isResult": true,
+    "h": {
+     "id": "9850",
+     "title": "Norwich City",
+     "short_title": "Norwich"
+    },
+    "a": {
+     "id": "8549",
+     "title": "Middlesbrough",
+     "short_title": "Middlesbrough"
+    },
+    "goals": {
+     "h": "1",
+     "a": "2"
+    },
+    "xG": {
+     "h": "1.18",
+     "a": "1.51"
+    },
+    "datetime": "2025-08-23 14:00:00"
+   },
+   {
+    "id": "4825069",
+    "isResult": true,
+    "h": {
+     "id": "8655",
+     "title": "Blackburn Rovers",
+     "short_title": "Blackburn"
+    },
+    "a": {
+     "id": "9850",
+     "title": "Norwich City",
+     "short_title": "Norwich"
+    },
+    "goals": {
+     "h": "0",
+     "a": "2"
+    },
+    "xG": {
+     "h": "1.92",
+     "a": "2.09"
+    },
+    "datetime": "2025-08-30 14:00:00"
+   },
+   {
+    "id": "4825076",
+    "isResult": true,
+    "h": {
+     "id": "8462",
+     "title": "Portsmouth",
+     "short_title": "Portsmouth"
+    },
+    "a": {
+     "id": "8411",
+     "title": "Preston North End",
+     "short_title": "Preston"
+    },
+    "goals": {
+     "h": "1",
+     "a": "0"
+    },
+    "xG": {
+     "h": "1.58",
+     "a": "1.01"
+    },
+    "datetime": "2025-08-30 14:00:00"
+   },
+   {
+    "id": "4825081",
+    "isResult": true,
+    "h": {
+     "id": "8451",
+     "title": "Charlton Athletic",
+     "short_title": "Charlton"
+    },
+    "a": {
+     "id": "10004",
+     "title": "Millwall",
+     "short_title": "Millwall"
+    },
+    "goals": {
+     "h": "1",
+     "a": "1"
+    },
+    "xG": {
+     "h": "0.73",
+     "a": "1.03"
+    },
+    "datetime": "2025-09-13 11:30:00"
+   },
+   {
+    "id": "4825085",
+    "isResult": true,
+    "h": {
+     "id": "8411",
+     "title": "Preston North End",
+     "short_title": "Preston"
+    },
+    "a": {
+     "id": "8549",
+     "title": "Middlesbrough",
+     "short_title": "Middlesbrough"
+    },
+    "goals": {
+     "h": "2",
+     "a": "2"
+    },
+    "xG": {
+     "h": "0.75",
+     "a": "1.52"
+    },
+    "datetime": "2025-09-13 11:30:00"
+   },
+   {
+    "id": "4825096",
+    "isResult": true,
+    "h": {
+     "id": "10170",
+     "title": "Derby County",
+     "short_title": "Derby"
+    },
+    "a": {
+     "id": "8411",
+     "title": "Preston North End",
+     "short_title": "Preston"
+    },
+    "goals": {
+     "h": "0",
+     "a": "1"
+    },
+    "xG": {
+     "h": "0.34",
+     "a": "0.90"
+    },
+    "datetime": "2025-09-20 14:00:00"
+   },
+   {
+    "id": "4825105",
+    "isResult": true,
+    "h": {
+     "id": "8451",
+     "title": "Charlton Athletic",
+     "short_title": "Charlton"
+    },
+    "a": {
+     "id": "8655",
+     "title": "Blackburn Rovers",
+     "short_title": "Blackburn"
+    },
+    "goals": {
+     "h": "3",
+     "a": "0"
+    },
+    "xG": {
+     "h": "1.47",
+     "a": "0.55"
+    },
+    "datetime": "2025-09-27 14:00:00"
+   },
+   {
+    "id": "4825109",
+    "isResult": true,
+    "h": {
+     "id": "8411",
+     "title": "Preston North End",
+     "short_title": "Preston"
+    },
+    "a": {
+     "id": "8427",
+     "title": "Bristol City",
+     "short_title": "Bristol City"
+    },
+    "goals": {
+     "h": "0",
+     "a": "0"
+    },
+    "xG": {
+     "h": "0.43",
+     "a": "2.32"
+    },
+    "datetime": "2025-09-27 14:00:00"
+   },
+   {
+    "id": "4825120",
+    "isResult": true,
+    "h": {
+     "id": "10170",
+     "title": "Derby County",
+     "short_title": "Derby"
+    },
+    "a": {
+     "id": "8451",
+     "title": "Charlton Athletic",
+     "short_title": "Charlton"
+    },
+    "goals": {
+     "h": "1",
+     "a": "1"
+    },
+    "xG": {
+     "h": "1.45",
+     "a": "0.65"
+    },
+    "datetime": "2025-09-30 19:00:00"
+   },
+   {
+    "id": "4825135",
+    "isResult": true,
+    "h": {
+     "id": "8462",
+     "title": "Portsmouth",
+     "short_title": "Portsmouth"
+    },
+    "a": {
+     "id": "8549",
+     "title": "Middlesbrough",
+     "short_title": "Middlesbrough"
+    },
+    "goals": {
+     "h": "1",
+     "a": "0"
+    },
+    "xG": {
+     "h": "0.48",
+     "a": "1.00"
+    },
+    "datetime": "2025-10-04 14:00:00"
+   },
+   {
+    "id": "4825136",
+    "isResult": true,
+    "h": {
+     "id": "8411",
+     "title": "Preston North End",
+     "short_title": "Preston"
+    },
+    "a": {
+     "id": "8451",
+     "title": "Charlton Athletic",
+     "short_title": "Charlton"
+    },
+    "goals": {
+     "h": "2",
+     "a": "0"
+    },
+    "xG": {
+     "h": "1.81",
+     "a": "0.54"
+    },
+    "datetime": "2025-10-04 14:00:00"
+   },
+   {
+    "id": "4825146",
+    "isResult": true,
+    "h": {
+     "id": "9850",
+     "title": "Norwich City",
+     "short_title": "Norwich"
+    },
+    "a": {
+     "id": "8427",
+     "title": "Bristol City",
+     "short_title": "Bristol City"
+    },
+    "goals": {
+     "h": "0",
+     "a": "1"
+    },
+    "xG": {
+     "h": "0.58",
+     "a": "2.06"
+    },
+    "datetime": "2025-10-18 14:00:00"
+   },
+   {
+    "id": "4825155",
+    "isResult": true,
+    "h": {
+     "id": "10170",
+     "title": "Derby County",
+     "short_title": "Derby"
+    },
+    "a": {
+     "id": "9850",
+     "title": "Norwich City",
+     "short_title": "Norwich"
+    },
+    "goals": {
+     "h": "1",
+     "a": "0"
+    },
+    "xG": {
+     "h": "0.95",
+     "a": "1.11"
+    },
+    "datetime": "2025-10-21 18:45:00"
+   },
+   {
+    "id": "4825160",
+    "isResult": true,
+    "h": {
+     "id": "8411",
+     "title": "Preston North End",
+     "short_title": "Preston"
+    },
+    "a": {
+     "id": "8658",
+     "title": "Birmingham City",
+     "short_title": "Birmingham"
+    },
+    "goals": {
+     "h": "0",
+     "a": "1"
+    },
+    "xG": {
+     "h": "1.38",
+     "a": "0.83"
+    },
+    "datetime": "2025-10-21 18:45:00"
+   }
+  ]
+ },
+ "Championship_2026": {
+  "teams": {
+   "10004": {
+    "id": "10004",
+    "title": "Millwall",
+    "history": [
+     {
+      "h_a": "a",
+      "xG": 3.4,
+      "xGA": 0.52,
+      "npxG": 3.4,
+      "npxGA": 0.52,
+      "scored": 2,
+      "missed": 0,
+      "result": "w",
+      "date": "2026-08-15 14:00:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 2.69,
+      "xGA": 1.02,
+      "npxG": 2.69,
+      "npxGA": 1.02,
+      "scored": 3,
+      "missed": 0,
+      "result": "w",
+      "date": "2026-08-22 11:30:00"
+     },
+     {
+      "h_a": "a",
+      "xG": 1.63,
+      "xGA": 1.23,
+      "npxG": 0.85,
+      "npxGA": 1.23,
+      "scored": 1,
+      "missed": 3,
+      "result": "l",
+      "date": "2026-09-12 14:00:00"
+     },
+     {
+      "h_a": "a",
+      "xG": 1.69,
+      "xGA": 1.52,
+      "npxG": 1.69,
+      "npxGA": 1.52,
+      "scored": 2,
+      "missed": 2,
+      "result": "d",
+      "date": "2026-09-15 18:45:00"
+     },
+     {
+      "h_a": "a",
+      "xG": 1.09,
+      "xGA": 0.65,
+      "npxG": 1.09,
+      "npxGA": 0.65,
+      "scored": 1,
+      "missed": 0,
+      "result": "w",
+      "date": "2026-10-10 14:00:00"
+     }
+    ]
+   },
+   "10170": {
+    "id": "10170",
+    "title": "Derby County",
+    "history": [
+     {
+      "h_a": "a",
+      "xG": 1.0,
+      "xGA": 0.97,
+      "npxG": 1.0,
+      "npxGA": 0.97,
+      "scored": 1,
+      "missed": 2,
+      "result": "l",
+      "date": "2026-08-15 14:00:00"
+     },
+     {
+      "h_a": "a",
+      "xG": 0.55,
+      "xGA": 0.84,
+      "npxG": 0.55,
+      "npxGA": 0.84,
+      "scored": 2,
+      "missed": 0,
+      "result": "w",
+      "date": "2026-09-01 18:45:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 1.11,
+      "xGA": 3.17,
+      "npxG": 1.11,
+      "npxGA": 3.17,
+      "scored": 1,
+      "missed": 2,
+      "result": "l",
+      "date": "2026-09-12 11:30:00"
+     }
+    ]
+   },
+   "8411": {
+    "id": "8411",
+    "title": "Preston North End",
+    "history": [
+     {
+      "h_a": "a",
+      "xG": 1.32,
+      "xGA": 0.74,
+      "npxG": 1.32,
+      "npxGA": 0.74,
+      "scored": 0,
+      "missed": 1,
+      "result": "l",
+      "date": "2026-08-29 14:00:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 1.91,
+      "xGA": 1.78,
+      "npxG": 1.91,
+      "npxGA": 1.78,
+      "scored": 1,
+      "missed": 3,
+      "result": "l",
+      "date": "2026-09-01 18:45:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 2.19,
+      "xGA": 1.09,
+      "npxG": 2.19,
+      "npxGA": 1.09,
+      "scored": 2,
+      "missed": 1,
+      "result": "w",
+      "date": "2026-09-05 11:30:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 0.65,
+      "xGA": 1.09,
+      "npxG": 0.65,
+      "npxGA": 1.09,
+      "scored": 0,
+      "missed": 1,
+      "result": "l",
+      "date": "2026-10-10 14:00:00"
+     }
+    ]
+   },
+   "8427": {
+    "id": "8427",
+    "title": "Bristol City",
+    "history": [
+     {
+      "h_a": "h",
+      "xG": 0.52,
+      "xGA": 3.4,
+      "npxG": 0.52,
+      "npxGA": 3.4,
+      "scored": 0,
+      "missed": 2,
+      "result": "l",
+      "date": "2026-08-15 14:00:00"
+     },
+     {
+      "h_a": "a",
+      "xG": 1.51,
+      "xGA": 1.5,
+      "npxG": 1.51,
+      "npxGA": 0.71,
+      "scored": 2,
+      "missed": 2,
+      "result": "d",
+      "date": "2026-08-22 11:30:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 0.61,
+      "xGA": 1.37,
+      "npxG": 0.61,
+      "npxGA": 0.58,
+      "scored": 2,
+      "missed": 1,
+      "result": "w",
+      "date": "2026-08-29 14:00:00"
+     },
+     {
+      "h_a": "a",
+      "xG": 1.78,
+      "xGA": 1.91,
+      "npxG": 1.78,
+      "npxGA": 1.91,
+      "scored": 3,
+      "missed": 1,
+      "result": "w",
+      "date": "2026-09-01 18:45:00"
+     },
+     {
+      "h_a": "a",
+      "xG": 1.47,
+      "xGA": 1.78,
+      "npxG": 0.68,
+      "npxGA": 1.78,
+      "scored": 1,
+      "missed": 1,
+      "result": "d",
+      "date": "2026-10-10 11:30:00"
+     }
+    ]
+   },
+   "8451": {
+    "id": "8451",
+    "title": "Charlton Athletic",
+    "history": [
+     {
+      "h_a": "h",
+      "xG": 0.97,
+      "xGA": 1.0,
+      "npxG": 0.97,
+      "npxGA": 1.0,
+      "scored": 2,
+      "missed": 1,
+      "result": "w",
+      "date": "2026-08-15 14:00:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 0.74,
+      "xGA": 1.32,
+      "npxG": 0.74,
+      "npxGA": 1.32,
+      "scored": 1,
+      "missed": 0,
+      "result": "w",
+      "date": "2026-08-29 14:00:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 0.82,
+      "xGA": 0.4,
+      "npxG": 0.82,
+      "npxGA": 0.4,
+      "scored": 0,
+      "missed": 0,
+      "result": "d",
+      "date": "2026-09-12 14:00:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 1.78,
+      "xGA": 1.47,
+      "npxG": 1.78,
+      "npxGA": 0.68,
+      "scored": 1,
+      "missed": 1,
+      "result": "d",
+      "date": "2026-10-10 11:30:00"
+     }
+    ]
+   },
+   "8462": {
+    "id": "8462",
+    "title": "Portsmouth",
+    "history": [
+     {
+      "h_a": "a",
+      "xG": 1.37,
+      "xGA": 0.61,
+      "npxG": 0.58,
+      "npxGA": 0.61,
+      "scored": 1,
+      "missed": 2,
+      "result": "l",
+      "date": "2026-08-29 14:00:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 0.84,
+      "xGA": 0.55,
+      "npxG": 0.84,
+      "npxGA": 0.55,
+      "scored": 0,
+      "missed": 2,
+      "result": "l",
+      "date": "2026-09-01 18:45:00"
+     },
+     {
+      "h_a": "a",
+      "xG": 0.4,
+      "xGA": 0.82,
+      "npxG": 0.4,
+      "npxGA": 0.82,
+      "scored": 0,
+      "missed": 0,
+      "result": "d",
+      "date": "2026-09-12 14:00:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 1.6,
+      "xGA": 0.59,
+      "npxG": 1.6,
+      "npxGA": 0.59,
+      "scored": 2,
+      "missed": 2,
+      "result": "d",
+      "date": "2026-09-19 14:00:00"
+     }
+    ]
+   },
+   "8549": {
+    "id": "8549",
+    "title": "Middlesbrough",
+    "history": [
+     {
+      "h_a": "a",
+      "xG": 1.43,
+      "xGA": 0.91,
+      "npxG": 1.43,
+      "npxGA": 0.91,
+      "scored": 1,
+      "missed": 2,
+      "result": "l",
+      "date": "2026-08-22 14:00:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 2.38,
+      "xGA": 1.76,
+      "npxG": 2.38,
+      "npxGA": 1.76,
+      "scored": 4,
+      "missed": 3,
+      "result": "w",
+      "date": "2026-09-12 14:00:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 1.52,
+      "xGA": 1.69,
+      "npxG": 1.52,
+      "npxGA": 1.69,
+      "scored": 2,
+      "missed": 2,
+      "result": "d",
+      "date": "2026-09-15 18:45:00"
+     },
+     {
+      "h_a": "a",
+      "xG": 2.14,
+      "xGA": 1.23,
+      "npxG": 2.14,
+      "npxGA": 1.23,
+      "scored": 2,
+      "missed": 2,
+      "result": "d",
+      "date": "2026-09-19 14:00:00"
+     }
+    ]
+   },
+   "8655": {
+    "id": "8655",
+    "title": "Blackburn Rovers",
+    "history": [
+     {
+      "h_a": "h",
+      "xG": 0.91,
+      "xGA": 1.43,
+      "npxG": 0.91,
+      "npxGA": 1.43,
+      "scored": 2,
+      "missed": 1,
+      "result": "w",
+      "date": "2026-08-22 14:00:00"
+     },
+     {
+      "h_a": "a",
+      "xG": 1.09,
+      "xGA": 2.19,
+      "npxG": 1.09,
+      "npxGA": 2.19,
+      "scored": 1,
+      "missed": 2,
+      "result": "l",
+      "date": "2026-09-05 11:30:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 1.23,
+      "xGA": 1.63,
+      "npxG": 1.23,
+      "npxGA": 0.85,
+      "scored": 3,
+      "missed": 1,
+      "result": "w",
+      "date": "2026-09-12 14:00:00"
+     },
+     {
+      "h_a": "a",
+      "xG": 0.59,
+      "xGA": 1.6,
+      "npxG": 0.59,
+      "npxGA": 1.6,
+      "scored": 2,
+      "missed": 2,
+      "result": "d",
+      "date": "2026-09-19 14:00:00"
+     }
+    ]
+   },
+   "8658": {
+    "id": "8658",
+    "title": "Birmingham City",
+    "history": [
+     {
+      "h_a": "h",
+      "xG": 1.5,
+      "xGA": 1.51,
+      "npxG": 0.71,
+      "npxGA": 1.51,
+      "scored": 2,
+      "missed": 2,
+      "result": "d",
+      "date": "2026-08-22 11:30:00"
+     },
+     {
+      "h_a": "a",
+      "xG": 1.63,
+      "xGA": 1.01,
+      "npxG": 1.63,
+      "npxGA": 1.01,
+      "scored": 1,
+      "missed": 2,
+      "result": "l",
+      "date": "2026-09-09 18:45:00"
+     },
+     {
+      "h_a": "a",
+      "xG": 3.17,
+      "xGA": 1.11,
+      "npxG": 3.17,
+      "npxGA": 1.11,
+      "scored": 2,
+      "missed": 1,
+      "result": "w",
+      "date": "2026-09-12 11:30:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 1.23,
+      "xGA": 2.14,
+      "npxG": 1.23,
+      "npxGA": 2.14,
+      "scored": 2,
+      "missed": 2,
+      "result": "d",
+      "date": "2026-09-19 14:00:00"
+     }
+    ]
+   },
+   "9850": {
+    "id": "9850",
+    "title": "Norwich City",
+    "history": [
+     {
+      "h_a": "a",
+      "xG": 1.02,
+      "xGA": 2.69,
+      "npxG": 1.02,
+      "npxGA": 2.69,
+      "scored": 0,
+      "missed": 3,
+      "result": "l",
+      "date": "2026-08-22 11:30:00"
+     },
+     {
+      "h_a": "h",
+      "xG": 1.01,
+      "xGA": 1.63,
+      "npxG": 1.01,
+      "npxGA": 1.63,
+      "scored": 2,
+      "missed": 1,
+      "result": "w",
+      "date": "2026-09-09 18:45:00"
+     },
+     {
+      "h_a": "a",
+      "xG": 1.76,
+      "xGA": 2.38,
+      "npxG": 1.76,
+      "npxGA": 2.38,
+      "scored": 3,
+      "missed": 4,
+      "result": "l",
+      "date": "2026-09-12 14:00:00"
+     }
+    ]
+   }
+  },
+  "dates": [
+   {
+    "id": "5836756",
+    "isResult": true,
+    "h": {
+     "id": "8427",
+     "title": "Bristol City",
+     "short_title": "Bristol City"
+    },
+    "a": {
+     "id": "10004",
+     "title": "Millwall",
+     "short_title": "Millwall"
+    },
+    "goals": {
+     "h": "0",
+     "a": "2"
+    },
+    "xG": {
+     "h": "0.52",
+     "a": "3.40"
+    },
+    "datetime": "2026-08-15 14:00:00"
+   },
+   {
+    "id": "5836757",
+    "isResult": true,
+    "h": {
+     "id": "8451",
+     "title": "Charlton Athletic",
+     "short_title": "Charlton"
+    },
+    "a": {
+     "id": "10170",
+     "title": "Derby County",
+     "short_title": "Derby"
+    },
+    "goals": {
+     "h": "2",
+     "a": "1"
+    },
+    "xG": {
+     "h": "0.97",
+     "a": "1.00"
+    },
+    "datetime": "2026-08-15 14:00:00"
+   },
+   {
+    "id": "5836766",
+    "isResult": true,
+    "h": {
+     "id": "8658",
+     "title": "Birmingham City",
+     "short_title": "Birmingham"
+    },
+    "a": {
+     "id": "8427",
+     "title": "Bristol City",
+     "short_title": "Bristol City"
+    },
+    "goals": {
+     "h": "2",
+     "a": "2"
+    },
+    "xG": {
+     "h": "1.50",
+     "a": "1.51"
+    },
+    "datetime": "2026-08-22 11:30:00"
+   },
+   {
+    "id": "5836770",
+    "isResult": true,
+    "h": {
+     "id": "10004",
+     "title": "Millwall",
+     "short_title": "Millwall"
+    },
+    "a": {
+     "id": "9850",
+     "title": "Norwich City",
+     "short_title": "Norwich"
+    },
+    "goals": {
+     "h": "3",
+     "a": "0"
+    },
+    "xG": {
+     "h": "2.69",
+     "a": "1.02"
+    },
+    "datetime": "2026-08-22 11:30:00"
+   },
+   {
+    "id": "5836767",
+    "isResult": true,
+    "h": {
+     "id": "8655",
+     "title": "Blackburn Rovers",
+     "short_title": "Blackburn"
+    },
+    "a": {
+     "id": "8549",
+     "title": "Middlesbrough",
+     "short_title": "Middlesbrough"
+    },
+    "goals": {
+     "h": "2",
+     "a": "1"
+    },
+    "xG": {
+     "h": "0.91",
+     "a": "1.43"
+    },
+    "datetime": "2026-08-22 14:00:00"
+   },
+   {
+    "id": "5836780",
+    "isResult": true,
+    "h": {
+     "id": "8427",
+     "title": "Bristol City",
+     "short_title": "Bristol City"
+    },
+    "a": {
+     "id": "8462",
+     "title": "Portsmouth",
+     "short_title": "Portsmouth"
+    },
+    "goals": {
+     "h": "2",
+     "a": "1"
+    },
+    "xG": {
+     "h": "0.61",
+     "a": "1.37"
+    },
+    "datetime": "2026-08-29 14:00:00"
+   },
+   {
+    "id": "5836782",
+    "isResult": true,
+    "h": {
+     "id": "8451",
+     "title": "Charlton Athletic",
+     "short_title": "Charlton"
+    },
+    "a": {
+     "id": "8411",
+     "title": "Preston North End",
+     "short_title": "Preston"
+    },
+    "goals": {
+     "h": "1",
+     "a": "0"
+    },
+    "xG": {
+     "h": "0.74",
+     "a": "1.32"
+    },
+    "datetime": "2026-08-29 14:00:00"
+   },
+   {
+    "id": "5836792",
+    "isResult": true,
+    "h": {
+     "id": "8462",
+     "title": "Portsmouth",
+     "short_title": "Portsmouth"
+    },
+    "a": {
+     "id": "10170",
+     "title": "Derby County",
+     "short_title": "Derby"
+    },
+    "goals": {
+     "h": "0",
+     "a": "2"
+    },
+    "xG": {
+     "h": "0.84",
+     "a": "0.55"
+    },
+    "datetime": "2026-09-01 18:45:00"
+   },
+   {
+    "id": "5836793",
+    "isResult": true,
+    "h": {
+     "id": "8411",
+     "title": "Preston North End",
+     "short_title": "Preston"
+    },
+    "a": {
+     "id": "8427",
+     "title": "Bristol City",
+     "short_title": "Bristol City"
+    },
+    "goals": {
+     "h": "1",
+     "a": "3"
+    },
+    "xG": {
+     "h": "1.91",
+     "a": "1.78"
+    },
+    "datetime": "2026-09-01 18:45:00"
+   },
+   {
+    "id": "5836807",
+    "isResult": true,
+    "h": {
+     "id": "8411",
+     "title": "Preston North End",
+     "short_title": "Preston"
+    },
+    "a": {
+     "id": "8655",
+     "title": "Blackburn Rovers",
+     "short_title": "Blackburn"
+    },
+    "goals": {
+     "h": "2",
+     "a": "1"
+    },
+    "xG": {
+     "h": "2.19",
+     "a": "1.09"
+    },
+    "datetime": "2026-09-05 11:30:00"
+   },
+   {
+    "id": "5836824",
+    "isResult": true,
+    "h": {
+     "id": "9850",
+     "title": "Norwich City",
+     "short_title": "Norwich"
+    },
+    "a": {
+     "id": "8658",
+     "title": "Birmingham City",
+     "short_title": "Birmingham"
+    },
+    "goals": {
+     "h": "2",
+     "a": "1"
+    },
+    "xG": {
+     "h": "1.01",
+     "a": "1.63"
+    },
+    "datetime": "2026-09-09 18:45:00"
+   },
+   {
+    "id": "5836829",
+    "isResult": true,
+    "h": {
+     "id": "10170",
+     "title": "Derby County",
+     "short_title": "Derby"
+    },
+    "a": {
+     "id": "8658",
+     "title": "Birmingham City",
+     "short_title": "Birmingham"
+    },
+    "goals": {
+     "h": "1",
+     "a": "2"
+    },
+    "xG": {
+     "h": "1.11",
+     "a": "3.17"
+    },
+    "datetime": "2026-09-12 11:30:00"
+   },
+   {
+    "id": "5836826",
+    "isResult": true,
+    "h": {
+     "id": "8655",
+     "title": "Blackburn Rovers",
+     "short_title": "Blackburn"
+    },
+    "a": {
+     "id": "10004",
+     "title": "Millwall",
+     "short_title": "Millwall"
+    },
+    "goals": {
+     "h": "3",
+     "a": "1"
+    },
+    "xG": {
+     "h": "1.23",
+     "a": "1.63"
+    },
+    "datetime": "2026-09-12 14:00:00"
+   },
+   {
+    "id": "5836828",
+    "isResult": true,
+    "h": {
+     "id": "8451",
+     "title": "Charlton Athletic",
+     "short_title": "Charlton"
+    },
+    "a": {
+     "id": "8462",
+     "title": "Portsmouth",
+     "short_title": "Portsmouth"
+    },
+    "goals": {
+     "h": "0",
+     "a": "0"
+    },
+    "xG": {
+     "h": "0.82",
+     "a": "0.40"
+    },
+    "datetime": "2026-09-12 14:00:00"
+   },
+   {
+    "id": "5836830",
+    "isResult": true,
+    "h": {
+     "id": "8549",
+     "title": "Middlesbrough",
+     "short_title": "Middlesbrough"
+    },
+    "a": {
+     "id": "9850",
+     "title": "Norwich City",
+     "short_title": "Norwich"
+    },
+    "goals": {
+     "h": "4",
+     "a": "3"
+    },
+    "xG": {
+     "h": "2.38",
+     "a": "1.76"
+    },
+    "datetime": "2026-09-12 14:00:00"
+   },
+   {
+    "id": "5836818",
+    "isResult": true,
+    "h": {
+     "id": "8549",
+     "title": "Middlesbrough",
+     "short_title": "Middlesbrough"
+    },
+    "a": {
+     "id": "10004",
+     "title": "Millwall",
+     "short_title": "Millwall"
+    },
+    "goals": {
+     "h": "2",
+     "a": "2"
+    },
+    "xG": {
+     "h": "1.52",
+     "a": "1.69"
+    },
+    "datetime": "2026-09-15 18:45:00"
+   },
+   {
+    "id": "5836838",
+    "isResult": true,
+    "h": {
+     "id": "8658",
+     "title": "Birmingham City",
+     "short_title": "Birmingham"
+    },
+    "a": {
+     "id": "8549",
+     "title": "Middlesbrough",
+     "short_title": "Middlesbrough"
+    },
+    "goals": {
+     "h": "2",
+     "a": "2"
+    },
+    "xG": {
+     "h": "1.23",
+     "a": "2.14"
+    },
+    "datetime": "2026-09-19 14:00:00"
+   },
+   {
+    "id": "5836845",
+    "isResult": true,
+    "h": {
+     "id": "8462",
+     "title": "Portsmouth",
+     "short_title": "Portsmouth"
+    },
+    "a": {
+     "id": "8655",
+     "title": "Blackburn Rovers",
+     "short_title": "Blackburn"
+    },
+    "goals": {
+     "h": "2",
+     "a": "2"
+    },
+    "xG": {
+     "h": "1.60",
+     "a": "0.59"
+    },
+    "datetime": "2026-09-19 14:00:00"
+   },
+   {
+    "id": "5836852",
+    "isResult": true,
+    "h": {
+     "id": "8451",
+     "title": "Charlton Athletic",
+     "short_title": "Charlton"
+    },
+    "a": {
+     "id": "8427",
+     "title": "Bristol City",
+     "short_title": "Bristol City"
+    },
+    "goals": {
+     "h": "1",
+     "a": "1"
+    },
+    "xG": {
+     "h": "1.78",
+     "a": "1.47"
+    },
+    "datetime": "2026-10-10 11:30:00"
+   },
+   {
+    "id": "5836855",
+    "isResult": true,
+    "h": {
+     "id": "8411",
+     "title": "Preston North End",
+     "short_title": "Preston"
+    },
+    "a": {
+     "id": "10004",
+     "title": "Millwall",
+     "short_title": "Millwall"
+    },
+    "goals": {
+     "h": "0",
+     "a": "1"
+    },
+    "xG": {
+     "h": "0.65",
+     "a": "1.09"
+    },
+    "datetime": "2026-10-10 14:00:00"
+   }
+  ]
+ }
+}

@@ -30,6 +30,15 @@ Implementation notes (frozen arithmetic, do not tune):
   blended goal rates divided by the prior-season league average. Teams
   missing from the prior season (promoted sides) fall back to the league
   average for their last-season rate, exactly as the lineage did.
+- Known domestic league registry: :data:`UNDERSTAT_LEAGUES` holds the
+  Big-5 Understat snapshot keys of the lineage snapshots;
+  :data:`DOMESTIC_LEAGUES` adds the FotMob-sourced ``"Championship"``
+  key (WP-P3; adapter :mod:`polymarket_alpha_lab.papersim.fotmob`).
+  The registry documents which domestic leagues have validated
+  snapshot sources — it is NOT an allowlist: ``pair_lambdas`` resolves
+  any league key present in the snapshot (synthetic lowercase test
+  leagues included), and ``"Championship"`` pairs are ordinary
+  same-league domestic fixtures on the standard 10-variant path.
 - Cross-league guard: domestic multipliers from different leagues are
   not comparable; :func:`pair_lambdas` returns ``None`` whenever the two
   clubs' leagues differ. The guard is structural and unrelaxable (the
@@ -51,11 +60,13 @@ from typing import Mapping
 from polymarket_alpha_lab.papersim.league_strength import bridge_factor
 
 __all__ = [
+    "DOMESTIC_LEAGUES",
     "LeagueGoalFit",
     "LeagueRatings",
     "RATING_MODES",
     "RecentForm",
     "SEASON_GAMES",
+    "UNDERSTAT_LEAGUES",
     "XgTeamRow",
     "league_goal_fit",
     "load_xg_snapshot",
@@ -72,7 +83,25 @@ __all__ = [
 #: One full league season of matches. The last-season per-team rate enters
 #: the shrinkage blend with weight ``last_weight * SEASON_GAMES``
 #: pseudo-matches (frozen from scan15.py / model23.py / model24.py).
+#: The Championship (FotMob, WP-P3) is a 46-game, 24-team league but
+#: runs the SAME frozen weight on the standard 10-variant path — the
+#: WP-P3 Phase 1 walk-forward backtest (gate D, 2026-11-03) validated
+#: exactly these constants; do not retune per league.
 SEASON_GAMES = 38
+
+#: The Big-5 Understat league keys present in the canonical lineage
+#: snapshots (``round5/raw/xg_understat_5c.json``,
+#: ``round13/raw/xg_understat_13.json`` and the r23 league files).
+UNDERSTAT_LEAGUES = frozenset({"EPL", "La_liga", "Serie_A", "Bundesliga", "Ligue_1"})
+
+#: Known domestic league keys with validated snapshot sources: the
+#: Big-5 Understat set above plus the FotMob-sourced ``"Championship"``
+#: (WP-P3 Phase 1, validated 2026-11-03; fetched through
+#: :mod:`polymarket_alpha_lab.papersim.fotmob`). A documentation
+#: registry, NOT an allowlist gate: :func:`pair_lambdas` accepts any
+#: league key present in the snapshot, and Championship pairs are
+#: same-league domestic fixtures on the standard 10-variant path.
+DOMESTIC_LEAGUES = UNDERSTAT_LEAGUES | frozenset({"Championship"})
 
 #: Rating modes: ``"blend"`` (current + last + league prior), ``"cur"``
 #: (current-season rates only) and ``"last"`` (last-season rates only).
@@ -544,9 +573,11 @@ def pair_lambdas(
     league's current-season team table. Otherwise computes
     ``lambda_home = home_rate * attack_home**shrink * defense_away**shrink``
     and ``lambda_away = away_rate * attack_away**shrink * defense_home**shrink``
-    from the selected rating mode. Teams present in the table but without
-    current-season history use league-average (1.0, 1.0) multipliers, as
-    in the lineage.
+    from the selected rating mode. ``"Championship"`` fixtures
+    (FotMob-sourced, :data:`DOMESTIC_LEAGUES`) are ordinary domestic
+    same-league pairs on this standard path (WP-P3). Teams present in
+    the table but without current-season history use league-average
+    (1.0, 1.0) multipliers, as in the lineage.
     """
     if home_league != away_league:
         if bridge is None:
