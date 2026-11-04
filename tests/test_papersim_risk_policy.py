@@ -362,3 +362,72 @@ def test_bankroll_identity_composes_with_settle_record():
 def _realized_payoffs(summary: RecordSummary, positions) -> list[float]:
     assert summary.payoff_total == pytest.approx(sum(p.proceeds for p in positions if p.status != STATUS_OPEN))
     return [p.proceeds for p in positions if p.status != STATUS_OPEN]
+
+
+# ---------------------------------------------------------------------------
+# Non-finite amount rejection (codex review 2026-11-03, major 2)
+#
+# NaN compares False against every bound, so an unvalidated amount
+# silently disappeared into the clamp: bankroll_available(10000, 1000,
+# nan) returned 1000 (the NaN reserved dropped via max(0.0, nan) ==
+# 0.0), overstating spendable cash. All monetary inputs now raise
+# ValueError BEFORE any clamping/comparison/rounding; booleans (an int
+# subclass: float(True) == $1) are rejected too.
+# ---------------------------------------------------------------------------
+
+def test_bankroll_available_rejects_non_finite_amounts():
+    for bad in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(ValueError):
+            bankroll_available(bad, 1000.0, 0.0)
+        with pytest.raises(ValueError):
+            bankroll_available(10000.0, bad, 0.0)
+        with pytest.raises(ValueError):
+            bankroll_available(10000.0, 1000.0, bad)
+    # The frozen defect: a NaN reserved must NOT silently return the
+    # unreserved amount.
+    with pytest.raises(ValueError):
+        bankroll_available(10000.0, 1000.0, float("nan"))
+    # bool is an int subclass but not a monetary amount.
+    for boolean in (True, False):
+        with pytest.raises(ValueError):
+            bankroll_available(boolean, 1000.0, 0.0)
+        with pytest.raises(ValueError):
+            bankroll_available(10000.0, boolean, 0.0)
+        with pytest.raises(ValueError):
+            bankroll_available(10000.0, 1000.0, boolean)
+
+
+def test_paper_stake_rejects_non_finite_amounts():
+    for bad_price in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(ValueError):
+            paper_stake("f", "q", bad_price)
+    for bad_unit in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(ValueError):
+            paper_stake("f", "q", 0.56, unit_notional=bad_unit)
+    # Non-finite unit counts raise ValueError (inf used to escape as
+    # OverflowError from int()).
+    with pytest.raises(ValueError):
+        paper_stake("f", "q", 0.56, units=float("nan"))
+    with pytest.raises(ValueError):
+        paper_stake("f", "q", 0.56, units=float("inf"))
+    # bool is an int subclass but neither a price nor a unit count.
+    with pytest.raises(ValueError):
+        paper_stake("f", "q", True)
+    with pytest.raises(ValueError):
+        paper_stake("f", "q", 0.56, unit_notional=True)
+    with pytest.raises(ValueError):
+        paper_stake("f", "q", 0.56, units=True)
+
+
+def test_team_cap_status_rejects_non_finite_amounts():
+    for bad in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(ValueError):
+            team_cap_status(bad)
+        with pytest.raises(ValueError):
+            team_cap_status(100.0, cap=bad)
+        with pytest.raises(ValueError):
+            team_cap_status(100.0, unit_notional=bad)
+    with pytest.raises(ValueError):
+        team_cap_status(True)
+    with pytest.raises(ValueError):
+        team_cap_status(100.0, cap=True)

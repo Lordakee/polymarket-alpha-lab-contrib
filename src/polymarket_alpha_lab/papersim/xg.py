@@ -33,7 +33,13 @@ Implementation notes (frozen arithmetic, do not tune):
 - Cross-league guard: domestic multipliers from different leagues are
   not comparable; :func:`pair_lambdas` returns ``None`` whenever the two
   clubs' leagues differ. The guard is structural and unrelaxable (the
-  HOF-LYO favorite-flip defect came from relaxing it).
+  HOF-LYO favorite-flip defect came from relaxing it). WP-P2a adds the
+  one sanctioned cross-league path: an EXPLICIT league-strength κ
+  bridge passed as ``bridge=`` (see ``league_strength``), which scales
+  the home rate by the clamped strength ratio ``f`` and the away rate
+  by ``1 / f``. Without a bridge the guard is byte-for-byte the
+  lineage behavior, and the same-league path never consults the
+  bridge argument at all.
 """
 
 from __future__ import annotations
@@ -41,6 +47,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from typing import Mapping
+
+from polymarket_alpha_lab.papersim.league_strength import bridge_factor
 
 __all__ = [
     "LeagueGoalFit",
@@ -397,6 +405,113 @@ def team_league_registry(
     return {title: frozenset(leagues) for title, leagues in registry.items()}
 
 
+def _resolve_league_ratings(
+    snapshot: Mapping[str, object],
+    league: str,
+    team: str,
+    *,
+    season: str | None,
+    last_weight: float,
+    prior_games: float,
+    mode: str,
+) -> LeagueRatings | None:
+    """One league's ratings when its season blocks and ``team`` resolve.
+
+    Mirrors the same-league guards of :func:`pair_lambdas` for one
+    league: ``None`` when the league is absent from the snapshot, has
+    no resolvable current season, lacks the current or prior season
+    block, has no team table, or when ``team`` is not in it.
+    """
+    if season is None:
+        resolved = _latest_season(snapshot, league)
+        if resolved is None:
+            return None
+    else:
+        resolved = season
+    block = _season_block(snapshot, league, resolved)
+    if block is None or _season_block(snapshot, league, prior_season(resolved)) is None:
+        return None
+    teams = block.get("teams")
+    if not isinstance(teams, Mapping):
+        return None
+    titles = {
+        str(row.get("title"))
+        for row in teams.values()
+        if isinstance(row, Mapping)
+    }
+    if team not in titles:
+        return None
+    return ratings_for(
+        snapshot,
+        league,
+        resolved,
+        last_weight=last_weight,
+        prior_games=prior_games,
+        mode=mode,
+    )
+
+
+def _cross_league_pair_lambdas(
+    snapshot: Mapping[str, object],
+    home_team: str,
+    home_league: str,
+    away_team: str,
+    away_league: str,
+    *,
+    last_weight: float,
+    prior_games: float,
+    mode: str,
+    shrink: float,
+    season: str | None,
+    factor: float,
+) -> tuple[float, float] | None:
+    """Bridged cross-league rates: the WP-P2a sanctioned path.
+
+    Each side keeps its OWN league's base rate and multipliers
+    (``ratings_X`` from the home league, ``ratings_Y`` from the away
+    league) and the pair is tilted by the clamped league-strength
+    factor ``f`` from :func:`polymarket_alpha_lab.papersim.league_strength.bridge_factor`
+    — home rate ``* f``, away rate ``/ f`` — so the team from the
+    stronger league is boosted on both sides of the ball. Returns
+    ``None`` under the same per-league guards as the same-league path
+    (missing blocks or unknown team in ITS league's table).
+    """
+    ratings_home = _resolve_league_ratings(
+        snapshot,
+        home_league,
+        home_team,
+        season=season,
+        last_weight=last_weight,
+        prior_games=prior_games,
+        mode=mode,
+    )
+    if ratings_home is None:
+        return None
+    ratings_away = _resolve_league_ratings(
+        snapshot,
+        away_league,
+        away_team,
+        season=season,
+        last_weight=last_weight,
+        prior_games=prior_games,
+        mode=mode,
+    )
+    if ratings_away is None:
+        return None
+    attack_home, defense_home = ratings_home.teams.get(home_team, (1.0, 1.0))
+    attack_away, defense_away = ratings_away.teams.get(away_team, (1.0, 1.0))
+    return (
+        ratings_home.goal_fit.home_rate
+        * (attack_home ** shrink)
+        * (defense_away ** shrink)
+        * factor,
+        ratings_away.goal_fit.away_rate
+        * (attack_away ** shrink)
+        * (defense_home ** shrink)
+        / factor,
+    )
+
+
 def pair_lambdas(
     snapshot: Mapping[str, object],
     home_team: str,
@@ -409,13 +524,24 @@ def pair_lambdas(
     mode: str = "blend",
     shrink: float = 1.0,
     season: str | None = None,
+    bridge: Mapping[str, float] | None = None,
 ) -> tuple[float, float] | None:
     """Expected goal rates for one fixture, with the cross-league guard.
 
     Returns ``None`` when the clubs' leagues differ (``home_league !=
-    away_league``), when either league-season block is missing from the
-    snapshot, or when either team is absent from the shared league's
-    current-season team table. Otherwise computes
+    away_league``) — the structural cross-league guard — UNLESS an
+    explicit league-strength ``bridge`` table is supplied, in which
+    case the WP-P2a bridged cross-league path applies: each side keeps
+    its own league's base rate and multipliers and the pair is tilted
+    by the clamped factor ``f = bridge_factor(bridge, home_league,
+    away_league)`` (home ``* f``, away ``/ f``; ``None`` again when
+    either league is missing from the bridge). The same-league path
+    below is byte-identical regardless of ``bridge``: the argument is
+    never consulted when ``home_league == away_league``.
+
+    Also returns ``None`` when either league-season block is missing
+    from the snapshot, or when either team is absent from the shared
+    league's current-season team table. Otherwise computes
     ``lambda_home = home_rate * attack_home**shrink * defense_away**shrink``
     and ``lambda_away = away_rate * attack_away**shrink * defense_home**shrink``
     from the selected rating mode. Teams present in the table but without
@@ -423,7 +549,24 @@ def pair_lambdas(
     in the lineage.
     """
     if home_league != away_league:
-        return None
+        if bridge is None:
+            return None
+        factor = bridge_factor(bridge, home_league, away_league)
+        if factor is None:
+            return None
+        return _cross_league_pair_lambdas(
+            snapshot,
+            home_team,
+            home_league,
+            away_team,
+            away_league,
+            last_weight=last_weight,
+            prior_games=prior_games,
+            mode=mode,
+            shrink=shrink,
+            season=season,
+            factor=factor,
+        )
     league = home_league
     if season is None:
         season = _latest_season(snapshot, league)

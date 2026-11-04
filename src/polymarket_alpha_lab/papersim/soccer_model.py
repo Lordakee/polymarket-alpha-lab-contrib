@@ -16,7 +16,14 @@ Canonical lineage: ``r5c -> r15 -> r23`` (current head
 - The cross-league guard ``lgh != lga -> None`` must never be relaxed by
   callers or bespoke scripts; the HOF-LYO favorite-flip defect came from
   exactly that relaxation (see ``tests/fixtures/papersim/
-  regression_banned_path.json``).
+  regression_banned_path.json``). WP-P2a adds the one sanctioned
+  cross-league path: an explicit league-strength κ ``bridge`` table
+  (``polymarket_alpha_lab.papersim.league_strength``) threaded through
+  ``fixture_variants`` / ``match_lambdas`` /
+  ``candidate_from_variants`` into ``xg.pair_lambdas``; relaxation
+  without a bridge remains banned, and cross-league 1X2 stays BANNED
+  regardless (the suspension above is lifted only by the walk-forward
+  backtest, not by the bridge alone).
 
 Implementation notes (frozen arithmetic, do not tune):
 
@@ -345,12 +352,17 @@ def fixture_variants(
     away_league: str,
     *,
     season: str | None = None,
+    bridge: Mapping[str, float] | None = None,
 ) -> tuple[VariantResult, ...] | None:
     """Evaluate all ten sweep variants for one fixture.
 
     Returns ``None`` whenever :func:`polymarket_alpha_lab.papersim.xg.pair_lambdas`
     refuses the fixture (cross-league guard, missing season blocks or
     unknown teams); this is the snapshot-driven, gateable variance path.
+    ``bridge`` is the optional league-strength κ table threaded into
+    every variant's ``pair_lambdas`` call: without it the cross-league
+    guard stands unchanged; with it the WP-P2a bridged cross-league
+    path applies. Same-league fixtures are unaffected by ``bridge``.
     """
     results: list[VariantResult] = []
     for spec in SWEEPS:
@@ -365,6 +377,7 @@ def fixture_variants(
             mode=spec.mode,
             shrink=spec.shrink,
             season=season,
+            bridge=bridge,
         )
         if lambdas is None:
             return None
@@ -379,6 +392,8 @@ def match_lambdas(
     home_league: str,
     away_team: str,
     away_league: str,
+    *,
+    bridge: Mapping[str, float] | None = None,
 ) -> tuple[float, float] | None:
     """Expected goal rates ``(lambda_home, lambda_away)`` for one fixture.
 
@@ -386,12 +401,24 @@ def match_lambdas(
     leagues (``home_league != away_league``): domestic multipliers are not
     cross-league comparable and combining them raw produced the confirmed
     HOF-LYO favorite-flip structural defect. This guard is mandatory and
-    must not be relaxed.
+    must not be relaxed — except through the sanctioned WP-P2a
+    mechanism: pass an explicit league-strength κ ``bridge`` table and
+    the bridged cross-league path of
+    :func:`polymarket_alpha_lab.papersim.xg.pair_lambdas` applies
+    (``None`` again when either league is missing from the bridge).
+    Same-league fixtures never consult ``bridge``.
 
     Implementation: the per-side MEDIAN of the ten sweep variants' rates
     (the lineage's ``med([v['lh'] ...])`` / ``med([v['la'] ...])``).
     """
-    variants = fixture_variants(xg_snapshot, home_team, home_league, away_team, away_league)
+    variants = fixture_variants(
+        xg_snapshot,
+        home_team,
+        home_league,
+        away_team,
+        away_league,
+        bridge=bridge,
+    )
     if variants is None:
         return None
     return (
@@ -412,6 +439,7 @@ def candidate_from_variants(
     entry_ask_vwap250: float,
     *,
     season: str | None = None,
+    bridge: Mapping[str, float] | None = None,
 ) -> SoccerCandidate | None:
     """Snapshot-driven Over/Under ``line`` candidate quote — the public,
     GATE-SAFE builder.
@@ -427,7 +455,10 @@ def candidate_from_variants(
 
     Returns ``None`` whenever the fixture is refused — cross-league
     guard, missing season blocks or unknown teams — exactly like
-    :func:`fixture_variants` / :func:`match_lambdas`. Callers must NOT
+    :func:`fixture_variants` / :func:`match_lambdas`. The optional
+    league-strength ``bridge`` κ table threads through to
+    :func:`fixture_variants` (sanctioned WP-P2a cross-league path;
+    same-league candidates are unaffected by it). Callers must NOT
     fall back to :func:`over_under_quote` on a ``None`` here: that stub
     collapses the sweep variance and would silently pass the variant
     gates (codex review 2026-10-30, finding 1).
@@ -444,6 +475,7 @@ def candidate_from_variants(
         away_team,
         away_league,
         season=season,
+        bridge=bridge,
     )
     if variants is None:
         return None

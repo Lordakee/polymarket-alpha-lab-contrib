@@ -63,6 +63,27 @@ DIRECTION_SHORT = "short"
 DIRECTION_UNKNOWN = "unknown"
 
 
+def _require_finite_amount(name: str, value: object) -> float:
+    """Validate one monetary input BEFORE any clamping/comparison/rounding.
+
+    Non-finite amounts must fail loudly, not silently: a NaN flowing
+    into ``max(0.0, x)`` / ``min(a, b)`` compares False against every
+    bound, so e.g. a NaN ``reserved`` was silently dropped (returning
+    the unreserved amount as spendable) instead of rejected (codex
+    review 2026-11-03, major 2). ``bool`` is rejected explicitly even
+    though it subclasses ``int`` — ``True`` must never pass as ``$1``.
+    """
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be a finite number, got {value!r} (bool)")
+    try:
+        amount = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a finite number, got {value!r}") from exc
+    if not math.isfinite(amount):
+        raise ValueError(f"{name} must be a finite number, got {value!r}")
+    return amount
+
+
 @dataclass(frozen=True)
 class PaperStake:
     """One paper stake decision for a gated candidate."""
@@ -168,19 +189,28 @@ def paper_stake(
     a whole-unit multiple (fractional sizing is a policy violation, not a
     rounding event). Price bounds are structural (0 < p <= 1); the entry
     window itself is a gate concern, enforced in
-    :mod:`polymarket_alpha_lab.papersim.gates`.
+    :mod:`polymarket_alpha_lab.papersim.gates`. All amounts
+    (``entry_price``, ``unit_notional``) must be finite numbers; a NaN
+    or infinite amount raises ``ValueError`` before any sizing
+    arithmetic.
     """
-    price = float(entry_price)
+    price = _require_finite_amount("entry_price", entry_price)
     if not 0.0 < price <= 1.0:
         raise ValueError(f"entry_price must be in (0, 1], got {entry_price!r}")
-    if unit_notional <= 0:
+    unit = _require_finite_amount("unit_notional", unit_notional)
+    if unit <= 0:
         raise ValueError("unit_notional must be positive")
-    if int(units) != units or units < 1:
+    if (
+        isinstance(units, bool)
+        or not math.isfinite(float(units))
+        or int(units) != units
+        or units < 1
+    ):
         raise ValueError(f"units must be a whole positive integer, got {units!r}")
     return PaperStake(
         fixture=fixture,
         question=question,
-        notional=round(units * unit_notional, 2),
+        notional=round(units * unit, 2),
         entry_price=price,
         currency=currency,
     )
@@ -195,10 +225,17 @@ def bankroll_available(
 
     The r23 shape: ``bankroll`` (cash + open marks) never unlocks more
     than ``cash``, and committed-but-unsettled reservations come off the
-    top. Never negative.
+    top. Never negative. All three amounts must be finite numbers: a
+    NaN/Inf ``bankroll``, ``cash`` or ``reserved`` raises
+    ``ValueError`` BEFORE any clamping or comparison (a NaN reserved
+    used to be silently dropped by ``max(0.0, nan) == 0.0``,
+    overstating spendable cash — codex review 2026-11-03, major 2).
     """
-    usable = min(float(cash), float(bankroll))
-    return round(max(0.0, usable - max(0.0, float(reserved))), 2)
+    bankroll_value = _require_finite_amount("bankroll", bankroll)
+    cash_value = _require_finite_amount("cash", cash)
+    reserved_value = _require_finite_amount("reserved", reserved)
+    usable = min(cash_value, bankroll_value)
+    return round(max(0.0, usable - max(0.0, reserved_value)), 2)
 
 
 def sizing_tier(
@@ -287,21 +324,26 @@ def team_cap_status(
 
     ``at_cap`` means one more standard unit does NOT fit under the cap
     (r19: committed $1,870 + unit $250 > $1,900 -> AT CAP, monitoring
-    mode, hold-do-not-add), not merely ``committed >= cap``.
+    mode, hold-do-not-add), not merely ``committed >= cap``. All
+    amounts must be finite numbers: NaN/Inf ``committed_notional``,
+    ``cap`` or ``unit_notional`` raises ``ValueError`` before any cap
+    arithmetic.
     """
-    committed = float(committed_notional)
+    committed = _require_finite_amount("committed_notional", committed_notional)
     if committed < 0:
         raise ValueError("committed_notional must be non-negative")
-    if cap <= 0:
+    cap_value = _require_finite_amount("cap", cap)
+    if cap_value <= 0:
         raise ValueError("cap must be positive")
-    if unit_notional <= 0:
+    unit_value = _require_finite_amount("unit_notional", unit_notional)
+    if unit_value <= 0:
         raise ValueError("unit_notional must be positive")
-    remaining = round(max(0.0, cap - committed), 2)
-    at_cap = committed + unit_notional > cap + 1e-9
+    remaining = round(max(0.0, cap_value - committed), 2)
+    at_cap = committed + unit_value > cap_value + 1e-9
     return TeamCapStatus(
         committed=round(committed, 2),
-        cap=float(cap),
-        unit_notional=float(unit_notional),
+        cap=cap_value,
+        unit_notional=unit_value,
         remaining=remaining,
         at_cap=at_cap,
     )
