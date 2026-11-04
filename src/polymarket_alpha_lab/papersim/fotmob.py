@@ -292,10 +292,23 @@ def _parse_league_payload(data: object, season_key: str) -> list:
 
 
 def _is_cancelled(match: Mapping[str, object]) -> bool:
-    reason = (match.get("status") or {}).get("reason")
+    """True for cancelled/abandoned fixtures (codex review #5, 2026-11-04).
+
+    Cached FotMob sources contain abandoned games whose only markers are
+    ``status.cancelled=true`` and reason ``longKey="aborted"`` while
+    ``finished`` is also true (e.g. Blackburn-Ipswich 4825094 and its
+    replay 5008942). The pre-fix text-only check matched ``"cancel"`` and
+    kept those rows, double-counting abandoned games alongside their
+    replays. Reject the explicit boolean flag first, then match both
+    ``cancel`` and ``abort`` reason keys.
+    """
+    status = match.get("status") or {}
+    if status.get("cancelled") is True:
+        return True
+    reason = status.get("reason")
     if isinstance(reason, dict):
-        key = str(reason.get("longKey", "")) + str(reason.get("shortKey", ""))
-        return "cancel" in key.lower()
+        key = (str(reason.get("longKey", "")) + str(reason.get("shortKey", ""))).lower()
+        return "cancel" in key or "abort" in key
     return False
 
 

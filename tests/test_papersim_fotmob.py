@@ -228,10 +228,18 @@ def _match(
     *,
     finished: bool = True,
     cancelled: bool = False,
+    abandoned: bool = False,
 ) -> dict:
     status: dict = {"finished": finished, "utcTime": utc}
     if cancelled:
         status["reason"] = {"longKey": "matchCancelled", "shortKey": "CANC"}
+    if abandoned:
+        # Real cached shape (codex review #5, 2026-11-04): abandoned games
+        # carry cancelled=true AND finished=true with longKey 'aborted',
+        # e.g. Blackburn-Ipswich 4825094 alongside its replay 5008942.
+        status["finished"] = True
+        status["cancelled"] = True
+        status["reason"] = {"longKey": "aborted", "shortKey": "ABD"}
     names = {"t1": "Birmingham City", "t2": "Blackburn Rovers"}
     return {
         "id": mid,
@@ -308,6 +316,52 @@ def test_transform_builds_understat_block() -> None:
         path.write_text(json.dumps(snapshot))
         reloaded = fotmob.load_fotmob_snapshot(str(path))
     assert set(reloaded) == {"Championship_2026"}
+
+
+def test_abandoned_flag_excluded_but_replay_kept() -> None:
+    """Regression (codex review #5, 2026-11-04).
+
+    Abandoned FotMob fixtures have ``status.cancelled=true`` with reason
+    ``longKey='aborted'`` while ``finished`` is ALSO true. The pre-fix
+    text-only ``'cancel'`` filter kept them, so an abandoned game and its
+    replay both landed in the completed history (555 prior-season matches
+    instead of 552; Blackburn on 48 games instead of 46). The abandoned
+    original must be excluded and only the replay kept.
+    """
+    matches = [
+        _match("m_abd", "5", "t1", "t2", "2026-09-12T19:45:00.000Z", abandoned=True),
+        _match("m_replay", "5", "t1", "t2", "2026-10-01T19:45:00.000Z"),
+    ]
+    raw = {
+        "fixtures": _league_payload(matches),
+        "details": {
+            # abandoned row deliberately has full details: the filter must
+            # reject it on status flags alone, not on missing details.
+            "m_abd": _details(1, 1, "0.80", "0.70"),
+            "m_replay": _details(2, 1, "1.50", "0.75"),
+        },
+    }
+    snapshot = fotmob.fotmob_to_understat(raw, "Championship", "2026")
+    block = snapshot["Championship_2026"]
+    assert [row["id"] for row in block["dates"]] == ["m_replay"]
+    # exactly one completed game in the history, from the replay
+    assert len(block["teams"]["t1"]["history"]) == 1
+    assert block["teams"]["t1"]["history"][0]["scored"] == 2
+
+    # the boolean flag alone (no reason block) must also exclude
+    matches[0]["status"].pop("reason")
+    snapshot2 = fotmob.fotmob_to_understat(
+        {**raw, "fixtures": _league_payload(list(matches))}, "Championship", "2026"
+    )
+    assert [row["id"] for row in snapshot2["Championship_2026"]["dates"]] == ["m_replay"]
+
+    # ...and the reason text alone ('aborted' longKey, no boolean) as well
+    matches[0]["status"].pop("cancelled")
+    matches[0]["status"]["reason"] = {"longKey": "aborted", "shortKey": "ABD"}
+    snapshot3 = fotmob.fotmob_to_understat(
+        {**raw, "fixtures": _league_payload(list(matches))}, "Championship", "2026"
+    )
+    assert [row["id"] for row in snapshot3["Championship_2026"]["dates"]] == ["m_replay"]
 
 
 def test_transform_league_member_constants() -> None:
