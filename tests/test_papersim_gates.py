@@ -1,5 +1,6 @@
 """WP-P1 gates tests: ladder walk, frozen gate arithmetic, haircut order,
-under_risk screen, news concordance, suspension registry, ranking.
+under_risk screen, news concordance, suspension registry, ranking, and
+the 2026-11-05 fee-accounting fix (net-edge exec bar).
 
 Regression anchors:
 - ``tests/fixtures/papersim/regression_gate_arithmetic.json`` (the frozen
@@ -8,7 +9,10 @@ Regression anchors:
   arithmetic from the canonical lineage;
 - the WP-P1 codex-review fixes (F2 hardcoded $250 ask acceptance walk,
   F3 finite gate inputs, F6 survivors-only ranking) in the closing
-  section.
+  section;
+- the fee model (rate 0.07 crypto / 0.05 sports, per-share cost
+  ``rate * p * (1 - p)``): the frozen +5c/+8c exec bars apply to the
+  NET edge (gross minus fee); frozen threshold VALUES are unchanged.
 """
 
 from __future__ import annotations
@@ -23,6 +27,8 @@ import pytest
 from polymarket_alpha_lab.papersim.gates import (
     DEPTH_NEAR_BAND,
     ENTRY_WINDOW,
+    FEE_RATE_CRYPTO,
+    FEE_RATE_SPORTS,
     GATES,
     GATE_EPSILON,
     NEWS_BETTER,
@@ -43,6 +49,7 @@ from polymarket_alpha_lab.papersim.gates import (
     check_news,
     evaluate_candidate,
     evaluate_gates,
+    fee_cost,
     haircut_edge,
     news_concordance,
     rank_candidates,
@@ -109,13 +116,21 @@ def test_frozen_stub_surfaces_preserved():
     ]
     assert [f.name for f in dataclasses.fields(GateDecision)] == ["passed", "failed"]
     sig = inspect.signature(evaluate_gates)
+    # Fee-accounting fix (2026-11-05): two optional keyword-only fee
+    # parameters joined the frozen numeric surface; the four frozen
+    # numeric inputs keep their names and keyword-only kind, and callers
+    # omitting the fee pair get the old as-supplied comparison.
     assert list(sig.parameters) == [
         "variant_spread",
         "worst_variant_edge",
         "median_exec_edge",
         "gamma_liquidity",
+        "fee_rate",
+        "entry_price",
     ]
     assert all(p.kind is inspect.Parameter.KEYWORD_ONLY for p in sig.parameters.values())
+    assert sig.parameters["fee_rate"].default is None
+    assert sig.parameters["entry_price"].default is None
     assert list(inspect.signature(check_news).parameters)[:2] == ["fixture", "delta"]
     assert GATES == {
         "variant_spread_max": 0.06,
@@ -348,10 +363,14 @@ def test_regression_48_evaluate_candidate_full_pass():
         "news_concordant",
     }
     assert report.entry_price == 0.56
-    assert report.exec_edge == 0.0742
-    assert report.worst_variant_edge == 0.0635
+    assert report.exec_edge_gross == 0.0742
+    # Fee accounting (2026-11-05 fix): sports fee 0.05 * 0.56 * 0.44
+    # = 1.23c per share -> +7.42c gross = +6.19c net, still over +5c.
+    assert report.exec_edge == 0.0619
+    assert report.worst_variant_edge == 0.0635  # worst margin stays GROSS
     assert report.variant_spread == 0.0211
     assert report.haircut == 1.0  # median 0.6342 outside the 50-50 band
+    assert report.exec_edge_haircut == 0.0619  # haircut acts on the NET edge
     assert report.walk.depth_near2c == 16076.0
 
     # a plain mapping quote evaluates identically.
@@ -383,15 +402,22 @@ def test_haircut_band_and_factor():
 
 @pytest.mark.parametrize("median", [0.45, 0.50, 0.55])
 def test_haircut_applied_before_exec_bar(median):
-    # exec edge +7c: passes the +5c bar unhalved, fails halved (3.5c).
+    # gross exec edge +7c: net of the sports fee (~+5.7c) it would pass
+    # the +5c bar, but halved (~2.9c) it fails. Fee-adjustment note
+    # (2026-11-05): pre-fee this test asserted a 3.5c halved edge; the
+    # bar semantics are unchanged, only the edge is now net.
     quote = dict(model_median=median, qs_variants=(median + 0.035, median + 0.055))
-    book = [(round(median - 0.07, 4), 5000.0)]  # vwap -> exec edge 0.07
+    vwap = round(median - 0.07, 4)
+    book = [(vwap, 5000.0)]  # vwap -> gross exec edge 0.07
     report = evaluate_candidate(
         quote, book, gamma_liquidity=20000.0, news=_concordant_news()
     )
-    assert report.exec_edge == pytest.approx(0.07)
+    net = round(0.07 - round(fee_cost(vwap, FEE_RATE_SPORTS), 4), 4)
+    assert report.exec_edge_gross == pytest.approx(0.07)
+    assert report.exec_edge == pytest.approx(net)
     assert report.haircut == 0.5
-    assert report.exec_edge_haircut == pytest.approx(0.035)
+    assert report.exec_edge_haircut == pytest.approx(round(net / 2, 4))
+    assert report.exec_edge_haircut < GATES["exec_edge_min"]
     assert report.checks["exec>=+5c"] is False
     assert report.decision.failed == ("exec_edge",)
 
@@ -409,13 +435,17 @@ def test_no_haircut_outside_band_same_edge_passes(median):
 
 
 def test_haircut_boundary_edge_exactly_on_bar_after_halving():
-    # 10.1c at a 0.50 median -> 5.05c halved, clears the +5c bar.
+    # gross 11.19c at a 0.50 median; sports fee at the 0.3881 entry is
+    # 1.19c -> net 10.00c, halved to exactly 5.00c = the +5c bar.
+    # (Pre-fee this boundary was 10.1c gross -> 5.05c halved; the
+    # exactly-on-bar intent is preserved under the net definition.)
     quote = dict(model_median=0.50, qs_variants=(0.535, 0.555))
     report = evaluate_candidate(
-        quote, [(0.399, 5000.0)], gamma_liquidity=20000.0, news=_concordant_news()
+        quote, [(0.3881, 5000.0)], gamma_liquidity=20000.0, news=_concordant_news()
     )
-    assert report.exec_edge == pytest.approx(0.101)
-    assert report.exec_edge_haircut == pytest.approx(0.0505)
+    assert report.exec_edge_gross == pytest.approx(0.1119)
+    assert report.exec_edge == pytest.approx(0.1000, abs=1e-4)
+    assert report.exec_edge_haircut == pytest.approx(0.0500, abs=1e-4)
     assert report.checks["exec>=+5c"] is True
 
 
@@ -475,8 +505,11 @@ def test_under_risk_check_ignores_other_sides_and_kinds():
 
 
 def test_under_risk_raises_exec_bar_to_8c():
-    quote = dict(model_median=0.62, qs_variants=(0.60, 0.63))
-    book = [(0.56, 5000.0)]  # exec edge 0.06, worst 0.04
+    # Fee-adjusted numbers (2026-11-05): sports fee at the 0.56 entry is
+    # 1.23c, so gross 8.0c -> net 6.77c (was gross/net 6c pre-fee):
+    # clears the +5c bar, fails the +8c screen.
+    quote = dict(model_median=0.64, qs_variants=(0.60, 0.63))
+    book = [(0.56, 5000.0)]  # gross exec edge 0.08 -> net 0.0677, worst 0.04
     common = dict(gamma_liquidity=20000.0, news=_concordant_news())
     plain = evaluate_candidate(quote, book, **common)
     assert plain.checks["exec>=+5c"] is True and plain.decision.passed is True
@@ -485,12 +518,12 @@ def test_under_risk_raises_exec_bar_to_8c():
     assert "exec>=+5c" not in risky.checks
     assert risky.decision.failed == ("exec_edge",)
     edge_pass = evaluate_candidate(
-        dict(model_median=0.65, qs_variants=(0.61, 0.66)),
+        dict(model_median=0.66, qs_variants=(0.62, 0.67)),
         [(0.56, 5000.0)],
         under_risk=True,
         **common,
     )
-    assert edge_pass.checks["exec>=+8c"] is True  # 9c clears the screen
+    assert edge_pass.checks["exec>=+8c"] is True  # net 8.77c clears the screen
     assert UNDER_RISK_EXEC_EDGE_MIN == 0.08
 
 
@@ -624,7 +657,10 @@ def test_evaluate_candidate_input_errors():
 def test_evaluate_candidate_numeric_failed_matches_frozen_evaluate_gates():
     # Same numeric inputs through both doors: book at 0.50, median 0.56
     # (no haircut), variants (0.53, 0.59) -> var 0.06 passes, worst 0.03
-    # fails, exec 0.06 passes, liq 3000 fails.
+    # fails, exec 0.06 gross / 0.0475 net fails the +5c bar (fee
+    # accounting, 2026-11-05: sports fee at p=0.5 is exactly 1.25c),
+    # liq 3000 fails. evaluate_gates nets its supplied edge only when
+    # the fee_rate+entry_price pair is passed, so both doors agree.
     report = evaluate_candidate(
         dict(model_median=0.56, qs_variants=(0.53, 0.59)),
         [(0.50, 5000.0)],
@@ -632,7 +668,12 @@ def test_evaluate_candidate_numeric_failed_matches_frozen_evaluate_gates():
         news=_concordant_news(),
     )
     frozen = evaluate_gates(
-        variant_spread=0.06, worst_variant_edge=0.03, median_exec_edge=0.06, gamma_liquidity=3000.0
+        variant_spread=0.06,
+        worst_variant_edge=0.03,
+        median_exec_edge=0.06,
+        gamma_liquidity=3000.0,
+        fee_rate=FEE_RATE_SPORTS,
+        entry_price=0.50,
     )
     numeric_ids = tuple(
         gate_id
@@ -641,8 +682,10 @@ def test_evaluate_candidate_numeric_failed_matches_frozen_evaluate_gates():
     )
     assert report.variant_spread == 0.06
     assert report.worst_variant_edge == 0.03
-    assert report.exec_edge_haircut == 0.06
-    assert numeric_ids == frozen.failed == ("worst_edge", "liq")
+    assert report.exec_edge_gross == 0.06
+    assert report.exec_edge == 0.0475
+    assert report.exec_edge_haircut == 0.0475
+    assert numeric_ids == frozen.failed == ("worst_edge", "exec_edge", "liq")
 
 
 # ---------------------------------------------------------------------------
@@ -701,17 +744,27 @@ def test_rank_candidates_worst_variant_first_then_exec():
     c = _report(0.70, 0.67, 0.72, 0.55)  # worst 0.12, exec 0.15
     ranked = rank_candidates([a, b, c, b2])
     assert [r.worst_variant_edge for r in ranked] == [0.12, 0.06, 0.06, 0.05]
-    assert [r.exec_edge for r in ranked] == [0.15, 0.10, 0.09, 0.08]
+    assert [r.exec_edge_gross for r in ranked] == [0.15, 0.10, 0.09, 0.08]
+    # net exec edges (sports fee at each entry: 0.55 -> 1.24c, the
+    # 0.51/0.52 entries -> 1.25c); ordering is unchanged by the fee.
+    assert [r.exec_edge for r in ranked] == [0.1376, 0.0875, 0.0775, 0.0675]
 
 
 def test_rank_candidates_uses_haircut_edge_as_tiebreak():
-    # same worst margin, one inside the 50-50 band: the halved edge ranks lower.
-    outside = _report(0.60, 0.55, 0.61, 0.50)  # exec 0.10 unhalved
-    inside = _report(0.50, 0.45, 0.51, 0.40)  # exec 0.10 -> haircut edge 0.05
+    # same worst margin (0.05), one inside the 50-50 band: the halved
+    # edge ranks lower. Fee-adjusted numbers (2026-11-05): outside nets
+    # 8.75c at the 0.50 entry; inside keeps worst margin 0.05 at the
+    # 0.40 entry and needs gross 11.5c (fee 1.20c -> net 10.3c) so its
+    # halved NET edge (5.15c) still clears the +5c bar and stays
+    # rankable (pre-fee this was 10c gross -> 5c halved exactly on the
+    # bar).
+    outside = _report(0.60, 0.55, 0.61, 0.50)  # net 0.0875 unhalved
+    inside = _report(0.515, 0.45, 0.51, 0.40)  # net 0.103 -> haircut edge 0.0515
     ranked = rank_candidates([inside, outside])
     assert ranked[0] is outside
-    assert ranked[0].exec_edge_haircut == pytest.approx(0.10)
-    assert ranked[1].exec_edge_haircut == pytest.approx(0.05)
+    assert ranked[0].worst_variant_edge == ranked[1].worst_variant_edge == 0.05
+    assert ranked[0].exec_edge_haircut == pytest.approx(0.0875)
+    assert ranked[1].exec_edge_haircut == pytest.approx(0.0515)
 
 
 def test_rank_candidates_drops_unrankable_reports():
@@ -803,8 +856,11 @@ def test_n1_composite_rejects_nonfinite_model_evidence():
 def test_f2_default_call_records_no_supplementary_walk():
     # normal path still passes: the acceptance walk is exactly the
     # historical default walk and no supplementary walk is recorded.
+    # Fee-adjusted numbers (2026-11-05): median raised 0.62 -> 0.64 so
+    # the net edge (8c gross - 1.23c fee = 6.77c) clears the +5c bar
+    # (the old 6c gross would now net 4.77c and fail).
     report = evaluate_candidate(
-        dict(model_median=0.62, qs_variants=(0.60, 0.63)),
+        dict(model_median=0.64, qs_variants=(0.60, 0.63)),
         [(0.56, 5000.0)],
         gamma_liquidity=20000.0,
         news=_concordant_news(),
@@ -887,3 +943,148 @@ def test_rank_candidates_orders_survivors_only():
     assert ranked == [good_high, good_low]
     assert rejected_news not in ranked
     assert rejected_liq not in ranked
+
+
+# ---------------------------------------------------------------------------
+# Fee accounting (2026-11-05 review fix): the exec bar is a NET-edge bar
+# ---------------------------------------------------------------------------
+
+
+def test_fee_cost_model_constants_and_values():
+    assert FEE_RATE_CRYPTO == 0.07
+    assert FEE_RATE_SPORTS == 0.05
+    # p=0.5, sports rate -> 1.25c per share (the fee maximum).
+    assert fee_cost(0.5, FEE_RATE_SPORTS) == pytest.approx(0.0125)
+    # p=0.3, crypto rate -> 1.47c per share.
+    assert fee_cost(0.3, FEE_RATE_CRYPTO) == pytest.approx(0.0147)
+    # symmetric around 0.5, zero at the endpoints.
+    assert fee_cost(0.3, 0.05) == pytest.approx(fee_cost(0.7, 0.05))
+    assert fee_cost(0.0, 0.07) == pytest.approx(0.0)
+    assert fee_cost(1.0, 0.07) == pytest.approx(0.0)
+
+
+def test_five_and_half_cent_gross_edge_now_fails_the_net_bar():
+    # The headline finding of the 2026-11-05 review: a 5.5c GROSS edge
+    # at a p=0.5 entry passed the old gross +5c bar but nets only 4.25c
+    # (5.5c - 1.25c sports fee) and must FAIL the net bar. The frozen
+    # threshold itself is unchanged -- only the edge definition moved
+    # from gross to net.
+    report = evaluate_candidate(
+        dict(model_median=0.555, qs_variants=(0.545, 0.565)),
+        [(0.50, 5000.0)],
+        gamma_liquidity=20000.0,
+        news=_concordant_news(),
+    )
+    assert report.exec_edge_gross == 0.055
+    assert report.exec_edge == 0.0425
+    assert report.checks["exec>=+5c"] is False
+    assert report.decision.failed == ("exec_edge",)
+
+
+def test_seven_cent_gross_edge_passes_the_net_bar():
+    # 7c gross at a p=0.5 entry nets 5.75c -> passes.
+    report = evaluate_candidate(
+        dict(model_median=0.57, qs_variants=(0.555, 0.58)),
+        [(0.50, 5000.0)],
+        gamma_liquidity=20000.0,
+        news=_concordant_news(),
+    )
+    assert report.exec_edge_gross == 0.07
+    assert report.exec_edge == 0.0575
+    assert report.checks["exec>=+5c"] is True
+    assert report.decision.passed is True
+
+
+def test_crypto_fee_rate_is_stricter_than_sports():
+    # 6.5c gross at p=0.5: passes on the sports net (5.25c) but fails on
+    # the crypto net (6.5c - 1.75c = 4.75c).
+    quote = dict(model_median=0.565, qs_variants=(0.555, 0.575))
+    common = dict(gamma_liquidity=20000.0, news=_concordant_news())
+    sports = evaluate_candidate(
+        quote, [(0.50, 5000.0)], fee_rate=FEE_RATE_SPORTS, **common
+    )
+    crypto = evaluate_candidate(
+        quote, [(0.50, 5000.0)], fee_rate=FEE_RATE_CRYPTO, **common
+    )
+    assert sports.exec_edge == pytest.approx(0.0525)
+    assert sports.checks["exec>=+5c"] is True and sports.decision.passed is True
+    assert crypto.exec_edge == pytest.approx(0.0475)
+    assert crypto.checks["exec>=+5c"] is False
+    assert crypto.decision.failed == ("exec_edge",)
+
+
+def test_zero_fee_rate_restores_the_gross_bar():
+    # fee_rate=0 documents the fee-free escape hatch (replaying frozen
+    # gross records): the 5.5c gross edge passes again.
+    report = evaluate_candidate(
+        dict(model_median=0.555, qs_variants=(0.545, 0.565)),
+        [(0.50, 5000.0)],
+        fee_rate=0.0,
+        gamma_liquidity=20000.0,
+        news=_concordant_news(),
+    )
+    assert report.exec_edge == report.exec_edge_gross == 0.055
+    assert report.decision.passed is True
+
+
+def test_fee_is_charged_at_the_walked_vwap_not_the_best_quote():
+    # $50 at 0.50 then $200 at 0.60 -> vwap 0.5769, not the 0.50 best;
+    # the fee and the net identity must use the walked entry price.
+    report = evaluate_candidate(
+        dict(model_median=0.70, qs_variants=(0.68, 0.72)),
+        [(0.60, 1000.0), (0.50, 100.0)],
+        gamma_liquidity=20000.0,
+        news=_concordant_news(),
+    )
+    assert report.entry_price == pytest.approx(0.5769, abs=1e-4)
+    fee = round(fee_cost(report.entry_price, FEE_RATE_SPORTS), 4)
+    assert report.exec_edge == round(report.exec_edge_gross - fee, 4)
+    assert report.decision.passed is True
+
+
+def test_evaluate_candidate_rejects_invalid_fee_rate():
+    common = dict(gamma_liquidity=20000.0, news=_concordant_news())
+    for bad in (-0.01, float("nan"), float("inf")):
+        with pytest.raises(ValueError, match="fee_rate"):
+            evaluate_candidate(
+                dict(model_median=0.57, qs_variants=(0.555, 0.58)),
+                [(0.50, 5000.0)],
+                fee_rate=bad,
+                **common,
+            )
+
+
+def test_evaluate_gates_fee_pair_nets_the_supplied_edge():
+    # Without the fee pair the frozen surface compares as supplied
+    # (gross); with the pair the supplied GROSS edge is netted first:
+    # 5.5c at p=0.5 -> 4.25c fails, 7c -> 5.75c passes.
+    base = dict(variant_spread=0.05, worst_variant_edge=0.05, gamma_liquidity=6000.0)
+    gross_pass = evaluate_gates(median_exec_edge=0.055, **base)
+    assert gross_pass.passed is True  # as-supplied comparison, no fee
+    netted_fail = evaluate_gates(
+        median_exec_edge=0.055, fee_rate=FEE_RATE_SPORTS, entry_price=0.50, **base
+    )
+    assert netted_fail.passed is False and netted_fail.failed == ("exec_edge",)
+    netted_pass = evaluate_gates(
+        median_exec_edge=0.07, fee_rate=FEE_RATE_SPORTS, entry_price=0.50, **base
+    )
+    assert netted_pass.passed is True and netted_pass.failed == ()
+
+
+def test_evaluate_gates_fee_pair_must_be_complete_and_finite():
+    base = dict(
+        variant_spread=0.05,
+        worst_variant_edge=0.05,
+        median_exec_edge=0.06,
+        gamma_liquidity=6000.0,
+    )
+    with pytest.raises(ValueError, match="both fee_rate and entry_price"):
+        evaluate_gates(**base, fee_rate=FEE_RATE_SPORTS)
+    with pytest.raises(ValueError, match="both fee_rate and entry_price"):
+        evaluate_gates(**base, entry_price=0.5)
+    with pytest.raises(ValueError, match="fee_rate"):
+        evaluate_gates(**base, fee_rate=-0.01, entry_price=0.5)
+    with pytest.raises(ValueError, match="fee_rate"):
+        evaluate_gates(**base, fee_rate=float("nan"), entry_price=0.5)
+    with pytest.raises(ValueError, match="entry_price"):
+        evaluate_gates(**base, fee_rate=FEE_RATE_SPORTS, entry_price=float("nan"))

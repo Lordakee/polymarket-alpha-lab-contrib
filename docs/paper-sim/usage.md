@@ -61,14 +61,54 @@ rewrites:
    `conservative_edges(...)` the per-side conservative fair values.
 4. **Gate candidates**: `gates.walk_book(levels, "ask")` walks the $250
    VWAP, `gates.evaluate_candidate(quote, book, ...)` applies the full
-   frozen gate set (spread/worst/exec/liq/fill/entry-window/news),
-   `gates.suspension_policy(kind, cross_league=...)` answers market-kind
-   eligibility, `gates.rank_candidates(...)` orders the survivors.
+   frozen gate set (spread/worst/exec/liq/fill/entry-window/news) with
+   the exec bar evaluated on the fee-NET edge (see "Trading-fee model"
+   below), `gates.suspension_policy(kind, cross_league=...)` answers
+   market-kind eligibility, `gates.rank_candidates(...)` orders the
+   survivors.
 5. **Size and settle**: `risk_policy.sizing_tier(...)` /
    `paper_stake(...)`, `team_cap_status(...)`,
    `held_fixture_add_allowed(...)`; `ledger.settle_natural(...)` /
    `settle_exit(...)` realize outcomes, `bankroll_identity(...)`
    checks the cash identity.
+
+## Trading-fee model and the net-edge exec bar
+
+Polymarket charges a trading fee of `notional * rate * p * (1 - p)` on
+a fill at price `p` — `rate` is 7% on crypto markets
+(`gates.FEE_RATE_CRYPTO`) and 5% on sports markets
+(`gates.FEE_RATE_SPORTS`). Per share bought, that is a fee cost of
+`gates.fee_cost(entry_price, fee_rate) = rate * p * (1 - p)`, maximal
+at `p = 0.5` (1.25c per share at the sports rate, 1.75c at the crypto
+rate).
+
+The 2026-11-05 fee-accounting fix made the frozen exec bar a NET bar
+(the review found the old bar compared the GROSS executable edge, so
+some 5-6c gross "passing" candidates were really 3.75-4.75c net):
+
+- `evaluate_candidate(..., fee_rate=...)` (default `FEE_RATE_SPORTS`;
+  crypto candidates pass `FEE_RATE_CRYPTO`) subtracts the per-share
+  fee at the walked entry VWAP from the executable edge BEFORE the
+  +5c exec bar (and before the +8c under_risk bar). The 50-50
+  cancellation haircut then acts on the NET edge, and
+  `GateReport.exec_edge_haircut` (the ranking tiebreak) is net-based.
+- `GateReport.exec_edge_gross` preserves the raw
+  `model_median - vwap250` edge; `GateReport.exec_edge` is the net
+  edge. `worst_variant_edge` stays gross — it is a model-agreement
+  margin, not an executable-edge bar.
+- The frozen threshold VALUES (var <= 6c, worst >= +4c, exec >= +5c,
+  liq >= $5k) are unchanged — only the edge definition moved from
+  gross to net. Passing `fee_rate=0.0` restores the gross comparison
+  (useful for replaying frozen gross records).
+- `evaluate_gates(...)` keeps its as-supplied comparison when called
+  without fee parameters (callers apply the fee/haircut first, the
+  same convention as the haircut); passing the optional
+  `fee_rate=...` + `entry_price=...` pair makes it net its supplied
+  GROSS `median_exec_edge` exactly like `evaluate_candidate` does.
+- Worked example (#48 Brentford-Forest O2.5): entry VWAP 0.560,
+  exec edge +7.42c gross; sports fee 0.05 * 0.56 * 0.44 = 1.23c ->
+  +6.19c net, still clearing the +5c bar. A 5.5c gross edge at a
+  p=0.5 entry, by contrast, nets 4.25c and now fails.
 
 **The cross-league guard is relaxable ONLY via the explicit bridge
 parameter**: `match_lambdas` / `fixture_variants` /

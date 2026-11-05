@@ -33,6 +33,17 @@ acceptance check and are recorded only as a supplementary
 ``valuation_walk``. :func:`evaluate_gates` rejects non-finite (NaN/inf)
 numeric inputs instead of letting them slip past the comparisons, and
 :func:`rank_candidates` orders only the survivors (passed decisions).
+
+Fee accounting (2026-11-05 review finding): the exec-edge bar is a NET
+bar. Polymarket charges ``notional * rate * p * (1 - p)`` per trade
+(rate 0.07 crypto / 0.05 sports), so :func:`evaluate_candidate`
+subtracts :func:`fee_cost` at the walked entry price from the
+executable edge BEFORE the +5c (or +8c under_risk) comparison. The
+frozen threshold VALUES are unchanged -- only the edge definition
+moved from gross to net. Gross edges stay visible as
+``GateReport.exec_edge_gross``, and :func:`evaluate_gates` accepts an
+optional ``fee_rate`` + ``entry_price`` pair to net its supplied edge
+the same way (without the pair it keeps comparing as supplied).
 """
 
 from __future__ import annotations
@@ -62,6 +73,16 @@ ENTRY_WINDOW: tuple[float, float] = (0.10, 0.92)
 
 # Standard paper notional every exec price is walked for ($250-VWAP).
 DEFAULT_NOTIONAL_USD = 250.0
+
+# Polymarket trading-fee model (fee-accounting fix, 2026-11-05 review):
+# fee = notional * rate * p * (1 - p), i.e. a per-share cost of
+# ``rate * p * (1 - p)`` at entry price ``p`` (:func:`fee_cost`). The
+# crypto book pays 7% and the sports book 5%. The frozen exec bar
+# (>= +5c) is applied to the NET edge -- gross executable edge minus
+# this per-share fee -- so a 5c bar means 5c AFTER fees. The four
+# frozen thresholds themselves are unchanged.
+FEE_RATE_CRYPTO = 0.07
+FEE_RATE_SPORTS = 0.05
 
 # depth_2c: notional within 2 cents of the best level ("depth_near2c").
 DEPTH_NEAR_BAND = 0.02
@@ -201,6 +222,15 @@ class GateReport:
     the caller-configured ``side``/``notional`` walk as supplementary
     valuation information only -- it feeds no acceptance check -- and is
     ``None`` when the caller requested exactly the acceptance parameters.
+
+    Edge fields under the fee model (2026-11-05 fee-accounting fix):
+    ``exec_edge_gross`` is the raw executable edge
+    ``model_median - vwap250``; ``exec_edge`` is the NET edge -- gross
+    minus :func:`fee_cost` at the walked entry price and the caller's
+    ``fee_rate`` -- and is the edge the frozen exec bar compares (after
+    the 50-50 haircut, recorded as ``exec_edge_haircut`` over the NET
+    edge). ``worst_variant_edge`` stays GROSS: it is a model-agreement
+    margin, not an executable-edge bar.
     """
 
     decision: GateDecision
@@ -208,6 +238,7 @@ class GateReport:
     walk: BookWalk
     entry_price: float | None
     gamma_liquidity: float
+    exec_edge_gross: float | None
     exec_edge: float | None
     haircut: float
     exec_edge_haircut: float | None
@@ -303,6 +334,19 @@ def cancellation_haircut(model_median: float) -> float:
 def haircut_edge(exec_edge: float, model_median: float) -> float:
     """Apply the 50-50 haircut to an exec edge (lineage rounding: 4 dp)."""
     return round(exec_edge * cancellation_haircut(model_median), 4)
+
+
+def fee_cost(entry_price: float, fee_rate: float) -> float:
+    """Per-share Polymarket trading fee at ``entry_price``.
+
+    Polymarket charges ``notional * rate * p * (1 - p)`` on a trade, so
+    the fee per share bought at price ``p`` is ``rate * p * (1 - p)``
+    (:data:`FEE_RATE_CRYPTO` = 0.07, :data:`FEE_RATE_SPORTS` = 0.05).
+    The fee is symmetric around ``p = 0.5`` where it is maximal (1.25c
+    per share at the sports rate). Pure arithmetic; callers round to the
+    lineage 4-dp convention where determinism matters.
+    """
+    return fee_rate * entry_price * (1.0 - entry_price)
 
 
 def under_risk_check(
@@ -453,16 +497,20 @@ def evaluate_candidate(
     news: NewsCheck | None = None,
     under_risk: bool = False,
     notional: float = DEFAULT_NOTIONAL_USD,
+    fee_rate: float = FEE_RATE_SPORTS,
 ) -> GateReport:
     """Evaluate the full tightened gate set for one candidate.
 
     The composite entry point over the frozen :func:`evaluate_gates`
     (whose numeric signature cannot take a book): computes the exec and
-    worst-variant edges versus the walked price, applies the 50-50
-    cancellation haircut BEFORE the exec bar, raises the exec bar to +8c
-    when ``under_risk`` is set, and requires the entry window, a
-    completed $250 walk (real-depth intent), the Gamma liquidity floor
-    and a concordant :class:`NewsCheck`.
+    worst-variant edges versus the walked price, charges the Polymarket
+    trading fee (``fee_rate`` defaults to the sports 5% book; crypto
+    candidates pass :data:`FEE_RATE_CRYPTO`) against the executable
+    edge, applies the 50-50 cancellation haircut to the NET edge BEFORE
+    the exec bar, raises the exec bar to +8c when ``under_risk`` is set,
+    and requires the entry window, a completed $250 walk (real-depth
+    intent), the Gamma liquidity floor and a concordant
+    :class:`NewsCheck`.
 
     Acceptance walk (codex-review F2 fix + round-3 contract): this entry
     API is ASK-ONLY -- every non-``"ask"`` ``side`` raises
@@ -484,6 +532,14 @@ def evaluate_candidate(
     and missing liquidity counts as 0 (the liq gate fails, lineage
     ``liq = b['liq'] or 0``). Missing news evidence fails the
     ``news_concordant`` check: candidacy requires concordance.
+
+    Fee accounting (2026-11-05 fix): ``fee_rate`` is charged per share
+    as :func:`fee_cost` at the walked entry price and subtracted from
+    the executable edge BEFORE the exec bar comparison -- the frozen
+    +5c bar (and the +8c under_risk bar) are NET-edge bars. The gross
+    edge is preserved as ``GateReport.exec_edge_gross``; the net edge is
+    ``GateReport.exec_edge`` and the haircut acts on it. ``fee_rate``
+    must be a finite non-negative number.
     """
     median = float(_quote_field(model_quote, "model_median"))
     variants = tuple(float(v) for v in _quote_field(model_quote, "qs_variants"))
@@ -503,6 +559,10 @@ def evaluate_candidate(
     _nonfinite += [f"qs_variants[{i}]" for i, v in enumerate(variants) if not _math.isfinite(v)]
     if _nonfinite:
         raise ValueError(f"non-finite model evidence rejected: {', '.join(_nonfinite)}")
+    if not _math.isfinite(fee_rate) or fee_rate < 0:
+        raise ValueError(
+            f"fee_rate must be a finite non-negative number, got {fee_rate!r}"
+        )
     # F2 residual fix (review round 2): the single-ladder entry API is ASK-ONLY.
     # A caller passing a bid ladder with side="bid" would otherwise get an
     # ascending pseudo-ask walk over bids (false entry eligibility); callers
@@ -522,12 +582,20 @@ def evaluate_candidate(
     variant_spread = round(max(variants) - min(variants), 4)
     worst_model = min(variants)
     if walk.vwap is None:
+        exec_edge_gross = None
         exec_edge = None
         worst_edge = None
         exec_edge_haircut = None
         haircut = 1.0
     else:
-        exec_edge = round(median - walk.vwap, 4)
+        exec_edge_gross = round(median - walk.vwap, 4)
+        # Fee accounting (2026-11-05 fix): the exec bar is a NET-edge bar.
+        # The per-share fee is charged at the walked entry price and
+        # subtracted from the executable edge BEFORE the bar comparison;
+        # the 50-50 haircut then acts on the NET edge (4-dp rounding at
+        # each step, lineage convention).
+        fee = round(fee_cost(walk.vwap, fee_rate), 4)
+        exec_edge = round(exec_edge_gross - fee, 4)
         worst_edge = round(worst_model - walk.vwap, 4)
         haircut = cancellation_haircut(median)
         exec_edge_haircut = round(exec_edge * haircut, 4)
@@ -557,6 +625,7 @@ def evaluate_candidate(
         walk=walk,
         entry_price=walk.vwap,
         gamma_liquidity=liq,
+        exec_edge_gross=exec_edge_gross,
         exec_edge=exec_edge,
         haircut=haircut,
         exec_edge_haircut=exec_edge_haircut,
@@ -595,6 +664,8 @@ def evaluate_gates(
     worst_variant_edge: float,
     median_exec_edge: float,
     gamma_liquidity: float,
+    fee_rate: float | None = None,
+    entry_price: float | None = None,
 ) -> GateDecision:
     """Evaluate the four frozen numeric gates for one candidate.
 
@@ -602,6 +673,15 @@ def evaluate_gates(
     callers must apply the 50-50 cancellation haircut (:func:`haircut_edge`)
     BEFORE calling, per the r15 application order (edge halved first,
     then barred). Boundary values pass (round-24 epsilon tolerances).
+
+    Fee accounting (2026-11-05 fix): passing ``fee_rate`` together with
+    ``entry_price`` (both keyword-only, both or neither) makes the exec
+    gate a NET-edge gate -- ``median_exec_edge`` is then interpreted as
+    the GROSS edge and :func:`fee_cost` at ``entry_price`` is subtracted
+    from it before the bar comparison, exactly as :func:`evaluate_candidate`
+    does internally. Without the pair, the edge is compared as supplied
+    (the frozen as-supplied contract; callers who already netted the fee
+    or replay frozen gross records keep byte-identical behavior).
 
     Non-finite inputs (NaN, +/-inf) are rejected with :class:`ValueError`
     (codex-review F3 fix): NaN compares False against every threshold and
@@ -618,6 +698,23 @@ def evaluate_gates(
         raise ValueError(
             "evaluate_gates inputs must be finite numbers; non-finite: "
             + ", ".join(non_finite)
+        )
+    if (fee_rate is None) != (entry_price is None):
+        raise ValueError(
+            "fee accounting requires both fee_rate and entry_price "
+            "(pass neither to compare the exec edge as supplied)"
+        )
+    if fee_rate is not None and entry_price is not None:
+        if not math.isfinite(fee_rate) or fee_rate < 0:
+            raise ValueError(
+                f"fee_rate must be a finite non-negative number, got {fee_rate!r}"
+            )
+        if not math.isfinite(entry_price):
+            raise ValueError(
+                f"entry_price must be a finite number, got {entry_price!r}"
+            )
+        median_exec_edge = round(
+            median_exec_edge - round(fee_cost(entry_price, fee_rate), 4), 4
         )
     failed: list[str] = []
     if variant_spread > GATES["variant_spread_max"] + GATE_EPSILON:

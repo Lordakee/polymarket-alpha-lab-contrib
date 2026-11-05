@@ -627,7 +627,10 @@ def test_bou_lee_public_builder_to_gate_rejected_for_variant_spread(
 
     # Gate path: book fills $250 at the frozen 0.52 ask, liquidity and a
     # concordant news check are supplied; the ONLY failing gate is the
-    # variant spread (worst +5.14c and exec +8.96c both pass).
+    # variant spread (worst +5.14c gross and exec +8.96c gross / +7.71c
+    # net of the 1.25c sports fee both pass -- fee accounting,
+    # 2026-11-05: the frozen fixture edge is GROSS, carried by the
+    # report as exec_edge_gross).
     book = [(case["entry_ask_vwap250"], 1000.0)]
     news = gates.check_news("BOU-LEE", "48h", news_delta="unchanged")
     report = gates.evaluate_candidate(
@@ -639,7 +642,11 @@ def test_bou_lee_public_builder_to_gate_rejected_for_variant_spread(
     )
     assert report.variant_spread == pytest.approx(case["var_spread"], abs=1e-4)
     assert report.worst_variant_edge == pytest.approx(case["edge_worst_variant"], abs=1e-4)
-    assert report.exec_edge == pytest.approx(case["edge_exec"], abs=1e-4)
+    assert report.exec_edge_gross == pytest.approx(case["edge_exec"], abs=1e-4)
+    assert report.exec_edge == pytest.approx(
+        round(case["edge_exec"] - round(gates.fee_cost(case["entry_ask_vwap250"], gates.FEE_RATE_SPORTS), 4), 4),
+        abs=1e-4,
+    )
     assert report.decision.passed is False
     assert report.decision.failed == ("variant_spread",)
     assert case["fail_reasons"] == ["var>6c"]

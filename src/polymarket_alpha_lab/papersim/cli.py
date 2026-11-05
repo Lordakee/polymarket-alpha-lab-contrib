@@ -383,13 +383,47 @@ def _check_gate_arithmetic_48() -> tuple[str, bool, str]:
         gamma_liquidity=float(ladder["liq"]),
     )
     gates_ok = decision.passed is True and decision.failed == ()
-    ok = walk_ok and identity_ok and gates_ok
+    # Fee accounting (2026-11-05 fix): the same record through the NET
+    # exec bar. Per-share fee at entry 0.56, sports rate:
+    # 0.05 * 0.56 * 0.44 = 1.23c, so exec +7.42c gross = +6.19c net,
+    # still clearing the frozen +5c bar; both doors (the fee-aware
+    # evaluate_gates and evaluate_candidate with its default sports
+    # fee_rate) must agree on the net edge and the pass.
+    fee = round(gates.fee_cost(ask.vwap, gates.FEE_RATE_SPORTS), 4)
+    edge_exec_net = round(edge_exec - fee, 4)
+    net_decision = gates.evaluate_gates(
+        variant_spread=spread,
+        worst_variant_edge=edge_worst,
+        median_exec_edge=edge_exec,
+        gamma_liquidity=float(ladder["liq"]),
+        fee_rate=gates.FEE_RATE_SPORTS,
+        entry_price=ask.vwap,
+    )
+    report = gates.evaluate_candidate(
+        dict(model_median=entry["model_median"], qs_variants=variants),
+        LADDER_5856164_ASK,
+        gamma_liquidity=float(ladder["liq"]),
+        news=gates.check_news(
+            case["position"], "r24 recheck", news_delta=gates.NEWS_UNCHANGED
+        ),
+    )
+    net_ok = (
+        net_decision.passed is True
+        and net_decision.failed == ()
+        and report.exec_edge_gross == edge_exec
+        and report.exec_edge == edge_exec_net
+        and report.checks["exec>=+5c"] is True
+        and report.decision.passed is True
+    )
+    ok = walk_ok and identity_ok and gates_ok and net_ok
     return (
         "gate-arithmetic:#48",
         ok,
         f"ask walk best/vwap={ask.best}/{ask.vwap} depth_near2c={ask.depth_near2c:.0f} "
-        f"exec=+{edge_exec * 100:.1f}c worst=+{edge_worst * 100:.1f}c "
-        f"spread={spread * 100:.2f}c gates={'pass' if gates_ok else 'fail'}",
+        f"exec=+{edge_exec * 100:.1f}c gross / +{edge_exec_net * 100:.1f}c net "
+        f"(fee {fee * 100:.2f}c @ {ask.vwap:.2f}) worst=+{edge_worst * 100:.1f}c "
+        f"spread={spread * 100:.2f}c gates={'pass' if gates_ok else 'fail'} "
+        f"net_gates={'pass' if net_ok else 'fail'}",
     )
 
 
