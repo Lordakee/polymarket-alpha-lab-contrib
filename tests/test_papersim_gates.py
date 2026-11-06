@@ -694,10 +694,11 @@ def test_evaluate_candidate_numeric_failed_matches_frozen_evaluate_gates():
 
 
 def test_suspension_registry_policies():
-    banned = suspension_policy("match_winner", cross_league=True)
-    assert banned.policy == POLICY_BANNED
-    assert banned.eligible is False
-    assert "structural" in banned.reason.lower()
+    cross_lg = suspension_policy("match_winner", cross_league=True)
+    assert cross_lg.policy == POLICY_ELIGIBLE_DEPRIORITIZED
+    assert cross_lg.eligible is True
+    assert "bridge" in cross_lg.reason.lower()
+    assert "T4" in cross_lg.reason
     domestic = suspension_policy("match_winner", cross_league=False)
     assert domestic.policy == POLICY_ELIGIBLE_DEPRIORITIZED
     assert domestic.eligible is True
@@ -708,7 +709,7 @@ def test_suspension_registry_policies():
     assert totals.policy == POLICY_ELIGIBLE
     assert totals.eligible is True
     # aliases seen in the lineage records
-    assert suspension_policy("ml", cross_league=True).policy == POLICY_BANNED
+    assert suspension_policy("ml", cross_league=True).policy == POLICY_ELIGIBLE_DEPRIORITIZED
     assert suspension_policy("1x2").policy == POLICY_ELIGIBLE_DEPRIORITIZED
     assert suspension_policy("handicap").policy == POLICY_FLAGGED_ONLY
 

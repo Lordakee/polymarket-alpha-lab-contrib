@@ -18,8 +18,8 @@ Subcommands (WP-P1 final commit):
   recomputes the frozen regression anchors through the REAL
   implementations — the three r19 crypto touch anchors (ETH-2000 /
   ETH-2250 / BTC-65k), the four r23 soccer anchors (BRE-FOR / HUL-IPS /
-  CHE-MUN / BOU-LEE over the ten sweep variants), the banned
-  cross-league path (HOF-LYO must yield ``None``) and the frozen #48
+  CHE-MUN / BOU-LEE over the ten sweep variants), the no-bridge
+  cross-league path (HOF-LYO yields ``None`` without bridge; policy is ELIGIBLE_DEPRIORITIZED with bridge) and the frozen #48
   gate-arithmetic record (book walk, edge identities, gate pass).
   Prints one ``[PASS]``/``[FAIL]`` line per check plus a summary; exit
   code 0 only when every check passes. No network, no database
@@ -327,11 +327,11 @@ def _check_banned_path() -> tuple[str, bool, str]:
         lambdas is None
         and variants is None
         and case["expected_match_lambdas"] is None
-        and policy.policy == gates.POLICY_BANNED
-        and policy.eligible is False
+        and policy.policy == gates.POLICY_ELIGIBLE_DEPRIORITIZED
+        and policy.eligible is True
     )
     return (
-        "banned-path:HOF-LYO",
+        "no-bridge-path:HOF-LYO",
         ok,
         f"match_lambdas={lambdas} fixture_variants={'None' if variants is None else 'not-None'} "
         f"cross-league match_winner policy={policy.policy}",
@@ -445,7 +445,7 @@ def _cmd_selfcheck() -> int:
         ("soccer-r23:HUL-IPS_O2.5", lambda: _check_soccer_r23("HUL-IPS_O2.5")),
         ("soccer-r23:CHE-MUN_O3.5", lambda: _check_soccer_r23("CHE-MUN_O3.5")),
         ("soccer-r23:BOU-LEE_O2.5", lambda: _check_soccer_r23("BOU-LEE_O2.5")),
-        ("banned-path:HOF-LYO", _check_banned_path),
+        ("no-bridge-path:HOF-LYO", _check_banned_path),
         ("gate-arithmetic:#48", _check_gate_arithmetic_48),
     ]
     check_results: list[tuple[str, bool, str]] = []

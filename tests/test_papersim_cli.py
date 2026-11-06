@@ -32,7 +32,7 @@ SELFCHECK_CHECK_NAMES = (
     "soccer-r23:HUL-IPS_O2.5",
     "soccer-r23:CHE-MUN_O3.5",
     "soccer-r23:BOU-LEE_O2.5",
-    "banned-path:HOF-LYO",
+    "no-bridge-path:HOF-LYO",
     "gate-arithmetic:#48",
 )
 

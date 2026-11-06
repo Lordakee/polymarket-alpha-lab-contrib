@@ -115,11 +115,10 @@ POLICY_FLAGGED_ONLY = "FLAGGED_ONLY"
 POLICY_ELIGIBLE = "ELIGIBLE"
 
 REASON_CROSS_LEAGUE_MATCH_WINNER = (
-    "cross-league match_winner BANNED: confirmed structural defect - bespoke "
-    "scripts combined domestic xG multipliers across leagues without a "
-    "league-strength bridge and produced the HOF-LYO favorite flip "
-    "(review/FIXES.md 2026-10-30); stays banned until a league-strength-bridged "
-    "UCL/UEL walk-forward backtest passes"
+    "cross-league match_winner ELIGIBLE_DEPRIORITIZED with bridge: WP-P2a bridge validated "
+    "(WP-P2b backtest T1-T5 PASS; bridge retro-test fixed all 3 losing fixture directions). "
+    "Requires bridge parameter + worst-variant >= +5c (extra margin) + $150 marginal sizing. "
+    "T4 accumulation: >=20 settled cross-league MW bets before standard sizing."
 )
 REASON_DOMESTIC_MATCH_WINNER = (
     "domestic match_winner eligible under the tightened gates but DEPRIORITIZED "
@@ -137,7 +136,7 @@ REASON_ELIGIBLE_KIND = (
 
 # Registry: (normalized market kind, cross_league) -> (policy, eligible, reason).
 SUSPENSION_REGISTRY: Mapping[tuple[str, bool], tuple[str, bool, str]] = {
-    ("match_winner", True): (POLICY_BANNED, False, REASON_CROSS_LEAGUE_MATCH_WINNER),
+    ("match_winner", True): (POLICY_ELIGIBLE_DEPRIORITIZED, True, REASON_CROSS_LEAGUE_MATCH_WINNER),
     ("match_winner", False): (POLICY_ELIGIBLE_DEPRIORITIZED, True, REASON_DOMESTIC_MATCH_WINNER),
     ("spread", False): (POLICY_FLAGGED_ONLY, False, REASON_SPREADS_FLAGGED_ONLY),
     ("spread", True): (POLICY_FLAGGED_ONLY, False, REASON_SPREADS_FLAGGED_ONLY),
@@ -438,7 +437,7 @@ def check_news(
 def suspension_policy(market_kind: str, *, cross_league: bool = False) -> SuspensionDecision:
     """Look up the suspension policy for one market kind.
 
-    Cross-league match_winner is BANNED (structural defect), domestic
+    Cross-league match_winner is ELIGIBLE_DEPRIORITIZED (bridge validated), domestic
     match_winner is ELIGIBLE_DEPRIORITIZED, spreads are FLAGGED_ONLY;
     every other kind (O/U totals, BTTS, team totals) is ELIGIBLE under
     the tightened gates.
