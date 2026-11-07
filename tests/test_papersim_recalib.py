@@ -204,6 +204,50 @@ def test_rho_global_fallback_and_insufficient_low_score_independence() -> None:
     assert independent.league_parameters["EPL"].rho_source == "independence_insufficient_data"
 
 
+@pytest.mark.parametrize("with_global_signal", [False, True])
+def test_zero_weight_low_scores_cannot_qualify_local_or_global_rho(with_global_signal: bool) -> None:
+    old = tuple(match(n, season="2022", matchweek=None, home_goals=0, away_goals=0,
+                      kickoff=CUTOFF - timedelta(days=1500, minutes=n)) for n in range(20))
+    recent = tuple(match(n, home_goals=3, away_goals=2,
+                         kickoff=CUTOFF - timedelta(days=1, minutes=n)) for n in range(100))
+    global_signal = tuple(match(n, league="Signal", home_goals=1, away_goals=1,
+                               kickoff=CUTOFF - timedelta(days=1, minutes=n)) for n in range(100))
+    assert all(math.exp2(-(CUTOFF - row.kickoff).total_seconds() / 86400.0) == 0.0 for row in old)
+    rows = old + recent + (global_signal if with_global_signal else ())
+    fitted = fit(history(rows), config=replace(Config(), half_life_days=1.0))
+    local = fitted.league_parameters["EPL"]
+    assert local.effective_matches > fitted.config.min_rho_weight
+    assert local.rho_low_score_matches == 0
+    if with_global_signal:
+        assert local.rho_source == "global_fallback"
+        assert local.rho == fitted.global_parameters.rho < 0.0
+        assert fitted.global_parameters.rho_low_score_matches == 100
+    else:
+        assert local.rho_source == "independence_insufficient_data"
+        assert fitted.global_parameters.rho_source == "independence_insufficient_data"
+        assert local.rho == fitted.global_parameters.rho == 0.0
+
+
+def test_numerically_flat_weighted_low_score_likelihood_uses_independence() -> None:
+    # The weights are positive subnormals, but multiplying by the score
+    # coefficient underflows: these observations provide no numerical slope.
+    old = tuple(match(n, season="2023", matchweek=None, home_team="Old A", away_team="Old B",
+                      home_goals=0, away_goals=0, home_xg=0.0, away_xg=0.0,
+                      kickoff=CUTOFF - timedelta(days=1064, minutes=n)) for n in range(20))
+    recent = tuple(match(n, home_goals=3, away_goals=2,
+                         kickoff=CUTOFF - timedelta(days=1, minutes=n)) for n in range(100))
+    weight = math.exp2(-(CUTOFF - old[0].kickoff).total_seconds() / 86400.0)
+    assert weight > 0.0
+    fitted = fit(history(old + recent), config=replace(Config(), half_life_days=1.0, team_prior_matches=0.0))
+    local = fitted.league_parameters["EPL"]
+    home, away = (fitted.team_parameters[("EPL", team)] for team in ("Old A", "Old B"))
+    lh, la = local.home_rate * home.attack * away.defence, local.away_rate * away.attack * home.defence
+    assert weight * (-lh * la) == 0.0
+    assert local.rho_low_score_matches == 20
+    assert local.rho_source == fitted.global_parameters.rho_source == "independence_insufficient_data"
+    assert local.rho == fitted.global_parameters.rho == 0.0
+
+
 def test_empty_training_has_explicit_configured_prior_and_numerically_valid_tails() -> None:
     empty = History(CUTOFF, (), frozenset(), {"EPL": "2026"})
     fitted = fit(empty, config=replace(Config(), global_home_rate=80.0, global_away_rate=60.0))

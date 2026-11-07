@@ -25,9 +25,10 @@ current-season training matches OR no prior same-league season in training;
 absence of prior history alone is not proof that a club was promoted.
 
 League levels need >=12 matches and >=6 recency-weighted matches; otherwise
-they use the global prior.  Dixon-Coles rho needs >=80 matches, >=20 low-score
-matches and >=20 weighted matches, locally or globally; otherwise independence
-is explicit.  Rho maximizes the weighted actual-score likelihood, not O/U fit.
+they use the global prior.  Dixon-Coles rho needs >=80 positive-weight matches,
+>=20 positive-weight low-score matches and >=20 weighted matches, locally or
+globally; otherwise independence is explicit.  A numerically flat rho
+likelihood is also insufficient.  Rho fits actual-score likelihood, not O/U.
 Its feasible interval keeps every low-score cell positive without a tau floor.
 All these minima are explicit Config fields.  Refit once per completed round;
 predict refuses a target round at or before any fitted round in that season.
@@ -400,6 +401,9 @@ def _rho_interval(rates: tuple[tuple[float, float], ...], bound: float) -> tuple
 
 
 def _rho_fit(rows: tuple[tuple[Match, float, float, float], ...], config: Config) -> tuple[float, bool, int]:
+    # Decay can underflow: zero-weight rows are absent from the likelihood,
+    # its sample-size checks, and its positivity constraints.
+    rows = tuple(item for item in rows if item[1] > 0.0)
     low = sum(row.home_goals <= 1 and row.away_goals <= 1 for row, _, _, _ in rows)
     eligible = (len(rows) >= config.min_rho_matches and low >= config.min_rho_low_scores and
                 math.fsum(w for _, w, _, _ in rows) >= config.min_rho_weight)
@@ -410,8 +414,10 @@ def _rho_fit(rows: tuple[tuple[Match, float, float, float], ...], config: Config
     for row, weight, lh, la in rows:
         score = (row.home_goals, row.away_goals)
         coefficient = {(0, 0): -lh * la, (0, 1): lh, (1, 0): la, (1, 1): -1.0}.get(score)
-        if coefficient is not None:
+        if coefficient is not None and weight * coefficient != 0.0:
             terms.append((weight, coefficient))
+    if not terms:
+        return 0.0, False, low
     # The score-dependent log likelihood is sum w*log(1+c*rho), concave.
     def derivative(rho: float) -> float:
         return math.fsum(w * c / (1.0 + c * rho) for w, c in terms)
