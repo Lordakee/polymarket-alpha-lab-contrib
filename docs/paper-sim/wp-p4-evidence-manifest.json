@@ -20,8 +20,9 @@
   },
   {
    "bytes": 394760,
-   "path": "/home/ubuntu/paper-sim/review/wp-p4-evidence/wp-p4-shrinkage-2026-11-07.json (server evidence dir; repo copy removed for size, sha256 unchanged)",
-   "sha256": "75abed18e814f92822e40c11713aaf44c9b22a1736524ba072e386aba6df02fb"
+   "path": "/home/ubuntu/paper-sim/review/wp-p4-evidence/wp-p4-shrinkage-2026-11-07.json",
+   "sha256": "75abed18e814f92822e40c11713aaf44c9b22a1736524ba072e386aba6df02fb",
+   "note": "server evidence dir; repo copy removed for size, sha256 unchanged; repo copy removed for size"
   },
   {
    "bytes": 2701,
@@ -30,8 +31,9 @@
   },
   {
    "bytes": 4345243,
-   "path": "/home/ubuntu/paper-sim/review/wp-p4-evidence/wp-p4-walkforward-2026-11-07.json (server evidence dir; repo copy removed for size, sha256 unchanged)",
-   "sha256": "51d7da0e6dd09176b8c6141ba1fd99dc7e63e0995ea4a354f6b5fc1c41ce7899"
+   "path": "/home/ubuntu/paper-sim/review/wp-p4-evidence/wp-p4-walkforward-2026-11-07.json",
+   "sha256": "51d7da0e6dd09176b8c6141ba1fd99dc7e63e0995ea4a354f6b5fc1c41ce7899",
+   "note": "server evidence dir; repo copy removed for size, sha256 unchanged; repo copy removed for size"
   },
   {
    "bytes": 6972,
