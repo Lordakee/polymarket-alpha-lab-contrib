@@ -3422,3 +3422,22 @@ YES 市场须调用方补集或加显式方向参数）——加密专属 walk-f
 在 P4-1..P4-3 任何一项通过其验证门之前：gate-E 维持挂起、Eredivisie/
 Championship 维持 totals-only、跨联赛 MW 维持 ELIGIBLE_DEPRIORITIZED
 $150、全部冻结阈值不动。
+
+### WP-P4 历史影子实现（2026-11-07，分支 codex/wp-p4-optimize）
+
+本任务 owner 单独授权 Codex `gpt-6-astra/max` 实施；基线
+`0dab0bd53d351396a1844ad9c9748b3d7d2774a1`。只提交本地分支，不推送、不
+合并、不改现网扫描或入场；最终独立审查、测试、合并、推送由 ZCode
+协调者完成。以上 §73 过门与影子观察条件保持约束力。
+
+- **P4-0a 候选实现**：新增迁移
+  `supabase/migrations/20261107000000_papersim_perf_view_fix.sql` 及锁清单项；
+  按市场总份额分摊 resolution PnL，最后按 market_type 汇总后才舍入。
+  决策级计数及胜负口径不变；份额不足以分摊时该分类总 PnL 为 NULL。
+  原迁移与 `ledger.ddl()` 保持历史原样，新迁移须单独审查应用。
+- **P4-0a 验证**：`tests/test_papersim_perf_view_fix.py` 9 项通过，包括
+  PostgreSQL 上只读事务内的 SELECT/VALUES 合成 fixture（无表读取、DDL、
+  临时表或任何数据写入）；复现 2,795.00 → 1,489.80，跨分类按份额分摊、
+  不丢失分币尾差、无效份额不伪造总数。**迁移未应用到数据库**。
+- 基线环境 Python 3.12.3；原 papersim 测试 308 passed / 1 skipped，
+  selfcheck 10/10。P4-1/P4-2 历史实现与证据待后续本分支提交。
