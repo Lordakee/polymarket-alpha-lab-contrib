@@ -1,105 +1,105 @@
 {
-  "base_commit": "0dab0bd53d351396a1844ad9c9748b3d7d2774a1",
-  "branch": "codex/wp-p4-optimize",
-  "database_migration_applied": false,
-  "files": [
-    {
-      "bytes": 271085,
-      "path": "DELIVERY_PLAN.md",
-      "sha256": "77e003592be519acb2882697beb68f65a9411a802b547dc5c64a0538b4d54575"
-    },
-    {
-      "bytes": 12563,
-      "path": "database/migrations.lock.json",
-      "sha256": "5899e52ecd8bd84d9850d53c11fc14a57f9d3e9067d5df188af9b492a355e25b"
-    },
-    {
-      "bytes": 18783,
-      "path": "docs/paper-sim/wp-p4-optimization-2026-11-07.md",
-      "sha256": "52218f127abe756f59dcc5b8ab6790e752977d85fb0c90b95d22512a9717a1ac"
-    },
-    {
-      "bytes": 394760,
-      "path": "docs/paper-sim/wp-p4-shrinkage-2026-11-07.json",
-      "sha256": "75abed18e814f92822e40c11713aaf44c9b22a1736524ba072e386aba6df02fb"
-    },
-    {
-      "bytes": 2701,
-      "path": "docs/paper-sim/wp-p4-shrinkage-2026-11-07.md",
-      "sha256": "2fd5205a1b1c0adb362574f19792eda3f4ec68db8844f653510af5b35504a8da"
-    },
-    {
-      "bytes": 4345243,
-      "path": "docs/paper-sim/wp-p4-walkforward-2026-11-07.json",
-      "sha256": "51d7da0e6dd09176b8c6141ba1fd99dc7e63e0995ea4a354f6b5fc1c41ce7899"
-    },
-    {
-      "bytes": 6972,
-      "path": "docs/paper-sim/wp-p4-walkforward-2026-11-07.md",
-      "sha256": "0fe5c97e219196cc8576bd519addf3867e2091b9744ba0f4cb0c7004b7062430"
-    },
-    {
-      "bytes": 24497,
-      "path": "src/polymarket_alpha_lab/papersim/recalib.py",
-      "sha256": "f6badedb3cf9d72628af7a186c0e9183d69bca12b204a1df946e650a0cd282a9"
-    },
-    {
-      "bytes": 2427,
-      "path": "supabase/migrations/20261107000000_papersim_perf_view_fix.sql",
-      "sha256": "f35332bad418f4f7be7db9465daf268f22d71341cfc833372f0381b259961e04"
-    },
-    {
-      "bytes": 5218,
-      "path": "tests/test_papersim_perf_view_fix.py",
-      "sha256": "ec2d14fc7b949c5d9265b235337ddc1a14aa68b8088e661b02ebfa45cff58257"
-    },
-    {
-      "bytes": 18366,
-      "path": "tests/test_papersim_recalib.py",
-      "sha256": "dbe3d2bc4da7ef85d69feb264a539456786d0bc5ac07b685fc6478e71e1c03d1"
-    },
-    {
-      "bytes": 6966,
-      "path": "tests/test_wp_p4_history.py",
-      "sha256": "7f24158249eb30e02019873188a222372ee09086d7b331d9a9f6a2f301cc4d65"
-    },
-    {
-      "bytes": 12740,
-      "path": "tests/test_wp_p4_market.py",
-      "sha256": "00ec870f377cd60a96b3886d320138d37cd421a3069fc4aa46d61f4a59cff84b"
-    },
-    {
-      "bytes": 3626,
-      "path": "tests/test_wp_p4_shrinkage.py",
-      "sha256": "e65eebc6273c05735ddb7792b7cb437d7989e947409b5696fdeb122d921a37a5"
-    },
-    {
-      "bytes": 4147,
-      "path": "tests/test_wp_p4_walkforward.py",
-      "sha256": "02c7eb54fb8ac00d201758dbdec92828b03935e70be392490a8529b7bc58f7ed"
-    },
-    {
-      "bytes": 22545,
-      "path": "tools/wp_p4_history.py",
-      "sha256": "053f979cb751c6d32ec9dd453558333f7ccba4880e9dd63a142709599dcc6967"
-    },
-    {
-      "bytes": 23780,
-      "path": "tools/wp_p4_market.py",
-      "sha256": "75bb376e681c7923ba4ffd79ec6d513724ed864bf79b000a2d54691b829c529f"
-    },
-    {
-      "bytes": 14631,
-      "path": "tools/wp_p4_shrinkage.py",
-      "sha256": "59a772790cb6ebc39158c3154d146d8f842d89bcd19be063c003cdad2e882c36"
-    },
-    {
-      "bytes": 21878,
-      "path": "tools/wp_p4_walkforward.py",
-      "sha256": "df70542fef6bfddce2e8b57f25222c1a88824f160e429fa6fc14aeeb9530da0d"
-    }
-  ],
-  "format": "wp-p4-local-delivery-v1",
-  "implementation_tip": "664beb131415dd8dcfda1d0ff1214201a6d782ae",
-  "remote_publication": false
+ "base_commit": "0dab0bd53d351396a1844ad9c9748b3d7d2774a1",
+ "branch": "codex/wp-p4-optimize",
+ "database_migration_applied": false,
+ "files": [
+  {
+   "bytes": 271085,
+   "path": "DELIVERY_PLAN.md",
+   "sha256": "77e003592be519acb2882697beb68f65a9411a802b547dc5c64a0538b4d54575"
+  },
+  {
+   "bytes": 12563,
+   "path": "database/migrations.lock.json",
+   "sha256": "5899e52ecd8bd84d9850d53c11fc14a57f9d3e9067d5df188af9b492a355e25b"
+  },
+  {
+   "bytes": 18783,
+   "path": "docs/paper-sim/wp-p4-optimization-2026-11-07.md",
+   "sha256": "52218f127abe756f59dcc5b8ab6790e752977d85fb0c90b95d22512a9717a1ac"
+  },
+  {
+   "bytes": 394760,
+   "path": "/home/ubuntu/paper-sim/review/wp-p4-evidence/wp-p4-shrinkage-2026-11-07.json (server evidence dir; repo copy removed for size, sha256 unchanged)",
+   "sha256": "75abed18e814f92822e40c11713aaf44c9b22a1736524ba072e386aba6df02fb"
+  },
+  {
+   "bytes": 2701,
+   "path": "docs/paper-sim/wp-p4-shrinkage-2026-11-07.md",
+   "sha256": "2fd5205a1b1c0adb362574f19792eda3f4ec68db8844f653510af5b35504a8da"
+  },
+  {
+   "bytes": 4345243,
+   "path": "/home/ubuntu/paper-sim/review/wp-p4-evidence/wp-p4-walkforward-2026-11-07.json (server evidence dir; repo copy removed for size, sha256 unchanged)",
+   "sha256": "51d7da0e6dd09176b8c6141ba1fd99dc7e63e0995ea4a354f6b5fc1c41ce7899"
+  },
+  {
+   "bytes": 6972,
+   "path": "docs/paper-sim/wp-p4-walkforward-2026-11-07.md",
+   "sha256": "0fe5c97e219196cc8576bd519addf3867e2091b9744ba0f4cb0c7004b7062430"
+  },
+  {
+   "bytes": 24497,
+   "path": "src/polymarket_alpha_lab/papersim/recalib.py",
+   "sha256": "f6badedb3cf9d72628af7a186c0e9183d69bca12b204a1df946e650a0cd282a9"
+  },
+  {
+   "bytes": 2427,
+   "path": "supabase/migrations/20261107000000_papersim_perf_view_fix.sql",
+   "sha256": "f35332bad418f4f7be7db9465daf268f22d71341cfc833372f0381b259961e04"
+  },
+  {
+   "bytes": 5218,
+   "path": "tests/test_papersim_perf_view_fix.py",
+   "sha256": "ec2d14fc7b949c5d9265b235337ddc1a14aa68b8088e661b02ebfa45cff58257"
+  },
+  {
+   "bytes": 18366,
+   "path": "tests/test_papersim_recalib.py",
+   "sha256": "dbe3d2bc4da7ef85d69feb264a539456786d0bc5ac07b685fc6478e71e1c03d1"
+  },
+  {
+   "bytes": 6966,
+   "path": "tests/test_wp_p4_history.py",
+   "sha256": "7f24158249eb30e02019873188a222372ee09086d7b331d9a9f6a2f301cc4d65"
+  },
+  {
+   "bytes": 12740,
+   "path": "tests/test_wp_p4_market.py",
+   "sha256": "00ec870f377cd60a96b3886d320138d37cd421a3069fc4aa46d61f4a59cff84b"
+  },
+  {
+   "bytes": 3626,
+   "path": "tests/test_wp_p4_shrinkage.py",
+   "sha256": "e65eebc6273c05735ddb7792b7cb437d7989e947409b5696fdeb122d921a37a5"
+  },
+  {
+   "bytes": 4147,
+   "path": "tests/test_wp_p4_walkforward.py",
+   "sha256": "02c7eb54fb8ac00d201758dbdec92828b03935e70be392490a8529b7bc58f7ed"
+  },
+  {
+   "bytes": 22545,
+   "path": "tools/wp_p4_history.py",
+   "sha256": "053f979cb751c6d32ec9dd453558333f7ccba4880e9dd63a142709599dcc6967"
+  },
+  {
+   "bytes": 23780,
+   "path": "tools/wp_p4_market.py",
+   "sha256": "75bb376e681c7923ba4ffd79ec6d513724ed864bf79b000a2d54691b829c529f"
+  },
+  {
+   "bytes": 14631,
+   "path": "tools/wp_p4_shrinkage.py",
+   "sha256": "59a772790cb6ebc39158c3154d146d8f842d89bcd19be063c003cdad2e882c36"
+  },
+  {
+   "bytes": 21878,
+   "path": "tools/wp_p4_walkforward.py",
+   "sha256": "df70542fef6bfddce2e8b57f25222c1a88824f160e429fa6fc14aeeb9530da0d"
+  }
+ ],
+ "format": "wp-p4-local-delivery-v1",
+ "implementation_tip": "664beb131415dd8dcfda1d0ff1214201a6d782ae",
+ "remote_publication": false
 }
