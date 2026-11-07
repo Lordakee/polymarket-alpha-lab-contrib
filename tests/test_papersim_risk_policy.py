@@ -11,6 +11,7 @@ import inspect
 import pytest
 
 from polymarket_alpha_lab.papersim.risk_policy import (
+    CROSS_LEAGUE_ML_CLASS,
     DOMESTIC_ML_CLASS,
     DIRECTION_LONG,
     DIRECTION_SHORT,
@@ -155,6 +156,49 @@ def test_tier_notional_unknown_tier_rejected():
     bogus = dataclasses.replace(sizing_tier(), tier="NOPE")
     with pytest.raises(ValueError):
         tier_notional(bogus)
+
+
+# ---------------------------------------------------------------------------
+# Cross-league match_winner sizing class (codex-review finding 4,
+# 2026-11-07): the class can ONLY ever produce the $150 deprioritized
+# tier -- never the full $250.
+# ---------------------------------------------------------------------------
+
+
+def test_sizing_tier_cross_league_ml_only_ever_marginal_150():
+    tier = sizing_tier(market_class=CROSS_LEAGUE_ML_CLASS)
+    assert tier.tier == TIER_MARGINAL
+    assert tier_notional(tier) == MARGINAL_NOTIONAL_USD == 150.0
+    assert (tier.min_notional, tier.max_notional) == (150.0, 150.0)
+    # nothing graduates it to $250: not full lineup confirmation ...
+    confirmed = sizing_tier(market_class=CROSS_LEAGUE_ML_CLASS, lineup_confirmation=1.0)
+    assert confirmed.tier == TIER_MARGINAL and tier_notional(confirmed) == 150.0
+    # ... not predicted-only lineups (never the $150-$250 EARLY_ENTRY
+    # band either) ...
+    predicted = sizing_tier(market_class=CROSS_LEAGUE_ML_CLASS, lineup_confirmation=0.0)
+    assert predicted.tier == TIER_MARGINAL and tier_notional(predicted) == 150.0
+    # ... and not the fragile flag either way (unlike domestic, the
+    # cross-league class needs no condition at all -- T4 accumulation:
+    # >=20 settled cross-league MW bets before standard sizing).
+    assert sizing_tier(market_class=CROSS_LEAGUE_ML_CLASS, fragile_pass=False).tier == TIER_MARGINAL
+    assert sizing_tier(market_class=CROSS_LEAGUE_ML_CLASS, fragile_pass=True).tier == TIER_MARGINAL
+    assert "cross-league" in tier.reason and "T4" in tier.reason
+
+
+def test_sizing_tier_domestic_ml_regression_unchanged():
+    # domestic contrast (regression): the marginal tier still needs BOTH
+    # the domestic class and a fragile pass; everything else stays
+    # FULL_EDGE exactly as before the cross-league class was added.
+    assert (
+        sizing_tier(market_class=DOMESTIC_ML_CLASS, fragile_pass=True).tier
+        == TIER_MARGINAL
+    )
+    assert (
+        sizing_tier(market_class=DOMESTIC_ML_CLASS, fragile_pass=False).tier
+        == TIER_FULL_EDGE
+    )
+    assert sizing_tier(market_class="standard", fragile_pass=True).tier == TIER_FULL_EDGE
+    assert sizing_tier().tier == TIER_FULL_EDGE
 
 
 # ---------------------------------------------------------------------------

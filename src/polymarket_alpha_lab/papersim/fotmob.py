@@ -6,8 +6,9 @@ transform the fetched payloads into the Understat snapshot shape
 consumed by :mod:`polymarket_alpha_lab.papersim.xg`. This is the WP-P3
 mechanism that reaches domestic leagues OUTSIDE Understat's Big-5
 coverage: the EFL Championship was validated in Phase 1 (five gates,
-4 PASS) and Eredivisie is the next candidate (league id verified, the
-adapter has not been run against it yet).
+4 PASS) and Eredivisie was validated through the adapter on 2026-11-07
+(round-39 run, artifacts on the server: gates A-D PASS, gate E FAIL —
+totals-family enterable under the same frozen domestic policy).
 
 Canonical lineage: WP-P3 Phase 1 server-side tooling
 ``paper-sim/tools/fotmob_adapter.py`` -> ``fotmob_validate.py``
@@ -28,8 +29,10 @@ only, and both share one module-wide polite-spacing guard
 Fail-closed contract (inherited from Phase 1): the transform refuses
 to emit a block when the payload shape looks like an upstream schema
 change — season drift (``selectedSeason`` vs the derived season
-window), malformed fixture rows, a team table that does not match the
-league size, or an xG-missing skip rate above :data:`MAX_SKIP_RATE`.
+window), malformed fixture rows, malformed xG values (non-numeric,
+non-finite or negative — 0 is valid; codex review #8, 2026-11-07), a
+team table that does not match the league size, or an xG-missing skip
+rate above :data:`MAX_SKIP_RATE`.
 Nothing is returned in that case; a :class:`FotMobSchemaError` names
 the offending condition. Mild per-match gaps (matchDetails absent or
 missing the xG row) are skipped and counted, bounded by the skip-rate
@@ -48,6 +51,7 @@ deprioritized under the frozen domestic match_winner policy.
 from __future__ import annotations
 
 import json
+import math
 import time
 import urllib.error
 import urllib.parse
@@ -115,15 +119,16 @@ class FotMobLeague(Enum):
     league size used by the fail-closed team-table check.
 
     Verification provenance: ``CHAMPIONSHIP`` is the Phase 1 validated
-    configuration (720 matches, 2026-11-03); ``EREDIVISIE`` had its id
-    confirmed against the live API on 2026-11-04 but has NOT been run
-    through the adapter yet — its shape constants are the league's
-    standard format (18 clubs, 34 rounds). Further verified-as-existing
-    ids (checked 2026-11-04, no adapter run): 47 Premier League, 55
-    Serie A, 87 LaLiga, 53 Ligue 1, 54 Bundesliga — all Understat-
-    covered, so the FotMob path is not the sanctioned source for them.
-    Add new members only with a verified id and a validated adapter run
-    recorded in the lineage above.
+    configuration (720 matches, 2026-11-03); ``EREDIVISIE`` was run
+    through the adapter and validated on 2026-11-07 (round-39 run,
+    artifacts on the server: gates A-D PASS, gate E FAIL —
+    totals-family enterable under the same frozen domestic policy);
+    its shape constants held (18 clubs, 34 rounds). Further
+    verified-as-existing ids (checked 2026-11-04, no adapter run):
+    47 Premier League, 55 Serie A, 87 LaLiga, 53 Ligue 1, 54
+    Bundesliga — all Understat-covered, so the FotMob path is not the
+    sanctioned source for them. Add new members only with a verified
+    id and a validated adapter run recorded in the lineage above.
     """
 
     CHAMPIONSHIP = (48, "Championship", 46, 24)
@@ -354,6 +359,37 @@ def _extract_xg_pair(md: Mapping[str, object], title: str) -> tuple[str, str] | 
     return None
 
 
+def _parse_xg_number(raw: object) -> float:
+    """``float(raw)`` iff the xG-family value is finite and ``>= 0``.
+
+    Shared value check for the transform and load boundaries (codex
+    review #8, 2026-11-07): FotMob can emit ``"NaN"`` / ``"inf"`` xG
+    strings, and a bare ``float()`` would admit them into team
+    histories long before the downstream gate-evidence finite check
+    runs. Non-numeric, non-finite and negative inputs raise
+    ``ValueError`` (each boundary wraps it in its own error type);
+    ``0`` / ``"0.0"`` are VALID — a side can generate zero expected
+    goals. This check only REJECTS malformed data: accepted values
+    convert to exactly ``float(raw)`` and the wire strings are never
+    reformatted, so valid snapshots stay byte-identical.
+    """
+    try:
+        value = float(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"value {raw!r} is not numeric") from exc
+    if not math.isfinite(value) or value < 0.0:
+        raise ValueError(f"value {raw!r} is not finite nonnegative")
+    return value
+
+
+def _parse_xg_value(raw: str, match_id: str, field: str) -> float:
+    """:func:`_parse_xg_number` wrapped in the transform's house error."""
+    try:
+        return _parse_xg_number(raw)
+    except ValueError as exc:
+        raise FotMobSchemaError(f"match {match_id}: {field} {exc}") from exc
+
+
 def _extract_score(md: Mapping[str, object]) -> tuple[int, int] | None:
     try:
         home, away = md["header"]["teams"][0], md["header"]["teams"][1]
@@ -411,18 +447,26 @@ def _build_block(
         home_goals, away_goals = score
         home_xg, away_xg = xg
         home_npxg, away_npxg = npxg
+        # Validated conversion (codex review #8, 2026-11-07): a malformed
+        # xG string fails closed BEFORE entering histories; accepted values
+        # are exactly float(<wire string>) and the strings stay verbatim in
+        # the dates row below, so valid snapshots remain byte-identical.
+        home_xg_f = _parse_xg_value(home_xg, mid, "home xG")
+        away_xg_f = _parse_xg_value(away_xg, mid, "away xG")
+        home_npxg_f = _parse_xg_value(home_npxg, mid, "home npxG")
+        away_npxg_f = _parse_xg_value(away_npxg, mid, "away npxG")
         date_str = _fmt_date(match["status"]["utcTime"])
         home, away = match["home"], match["away"]
         home_id, away_id = str(home["id"]), str(away["id"])
         histories.setdefault(home_id, []).append({
-            "h_a": "h", "xG": float(home_xg), "xGA": float(away_xg),
-            "npxG": float(home_npxg), "npxGA": float(away_npxg),
+            "h_a": "h", "xG": home_xg_f, "xGA": away_xg_f,
+            "npxG": home_npxg_f, "npxGA": away_npxg_f,
             "scored": home_goals, "missed": away_goals,
             "result": _result_code(home_goals, away_goals), "date": date_str,
         })
         histories.setdefault(away_id, []).append({
-            "h_a": "a", "xG": float(away_xg), "xGA": float(home_xg),
-            "npxG": float(away_npxg), "npxGA": float(home_npxg),
+            "h_a": "a", "xG": away_xg_f, "xGA": home_xg_f,
+            "npxG": away_npxg_f, "npxGA": home_npxg_f,
             "scored": away_goals, "missed": home_goals,
             "result": _result_code(away_goals, home_goals), "date": date_str,
         })
@@ -470,7 +514,9 @@ def fotmob_to_understat(
 
     Fail-closed (raises :class:`FotMobSchemaError`, returns nothing):
     season drift vs the derived ``YYYY/YYYY+1`` window, malformed
-    fixture rows, a team table not matching ``team_count`` when the
+    fixture rows, malformed xG values (non-numeric, non-finite or
+    negative — 0 is valid; unlike xG-missing rows these are NOT
+    skip-counted), a team table not matching ``team_count`` when the
     check is enabled, and an xG-missing skip rate above
     ``max_skip_rate`` (or zero usable matches). Pass a
     :class:`FotMobLeague` member as ``league_key`` to inherit its
@@ -524,9 +570,14 @@ def load_fotmob_snapshot(path: str) -> dict[str, Mapping[str, object]]:
     Structural validation with precise errors: the root must be a JSON
     object; every block must be a mapping with a non-empty ``teams``
     mapping and a ``dates`` list; every ``dates`` row must be a mapping
-    with an ``xG`` object carrying ``h`` / ``a``. Returns the raw
-    ``{"<League>_<season>": {"teams": ..., "dates": ...}}`` structure
-    unmodified (raw payloads preserved before normalization), ready for
+    with an ``xG`` object carrying ``h`` / ``a``. Every xG-family value
+    (dates ``xG.h`` / ``xG.a``, history ``xG`` / ``xGA`` / ``npxG`` /
+    ``npxGA``) must parse as a finite nonnegative number (codex review
+    #8, 2026-11-07: ``json.load`` accepts bare ``NaN`` / ``Infinity``
+    literals, and pre-fetched Phase 1 files predate the transform-side
+    check). Validation only rejects — accepted payloads are returned
+    unmodified, byte-identical (raw payloads preserved before
+    normalization), ready for
     :func:`polymarket_alpha_lab.papersim.xg.load_xg_payload`.
     """
     with open(path, "r", encoding="utf-8") as handle:
@@ -542,6 +593,35 @@ def load_fotmob_snapshot(path: str) -> dict[str, Mapping[str, object]]:
             raise ValueError(f"snapshot block {key!r} has no teams mapping")
         if not isinstance(dates, list):
             raise ValueError(f"snapshot block {key!r} has no dates list")
+        for team_id, team in teams.items():
+            if not isinstance(team, Mapping):
+                raise ValueError(
+                    f"snapshot block {key!r} team {team_id!r} must be an object"
+                )
+            history = team.get("history")
+            if not isinstance(history, list):
+                raise ValueError(
+                    f"snapshot block {key!r} team {team_id!r} has no history list"
+                )
+            for entry in history:
+                if not isinstance(entry, Mapping):
+                    raise ValueError(
+                        f"snapshot block {key!r} team {team_id!r} has a "
+                        "non-object history entry"
+                    )
+                for field in ("xG", "xGA", "npxG", "npxGA"):
+                    try:
+                        _parse_xg_number(entry[field])
+                    except KeyError as exc:
+                        raise ValueError(
+                            f"snapshot block {key!r} team {team_id!r} "
+                            f"history entry has no {field}"
+                        ) from exc
+                    except ValueError as exc:
+                        raise ValueError(
+                            f"snapshot block {key!r} team {team_id!r} "
+                            f"history {field} {exc}"
+                        ) from exc
         for row in dates:
             if not isinstance(row, Mapping):
                 raise ValueError(f"snapshot block {key!r} has a non-object dates row")
@@ -550,4 +630,11 @@ def load_fotmob_snapshot(path: str) -> dict[str, Mapping[str, object]]:
                 raise ValueError(
                     f"snapshot block {key!r} has a dates row without xG.h/xG.a"
                 )
+            for side in ("h", "a"):
+                try:
+                    _parse_xg_number(xg[side])
+                except ValueError as exc:
+                    raise ValueError(
+                        f"snapshot block {key!r} dates xG.{side} {exc}"
+                    ) from exc
     return payload

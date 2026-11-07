@@ -30,6 +30,14 @@ Implementation notes (frozen arithmetic, do not tune):
   blended goal rates divided by the prior-season league average. Teams
   missing from the prior season (promoted sides) fall back to the league
   average for their last-season rate, exactly as the lineage did.
+- Early-season returning sides (roster teams with ZERO current-season
+  rows but prior-season evidence) keep that evidence in the ``last`` and
+  ``blend`` dimensions instead of collapsing to league average: ``last``
+  uses the prior-season rate directly and ``blend`` extends its shrinkage
+  weights coherently to zero current games (codex review 2026-11-07,
+  finding 6). The ``cur`` dimension has no data for such a team and
+  deliberately leaves it on the league-average fallback, as do teams
+  with neither prior nor current rows in any mode.
 - Known domestic league registry: :data:`UNDERSTAT_LEAGUES` holds the
   Big-5 Understat snapshot keys of the lineage snapshots;
   :data:`DOMESTIC_LEAGUES` adds the FotMob-sourced ``"Championship"``
@@ -137,11 +145,15 @@ class LeagueRatings:
 
     ``goal_fit`` carries the PRIOR season's league base rates (the
     ``bh`` / ``ba`` / ``lgf`` triple of the lineage) and ``teams`` maps
-    each Understat team title with current-season history to
-    ``(attack_multiplier, defense_multiplier)``: blended goal rates for
-    and against, divided by the prior-season league average. Teams with
-    no current-season history are absent from ``teams``; callers treat
-    them as league-average (1.0, 1.0) multipliers, as the lineage did.
+    team titles to ``(attack_multiplier, defense_multiplier)``: blended
+    goal rates for and against, divided by the prior-season league
+    average. Roster teams with zero current-season rows but
+    prior-season evidence ARE mapped (prior-based rating in the ``last``
+    and ``blend`` dimensions, codex review 2026-11-07 finding 6); absent
+    from ``teams`` are such teams in the ``cur`` dimension (no current
+    data exists) and teams with neither current nor prior rows in any
+    dimension. Callers treat absent teams as league-average (1.0, 1.0)
+    multipliers.
     """
 
     league: str
@@ -326,6 +338,22 @@ def ratings_for(
     rates only) or ``"last"`` (last-season rates only). The league base
     rates always come from the PRIOR season's completed matches, in every
     mode, exactly as in the lineage.
+
+    Early-season returning sides — roster teams in the current-season
+    table with zero history rows but prior-season evidence — are rated
+    from that evidence in the ``"last"`` and ``"blend"`` modes (codex
+    review 2026-11-07, finding 6): ``"last"`` uses the prior-season rate
+    directly, and ``"blend"`` extends the established-team shrinkage
+    weights coherently to zero current games (weight 0 on the absent
+    current rate, ``last_weight * SEASON_GAMES`` on the prior-season
+    rate, ``prior_games`` on the league average). In the ``"cur"`` mode
+    such a team has NO data, so it stays out of the table and callers
+    fall back to league-average (1.0, 1.0) multipliers — the pre-fix
+    behavior, retained for the one variant with genuinely no evidence
+    rather than injecting prior-season rows into a current-only rating.
+    Teams with neither prior nor current rows stay out of the table in
+    every mode (same league-average fallback). Teams with at least one
+    current row are unaffected by any of this.
     """
     if mode not in RATING_MODES:
         raise ValueError(f"unknown rating mode {mode!r}; expected one of {RATING_MODES}")
@@ -354,16 +382,18 @@ def ratings_for(
                 last_rates[title] = (for_rate, against_rate)
 
     teams: dict[str, tuple[float, float]] = {}
+    dormant: list[str] = []  # roster titles with zero current-season rows
     current_teams = current_block.get("teams")
     if isinstance(current_teams, Mapping):
         for row in current_teams.values():
             if not isinstance(row, Mapping):
                 continue
-            history = row.get("history")
-            if not isinstance(history, list) or not history:
-                continue
             title = row.get("title")
             if not isinstance(title, str):
+                continue
+            history = row.get("history")
+            if not isinstance(history, list) or not history:
+                dormant.append(title)
                 continue
             current_for = sum(float(entry["xG"]) for entry in history) / len(history)
             current_against = sum(float(entry["xGA"]) for entry in history) / len(history)
@@ -380,6 +410,35 @@ def ratings_for(
                 blend_against = (
                     games * current_against + last_weighted * last_against + prior_games * lgf
                 ) / denom
+            teams[title] = (blend_for / lgf, blend_against / lgf)
+
+    if mode != "cur" and dormant:
+        # Early-season returning sides (codex review 2026-11-07, finding
+        # 6): a roster team with zero current rows but prior-season
+        # evidence keeps that evidence instead of silently collapsing to
+        # league average. ``last`` uses the prior-season rate; ``blend``
+        # is the established shrinkage formula at zero current games.
+        # The ``cur`` mode never enters here — no current data exists,
+        # so the team stays on the league-average fallback. Teams
+        # without prior-season rates stay out in every mode (same
+        # fallback), and an established entry is never overwritten
+        # (duplicate-title safety).
+        last_weighted = last_weight * SEASON_GAMES
+        denom = last_weighted + prior_games
+        for title in dormant:
+            if title in teams or title not in last_rates:
+                continue
+            last_for, last_against = last_rates[title]
+            if mode == "last":
+                blend_for, blend_against = last_for, last_against
+            elif denom > 0.0:
+                blend_for = (last_weighted * last_for + prior_games * lgf) / denom
+                blend_against = (last_weighted * last_against + prior_games * lgf) / denom
+            else:
+                # Degenerate blend weights (zero current games, zero last
+                # weight, zero prior games): no evidence at all, keep the
+                # league-average fallback.
+                continue
             teams[title] = (blend_for / lgf, blend_against / lgf)
 
     return LeagueRatings(league=league, season=season, goal_fit=goal_fit, teams=teams)
@@ -575,9 +634,12 @@ def pair_lambdas(
     and ``lambda_away = away_rate * attack_away**shrink * defense_home**shrink``
     from the selected rating mode. ``"Championship"`` fixtures
     (FotMob-sourced, :data:`DOMESTIC_LEAGUES`) are ordinary domestic
-    same-league pairs on this standard path (WP-P3). Teams present in
-    the table but without current-season history use league-average
-    (1.0, 1.0) multipliers, as in the lineage.
+    same-league pairs on this standard path (WP-P3). Roster teams
+    without current-season history but WITH prior-season evidence use
+    their prior-based rating in the ``blend`` and ``last`` modes (codex
+    review 2026-11-07, finding 6); teams with neither current nor prior
+    rows — and any team without current history in the ``cur`` mode —
+    use league-average (1.0, 1.0) multipliers, the lineage fallback.
     """
     if home_league != away_league:
         if bridge is None:

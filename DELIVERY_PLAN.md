@@ -3262,3 +3262,163 @@ readonly——只建模概率、给纸面入场过门、记录纸面仓位、产
 validate_local_postgres_dsn，SCRAM 密码经 PAPERSIM_PG_PASSWORD_FILE 带外
 注入且从不被读入、打印或提交）；不新增文件日志。本工作包不激活任何
 真实执行。
+
+## 70. WP-P2: 跨联赛桥接与 match_winner 解禁（2026-11-03 → 11-06）
+
+**Owner 授权（verbatim）**："好，优化模型后，就解禁"（2026-11-04，模型
+优化并验证后解禁跨联赛 match_winner）。
+
+**范围与提交**：
+
+- **P2a `bb100f4f`**：`league_strength.py`——单标量 κ/联赛桥接。κ 由
+  Poisson MLE 在 835 场历史 UCL/UEL 跨联赛对阵上拟合（俱乐部乘数作为
+  固定偏移）：EPL +0.127 / La_liga −0.087 / Serie_A −0.096 / Bundesliga
+  −0.112 / Ligue_1 −0.165 / nuisance −0.300；与 UEFA 系数 Spearman 0.9。
+  桥因子 f = exp(clamp(κ_home − κ_away, ±ln(1.25)))（±25% 硬顶）。
+  `LeagueStrengthTable` 冻结 dataclass 内表经 MappingProxyType 只读化
+  （codex 评审 F 系列修复之一）。`xg.pair_lambdas` 增加 bridge 关键字，
+  cross-league 守卫从一刀切 BANNED 改为可桥接路径；桥经
+  `soccer_model.fixture_variants / match_lambdas / candidate_from_variants`
+  全链贯穿。
+- **P2b walk-forward 回测**（服务器 `~/paper-sim/tools/backtest_euro.py`）：
+  逐轮重建评级、只用于预测未来轮，T1-T5 全 PASS（含无未来信息检查）。
+  已知遗留：codex 2026-11-05 评审 finding #6 指出首轮实现以 2025/26 xG
+  预测 2024/25 赛季存在 future-info 风险，需以严格时间序重跑——重跑通过
+  前桥接证据标记为 provisional-strong。
+- **P2c 影子收缩实验**（服务器 `~/paper-sim/tools/shadow_experiment.py`）：
+  w=.5/p=16、w=.25/p=8、w=.75/p=8 对基线并行产出——结论 BASELINE，
+  现行收缩参数保留，不改入场决策。
+- **解禁 `5bdae2e3`**：suspension 注册表 cross-league match_winner
+  BANNED → ELIGIBLE_DEPRIORITIZED（$150 降级仓位，T4 累积 <20 结算）。
+  法证分析：历史 4 败全部为 pre-bridge 跨联赛或国内掷硬币方差。
+- **费用感知闸门 `76934762`**（2026-11-05 评审产物）：Polymarket 交易费
+  = notional × rate × p×(1−p)（sports 0.05 / crypto 0.07），净边际 =
+  毛边际 − 费用；exec bar 从毛 ≥5c 改为净 ≥5c（冻结阈值不变，口径变净）。
+
+**验收证据**：277 测试绿；selfcheck 10/10（含 no-bridge-path 锚点与
+fee-aware 闸门算术锚点 #48）；P2b T1-T5 PASS（future-info 重跑待做）。
+
+## 71. WP-P3: FotMob 双源 xG（2026-11-04 → 11-07）
+
+**Owner 授权（verbatim）**："可以扩展数据源"（2026-11-03，授权扩展数据
+源至 FotMob）。
+
+**背景**：Understat 自 2026-10-31 起 HTTP 维护页（DNS 正常），恢复 cron
+（服务器 `tools/understat_refresh.py`，每 30 分钟探测 +
+publish_latest() 指针切换）持续监视；FotMob 成为活跃源。
+
+**范围与提交**：
+
+- **`19501719`**：`fotmob.py` 库内适配器（FotMobLeague 枚举、限速抓取、
+  Understat 兼容变换、快照装载、fail-closed 校验）。Championship 用
+  Opta xG、Big-5 用 enet。WP-P3 验证门 A-D PASS / E FAIL（1X2 MAD 对
+  市场）→ Championship totals 族可入场、1X2 降级（gate-E）。
+- **`7dc4f3d2`**：codex 评审 F5——FotMob 弃赛过滤（abandoned-match
+  filter）。
+- **Big-5 回填合并**（服务器 `tools/fotmob_big5_backfill.py` /
+  `fotmob_big5_merge.py`）：Understat 停摆期间以 FotMob Big-5 重建 21
+  场并合并成 `understat_latest.json` 指针的 merged 快照，保持扫描不中断。
+- **Eredivisie 扩展与验证（2026-11-07，round-39）**：FotMobLeague 枚举
+  现为 {CHAMPIONSHIP(48), EREDIVISIE(57)}。Eredivisie 2026 全量 100 场
+  + 2025 回填 306 场首跑；WP-P3 镜像验证（服务器
+  `~/paper-sim/round39/eredivisie_validation.md`）：A-D PASS（walk-forward
+  Brier 0.6428 / LL 1.0630 双指标胜基线，n=91；Pearson 0.859），E FAIL
+  （MAD 6.40% > 6c，1 favorite flip）→ 与 Championship 同型，**Eredivisie
+  totals 族入场解锁、1X2 降级**。第 11 轮变体离散为全联盟现象
+  （256/560 行仅离散超标），升班马回退先验缺陷另入 WP-P4。
+
+**验收证据**：各联赛验证套件归档于服务器 round 目录；库内 277 测试绿；
+两联赛 gate-E 均挂起为已知的 1X2 校准缺口（WP-P4 靶子）。
+
+## 72. 2026-11-07 模型层评审与同日修复（codex gpt-6-astra/max）
+
+**Owner 授权（verbatim）**："调用服务器codex审核项目，特别是模型，是否
+可以优化。指定模型为gpt-6-astra/max。审核好以后，你按照审核意见修改，
+然后服务器本地和仓库同步更新到最新。"（2026-11-07）
+
+**评审**：服务器 codex-cli 0.166.0 / gpt-6-astra / max / read-only 沙箱，
+基线 `5bdae2e3`，302k tokens。结论 **9 findings（0 P0 / 4 P1 / 5 P2）**，
+全文归档 `docs/reviews/model-review-2026-11-07.md`（服务器原始件
+`~/paper-sim/review/model_review_20261107_out.md`）。核心裁定：冻结阈值
+（净≥5c / 最差≥4c / 离散≤6c / liq≥$5k）全部维持；不得为过 gate-E 而降
+标准；k=8 升班马收缩未经嵌套时序验证不得宣布正确；中位数+全距聚合维持。
+
+**同日实施（4 个并行子代理，文件所有权不重叠）**：
+
+1. **F#5 [P1] 费用/haircut 顺序统一**（gates.py +142/−27、
+   risk_policy.py +32/−3、测试 +281/+44）：唯一助手
+   `_apply_fee_and_haircut`（毛边→减每股费→50-50 haircut 半净边），两个
+   API 共用；`evaluate_gates` 新增可选 `model_median`（契约从"调用方预
+   减半"翻转为"传毛边"），无费用对时逐字节不变。边界奇偶测试含
+   fee/2=0.625c 最大差文档化。**F#4 [P1] 跨联赛 MW 强制**：
+   `check_cross_league_mw`（桥在场 + 最差≥+5c 否则拒绝，复用
+   GateDecision）；risk_policy `cross_league_ml` 类无条件 $150 marginal
+   档。gates+risk 测试 93→110。
+2. **F#8 [P2] FotMob xG 有限/非负校验**（fotmob.py +108/−21、测试
+   +138）：`_parse_xg_number`/`_parse_xg_value` 双层校验（transform 抛
+   FotMobSchemaError、loader 抛 ValueError）；混合坏行整包 fail-closed；
+   有效快照逐字节不变（冻结锚点 2026-11-04 件复算通过）；Eredivisie
+   provenance 注释更新为已验证（A-D PASS/E FAIL）。测试 18→28。
+3. **F#6 [P2] 空现赛季历史球队保留先验评级**（xg.py +73/−11、测试
+   +79/+31）：dormant 球队 last=先验直接用、blend=既有公式在 games=0 的
+   连续延拓（w=.5/p=8 即 19 伪场先验+8 场联赛均值）；cur 保持排除（变体
+   定义隔离现状态，不注入先验）；既无先验又无现役→维持联赛均值回退。
+   赛季中行为逐字节不变（exact == 断言）。xg+soccer_model 两测试文件合计
+   43→47。
+4. **F#9/rank-3 账本队列分析**（只读，服务器
+   `~/paper-sim/review/ledger_cohort_analysis_20261107.md`）：58 结算行
+   31W-18L（63.3%）、净 PnL +$3,158.54（+31.6% 复核成立）；Brier
+   0.2041 略保守、各 tercile 校准差均在 CI 内；边际桶 6-10c 最佳
+   （14W-7L +$2,002）、<6c 负——**已实现胜率不随声称边际单调上升，冻结
+   阈值维持有据**；UEL 0W-3L 最差队列；**发现 model_performance 视图对
+   market 3866000（#1/#14 双入场）重复计账 +$1,305.20**（视图
+   crypto_touch 2,795.00 应为 1,489.80）——修复登记入 WP-P4 前置项；
+   **18.7c 勒芒-摩纳哥压力测试：SURVIVES**（最严苛独立估计下仍 +6.2c
+   净，EV≈+$21；幅度模型特有、方向全部参考一致）；队列定义已预declare
+   （截止 2026-11-07T10:26Z，先于 Nov-8 开球）。
+
+**明示不实施（codex 裁定 + 本计划确认）**：离散统计排除 no-prior 场次
+（会掩盖真实分歧）；k=8 直接纳入；中位数→截尾均值；gate-E 6c bar 下调；
+任何阈值因队列表现调整。
+
+**复审与 P3 处置**：独立只读复审（Iron Rule 4）VERDICT: PASS，0 P0-P2、
+6 P3。已采纳修复：门面导出补 `check_cross_league_mw` /
+`CROSS_LEAGUE_MW_WORST_EDGE_MIN` / `CROSS_LEAGUE_ML_CLASS`（158 项）；
+§72 数字校准（numstat 实测）。已记录不修：`float(True)` 布尔穿透
+（FotMob 线格式为字符串、暴露面极小，预存语义）。**接线义务**：
+`check_cross_league_mw` 与 `CROSS_LEAGUE_ML_CLASS` 为库内 opt-in 强制点，
+服务器扫描管线（~/paper-sim 侧）在下次扫描前必须接入两者，否则跨联赛
+MW 的三条件仍只是描述性契约。
+
+**验收门**：全套测试绿（预期 277→308 量级，以实际计数为准）、
+selfcheck 10/10（冻结锚点含 #48 gate 算术、r19/r23 全部逐字节不变）、
+py_compile、`git diff --check`、秘密扫描、独立只读复审子代理
+VERDICT: PASS——全部通过后四处同步（本地→wmqfl861、服务器→Lordakee）。
+
+## 73. WP-P4: 模型再校准程序（登记待启动）
+
+来源：2026-11-07 评审 findings #1/#2/#3/#7 + 排名表 6-9 项。前置项先做：
+
+- **P4-0a model_performance 视图修复**：双入场市场（3866000 类）按份额
+  分摊 PnL 或改 join 键，消除 +$1,305.20 重复计账；带回归测试。
+- **P4-0b P2b future-info 重跑**（2026-11-05 评审 finding #6 遗留）：
+  backtest_euro.py 严格时序（2024/25 预测只用 ≤当日 xG）重跑 T1-T5。
+
+**P4-1 足球再校准**（codex 设计，验收护栏照抄）：recency 加权联赛主/
+客进攻-防守层级收缩重拟合；低分相关（Dixon-Coles rho）由比分结果拟合
+而非 O/U；衰减与收缩仅在扩张窗口历史验证内调参；按完整轮次重拟合 +
+最小数据规则 + 联赛/全局回退先验。**影子 ≥2 个完整 matchweek + 预declare
+的 out-of-time 样本；gate-E 通过且 A-D 无回归才允许变更任何接受或仓位
+政策。**
+**P4-2 升班马收缩研究**：k 由历史晋级队列嵌套时序验证选出（含 k=8 作为
+候选）；完整离散筛查保留；同一观测不得同时注入 current 与 fallback-last。
+**P4-3 变体包络验证**：评估变体 spread 是否预测 out-of-time 误差后再议
+成员/聚合/统计改动（8-16h，A-E 重验证必须）。
+**P4-4 加密波动影子**：7/30/60/87d 窗口 + 波动率预测对比 30d 签名；按
+horizon/屏障距离分层评估 jump/regime 误差；terminal 方向显式化（上方
+YES 市场须调用方补集或加显式方向参数）——加密专属 walk-forward 验证，
+非足球 A-E。
+
+在 P4-1..P4-3 任何一项通过其验证门之前：gate-E 维持挂起、Eredivisie/
+Championship 维持 totals-only、跨联赛 MW 维持 ELIGIBLE_DEPRIORITIZED
+$150、全部冻结阈值不动。

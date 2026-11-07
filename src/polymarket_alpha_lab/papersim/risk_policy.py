@@ -41,6 +41,12 @@ EARLY_ENTRY_MAX_NOTIONAL_USD = 250.0
 
 STANDARD_CLASS = "standard"
 DOMESTIC_ML_CLASS = "domestic_ml"
+# Cross-league match_winner sizing class (codex-review finding 4,
+# 2026-11-07): the book-of-record wording caps bridged cross-league MW
+# at $150 marginal sizing (T4 accumulation: >=20 settled cross-league MW
+# bets before standard sizing), so this class can ONLY ever produce the
+# MARGINAL tier -- never the full $250 unit.
+CROSS_LEAGUE_ML_CLASS = "cross_league_ml"
 
 # Team cap pattern from the r19 crypto head ("team AT CAP $1,870/$1,900"):
 # parameterized, defaulting to the crypto book-of-record value.
@@ -246,8 +252,10 @@ def sizing_tier(
 ) -> SizingTier:
     """Select the sizing tier for one gated candidate.
 
-    - MARGINAL ($150 fixed): the domestic match_winner deprioritized
-      class combined with a fragile gate pass.
+    - MARGINAL ($150 fixed): the cross-league match_winner deprioritized
+      class (unconditionally -- it can never size at the full $250 unit)
+      and the domestic match_winner deprioritized class combined with a
+      fragile gate pass.
     - EARLY_ENTRY ($150-$250): lineups not yet confirmed; the stake
       scales up with ``lineup_confirmation`` (0 = predicted-only, 1 =
       official XIs confirmed) via :func:`tier_notional`.
@@ -256,13 +264,34 @@ def sizing_tier(
 
     ``lineup_confirmation`` outside [0, 1] is rejected. MARGINAL takes
     precedence: a fragile domestic-ML pass stays at $150 regardless of
-    lineup state.
+    lineup state, and the cross-league class stays at $150 regardless of
+    anything (neither lineup confirmation nor a non-fragile pass
+    graduates it; T4 accumulation wording: >=20 settled cross-league MW
+    bets before standard sizing).
     """
     if lineup_confirmation is not None and not 0.0 <= float(lineup_confirmation) <= 1.0:
         raise ValueError(
             f"lineup_confirmation must be in [0, 1], got {lineup_confirmation!r}"
         )
     klass = str(market_class or STANDARD_CLASS).strip().lower()
+    if klass == CROSS_LEAGUE_ML_CLASS:
+        # codex-review finding 4 (2026-11-07): the cross-league MW class
+        # can ONLY ever produce the $150 deprioritized tier -- never the
+        # full $250 -- exactly as the book-of-record wording requires
+        # ("$150 marginal sizing"). Unconditional by design: candidacy
+        # prerequisites (explicit bridge + worst-variant >= +5c) are
+        # enforced upstream by gates.check_cross_league_mw, not here.
+        return SizingTier(
+            tier=TIER_MARGINAL,
+            min_notional=MARGINAL_NOTIONAL_USD,
+            max_notional=MARGINAL_NOTIONAL_USD,
+            reason=(
+                "cross-league match_winner deprioritized class: fixed $150 "
+                "marginal unit (bridge + worst-variant >= +5c enforced by "
+                "gates.check_cross_league_mw; T4 accumulation: >=20 settled "
+                "cross-league MW bets before standard sizing)"
+            ),
+        )
     if klass == DOMESTIC_ML_CLASS and fragile_pass:
         return SizingTier(
             tier=TIER_MARGINAL,

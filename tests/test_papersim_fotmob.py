@@ -8,7 +8,7 @@ Four layers:
   season, histories filtered to those dates) loads through
   :func:`polymarket_alpha_lab.papersim.fotmob.load_fotmob_snapshot`
   with the Understat wire contract intact: team count, xG presence,
-  dates/history consistency.
+  dates/history consistency, finite nonnegative xG values.
 - Modeling layer: the excerpt drives the STANDARD domestic path with
   no FotMob-specific branching — ``xg.league_goal_fit`` reproduces the
   frozen prior-season base rates, ``xg.pair_lambdas`` prices a
@@ -18,8 +18,10 @@ Four layers:
 - Transform layer (pure, synthetic payloads): ``fotmob_to_understat``
   reproduces the Phase 1 wire shape — playoff/cancelled/unfinished
   filters, xG string dates rows, float histories, npxG fallback — and
-  fails closed on season drift, malformed rows, team-table mismatch
-  and the xG skip-rate ceiling.
+  fails closed on season drift, malformed rows, team-table mismatch,
+  the xG skip-rate ceiling and malformed xG values (codex review #8,
+  2026-11-07: non-numeric/non-finite/negative rejected at the adapter
+  boundary; 0 is valid; accepted snapshots stay byte-identical).
 - Fetch layer (mocked, no network): URL construction, shared polite
   spacing (1 req / 1.3 s) and retry/backoff via stubbed ``urllib``.
 
@@ -33,6 +35,7 @@ Frozen anchors were computed once from the excerpt at generation time
 from __future__ import annotations
 
 import json
+import re
 import tempfile
 import time
 from pathlib import Path
@@ -131,6 +134,54 @@ def test_loader_rejects_malformed_snapshots(tmp_path: Path) -> None:
     ))
     with pytest.raises(ValueError, match="without xG.h/xG.a"):
         fotmob.load_fotmob_snapshot(str(no_xg))
+
+
+def _mini_snapshot(xg_h: object = "1.50", hist_xg: object = 1.5) -> dict:
+    """Minimal single-block snapshot: one team, one history, one date."""
+    return {"Championship_2026": {
+        "teams": {"t1": {"title": "Birmingham City", "history": [{
+            "h_a": "h", "xG": hist_xg, "xGA": 0.5, "npxG": 1.0,
+            "npxGA": 0.5, "scored": 1, "missed": 0, "result": "w",
+            "date": "2026-08-08 19:45:00",
+        }]}},
+        "dates": [{"id": "m1", "isResult": True,
+                   "h": {"id": "t1", "title": "Birmingham City",
+                         "short_title": "Bir"},
+                   "a": {"id": "t2", "title": "Blackburn Rovers",
+                         "short_title": "Bla"},
+                   "goals": {"h": "1", "a": "0"},
+                   "xG": {"h": xg_h, "a": "0.50"},
+                   "datetime": "2026-08-08 19:45:00"}],
+    }}
+
+
+def test_loader_rejects_malformed_xg_values(tmp_path: Path) -> None:
+    """Regression (codex review #8, 2026-11-07): xG value validation.
+
+    The loader previously checked only xG.h/xG.a PRESENCE; "NaN"/"inf"
+    strings in dates rows — and NaN/Infinity floats inside histories,
+    which json.load parses from bare JSON literals — flowed into team
+    ratings ahead of the downstream gate finite check. Pre-fetched
+    Phase 1 files predate the transform-side check, so the load
+    boundary validates values too (reject-only: accepted payloads are
+    returned unmodified, byte-identical).
+    """
+    for i, bad in enumerate(("NaN", "inf", "-inf", "-1", -0.5)):
+        path = tmp_path / f"dates_{i}.json"
+        path.write_text(json.dumps(_mini_snapshot(xg_h=bad)))
+        with pytest.raises(ValueError, match=r"dates xG\.h"):
+            fotmob.load_fotmob_snapshot(str(path))
+    for i, bad in enumerate(("NaN", float("inf"), -0.25, None)):
+        path = tmp_path / f"hist_{i}.json"
+        path.write_text(json.dumps(_mini_snapshot(hist_xg=bad)))
+        with pytest.raises(ValueError, match=r"history xG"):
+            fotmob.load_fotmob_snapshot(str(path))
+    # zero is real xG: "0"/"0.0" strings and 0.0 floats load unmodified
+    good = _mini_snapshot(xg_h="0", hist_xg=0.0)
+    good["Championship_2026"]["dates"][0]["xG"]["a"] = "0.0"
+    path = tmp_path / "good.json"
+    path.write_text(json.dumps(good))
+    assert fotmob.load_fotmob_snapshot(str(path)) == good
 
 
 # --------------------------------------------------------------------------
@@ -407,6 +458,87 @@ def test_transform_fail_closed_on_schema_drift() -> None:
 
     with pytest.raises(fotmob.FotMobSchemaError, match="integer year"):
         fotmob.fotmob_to_understat(_two_match_raw(), "Championship", "20x6")
+
+
+@pytest.mark.parametrize("bad", ["NaN", "inf", "-inf", "-0.5", "-2"])
+def test_transform_rejects_nonfinite_and_negative_xg(bad: str) -> None:
+    """Regression (codex review #8, 2026-11-07): xG value validation.
+
+    _build_block previously converted xG wire strings with a bare
+    float(), so FotMob "NaN"/"inf" content entered team histories and
+    ratings before the downstream gate finite check ever ran. Each bad
+    home xG is rejected with FotMobSchemaError naming the match and
+    the offending wire value; the valid m2 row does not rescue it.
+    """
+    raw = _two_match_raw()
+    raw["details"]["m1"] = _details(2, 1, bad, "0.75")
+    with pytest.raises(
+        fotmob.FotMobSchemaError, match=rf"m1.*home xG.*{re.escape(bad)}"
+    ):
+        fotmob.fotmob_to_understat(raw, "Championship", "2026")
+
+
+def test_transform_bad_row_among_good_rows_fails_loudly() -> None:
+    """Fail-closed policy choice for mixed payloads (codex review #8).
+
+    One malformed xG row among good rows poisons the whole transform:
+    it is treated like a malformed fixture ROW (immediate
+    FotMobSchemaError, no block emitted), not like an xG-missing row
+    (skip-counted under MAX_SKIP_RATE). A present-but-corrupt value
+    signals upstream schema drift; skipping it would silently shrink
+    the season and could still pass under the skip-rate ceiling.
+    """
+    raw = _two_match_raw()
+    raw["details"]["m2"] = _details(0, 0, "NaN", "1.10")  # m1 stays valid
+    with pytest.raises(fotmob.FotMobSchemaError, match="m2.*home xG"):
+        fotmob.fotmob_to_understat(raw, "Championship", "2026")
+
+
+def test_transform_rejects_nonnumeric_xg_content() -> None:
+    # Non-null but non-numeric strings (str(True), a bare minus sign)
+    # reach the same boundary check through the not-numeric branch.
+    for non_numeric in ("True", "", "-"):
+        raw = _two_match_raw()
+        raw["details"]["m1"] = _details(2, 1, "1.50", non_numeric)
+        with pytest.raises(
+            fotmob.FotMobSchemaError, match=rf"m1.*away xG.*not numeric"
+        ):
+            fotmob.fotmob_to_understat(raw, "Championship", "2026")
+
+
+def test_transform_xg_check_covers_away_side_and_npxg() -> None:
+    # the non-penalty row (and its xG fallback) is guarded too
+    raw = _two_match_raw()
+    raw["details"]["m1"] = _details(2, 1, "1.50", "0.75", npxg=("nan", "0.60"))
+    with pytest.raises(fotmob.FotMobSchemaError, match="m1.*home npxG"):
+        fotmob.fotmob_to_understat(raw, "Championship", "2026")
+    raw = _two_match_raw()
+    raw["details"]["m2"] = _details(0, 0, "0.90", "Infinity")
+    with pytest.raises(fotmob.FotMobSchemaError, match="m2.*away xG"):
+        fotmob.fotmob_to_understat(raw, "Championship", "2026")
+
+
+def test_transform_accepts_zero_and_exact_xg_strings() -> None:
+    """0 / "0.0" are valid (a side can generate no expected goals);
+    accepted values convert to exactly float(<wire string>) and the
+    dates-row wire strings are preserved VERBATIM — valid snapshots
+    stay byte-identical, the check only rejects malformed data."""
+    raw = _two_match_raw()
+    raw["details"]["m1"] = _details(2, 1, "0", "0.0", npxg=("0", "3"))
+    raw["details"]["m2"] = _details(0, 0, "2.47", "1")
+    snapshot = fotmob.fotmob_to_understat(raw, "Championship", "2026")
+    block = snapshot["Championship_2026"]
+    assert [row["id"] for row in block["dates"]] == ["m1", "m2"]
+    # verbatim wire strings, no reformatting of accepted values
+    assert block["dates"][0]["xG"] == {"h": "0", "a": "0.0"}
+    assert block["dates"][1]["xG"] == {"h": "2.47", "a": "1"}
+    home = block["teams"]["t1"]["history"][0]  # m1 home side
+    assert (home["xG"], home["xGA"], home["npxG"], home["npxGA"]) == (
+        0.0, 0.0, 0.0, 3.0,
+    )
+    later = block["teams"]["t2"]["history"][1]  # m2: t2 hosts t1
+    assert later["xG"] == 2.47 and later["xGA"] == 1.0
+    assert later["npxG"] == 2.47  # npxG fallback reuses the xG pair
 
 
 # --------------------------------------------------------------------------

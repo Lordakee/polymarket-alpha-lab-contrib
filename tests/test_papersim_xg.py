@@ -212,12 +212,86 @@ def test_pair_lambdas_formula_and_shrink() -> None:
 
 def test_pair_lambdas_empty_history_team_uses_league_average() -> None:
     snapshot = _synthetic_snapshot()
-    # Delta is in the current-season table but has no history: lineage
-    # default (1.0, 1.0) multipliers -> league base rates.
-    lam = xg.pair_lambdas(
-        snapshot, "Delta", "EPL", "Delta", "EPL", last_weight=0.5, prior_games=8.0
+    # Delta is in the current-season table but has no history AND no
+    # prior-season rows (neither-datum case): documented league-average
+    # (1.0, 1.0) fallback -> league base rates, in every mode.
+    for mode in ("blend", "cur", "last"):
+        lam = xg.pair_lambdas(
+            snapshot, "Delta", "EPL", "Delta", "EPL", last_weight=0.5, prior_games=8.0, mode=mode
+        )
+        assert lam == pytest.approx((1.5, 1.5)), mode
+
+
+def _early_season_snapshot() -> dict[str, object]:
+    """Synthetic snapshot plus a returning side with zero current rows.
+
+    ``Returning`` played the prior season at (3.0 for, 0.75 against) per
+    game and is rostered for the current season with an empty history —
+    the pre-season / early-season shape of codex review 2026-11-07
+    finding 6. Its prior rows do not touch the league ``dates``, so the
+    goal fit (lgf = 1.5) is unchanged.
+    """
+    snapshot = _synthetic_snapshot()
+    snapshot["EPL_2025"]["teams"]["5"] = {"title": "Returning", "history": [{"xG": 3.0, "xGA": 0.75}]}  # type: ignore[index]
+    snapshot["EPL_2026"]["teams"]["5"] = {"title": "Returning", "history": []}  # type: ignore[index]
+    return snapshot
+
+
+def test_ratings_for_returning_team_keeps_prior_evidence() -> None:
+    snapshot = _early_season_snapshot()
+    # last-only: the prior-season rate directly -> (3.0/1.5, 0.75/1.5).
+    last = xg.ratings_for(snapshot, "EPL", "2026", last_weight=0.5, prior_games=8.0, mode="last")
+    assert last.teams["Returning"] == (pytest.approx(2.0), pytest.approx(0.5))
+    # blend: the established shrinkage weights at zero current games —
+    # 19 pseudo-matches of prior + 8 of league average:
+    # f = (19*3.0 + 8*1.5)/27, a = (19*0.75 + 8*1.5)/27.
+    blend = xg.ratings_for(snapshot, "EPL", "2026", last_weight=0.5, prior_games=8.0)
+    assert blend.teams["Returning"] == (
+        pytest.approx((69.0 / 27.0) / 1.5),
+        pytest.approx((26.25 / 27.0) / 1.5),
     )
-    assert lam == pytest.approx((1.5, 1.5))
+    # cur: NO current data exists for Returning — it stays out of the
+    # table (documented league-average fallback in pair_lambdas), and
+    # Delta (neither prior nor current) stays out in every mode.
+    cur = xg.ratings_for(snapshot, "EPL", "2026", last_weight=0.5, prior_games=8.0, mode="cur")
+    assert "Returning" not in cur.teams
+    for ratings in (last, blend, cur):
+        assert "Delta" not in ratings.teams
+
+
+def test_returning_team_leaves_established_ratings_byte_identical() -> None:
+    # Mid-season freeze: adding a dormant returning side must not move
+    # any established (>= 1 current row) team's rating — exact equality,
+    # not approximation (codex finding 6 requirement 2).
+    base = xg.ratings_for(_synthetic_snapshot(), "EPL", "2026", last_weight=0.5, prior_games=8.0)
+    after = xg.ratings_for(_early_season_snapshot(), "EPL", "2026", last_weight=0.5, prior_games=8.0)
+    assert after.goal_fit == base.goal_fit
+    for title in ("Alpha", "Beta", "Gamma"):
+        assert after.teams[title] == base.teams[title], title
+
+
+def test_pair_lambdas_returning_team_no_longer_league_average() -> None:
+    snapshot = _early_season_snapshot()
+    # blend: att_Returning = (69/27)/1.5, def_Alpha = 1.0 exactly ->
+    # lh = 1.5 * att * 1.0; la = 1.5 * 1.0 * def_Returning.
+    blend = xg.pair_lambdas(
+        snapshot, "Returning", "EPL", "Alpha", "EPL", last_weight=0.5, prior_games=8.0
+    )
+    assert blend is not None
+    assert blend[0] == pytest.approx(69.0 / 27.0)
+    assert blend[1] == pytest.approx(26.25 / 27.0)
+    # last: lh = 1.5 * 2.0 * 1.0, la = 1.5 * 1.0 * 0.5.
+    last = xg.pair_lambdas(
+        snapshot, "Returning", "EPL", "Alpha", "EPL", last_weight=0.5, prior_games=8.0, mode="last"
+    )
+    assert last == pytest.approx((3.0, 0.75))
+    # cur: Returning has no current data -> documented league-average
+    # (1.0, 1.0) fallback (Alpha's cur multipliers are exactly (1.0,
+    # 1.0) here), i.e. the league base rates.
+    cur = xg.pair_lambdas(
+        snapshot, "Returning", "EPL", "Alpha", "EPL", last_weight=0.5, prior_games=8.0, mode="cur"
+    )
+    assert cur == pytest.approx((1.5, 1.5))
 
 
 def test_pair_lambdas_cross_league_guard_returns_none() -> None:

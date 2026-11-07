@@ -25,6 +25,7 @@ from pathlib import Path
 import pytest
 
 from polymarket_alpha_lab.papersim.gates import (
+    CROSS_LEAGUE_MW_WORST_EDGE_MIN,
     DEPTH_NEAR_BAND,
     ENTRY_WINDOW,
     FEE_RATE_CRYPTO,
@@ -46,6 +47,7 @@ from polymarket_alpha_lab.papersim.gates import (
     GateReport,
     NewsCheck,
     cancellation_haircut,
+    check_cross_league_mw,
     check_news,
     evaluate_candidate,
     evaluate_gates,
@@ -120,6 +122,10 @@ def test_frozen_stub_surfaces_preserved():
     # parameters joined the frozen numeric surface; the four frozen
     # numeric inputs keep their names and keyword-only kind, and callers
     # omitting the fee pair get the old as-supplied comparison.
+    # Order-centralization fix (2026-11-07, codex finding 5): one more
+    # optional keyword-only parameter (model_median) joined so the
+    # library applies the 50-50 haircut in the canonical fee-then-haircut
+    # position; callers omitting it are unaffected.
     assert list(sig.parameters) == [
         "variant_spread",
         "worst_variant_edge",
@@ -127,10 +133,12 @@ def test_frozen_stub_surfaces_preserved():
         "gamma_liquidity",
         "fee_rate",
         "entry_price",
+        "model_median",
     ]
     assert all(p.kind is inspect.Parameter.KEYWORD_ONLY for p in sig.parameters.values())
     assert sig.parameters["fee_rate"].default is None
     assert sig.parameters["entry_price"].default is None
+    assert sig.parameters["model_median"].default is None
     assert list(inspect.signature(check_news).parameters)[:2] == ["fixture", "delta"]
     assert GATES == {
         "variant_spread_max": 0.06,
@@ -1089,3 +1097,276 @@ def test_evaluate_gates_fee_pair_must_be_complete_and_finite():
         evaluate_gates(**base, fee_rate=float("nan"), entry_price=0.5)
     with pytest.raises(ValueError, match="entry_price"):
         evaluate_gates(**base, fee_rate=FEE_RATE_SPORTS, entry_price=float("nan"))
+
+
+# ---------------------------------------------------------------------------
+# Fee-then-haircut canonical order (codex-review finding 5, 2026-11-07):
+# one shared helper, both doors, identical numbers. The pre-fix contract
+# let evaluate_gates callers halve the GROSS edge before the fee was
+# subtracted while evaluate_candidate always subtracted the fee first
+# and halved the NET edge; reversing the order shifts the barred edge
+# by fee/2 -- up to 0.625c per share at the sports-rate maximum (fee
+# 1.25c at p=0.5) -- enough to flip near-bar decisions.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("median", [0.30, 0.44, 0.50, 0.70])
+def test_gate_apis_produce_identical_net_numbers(median):
+    # Same raw inputs through both doors: evaluate_candidate walks the
+    # book itself; evaluate_gates receives the SAME gross edge + fee
+    # pair + model_median, so the shared canonical chain (fee first,
+    # haircut second) yields identical numbers and identical exec-gate
+    # outcomes. p=0.50 sits inside the 50-50 band (net edge halved),
+    # p=0.30/0.44/0.70 outside it; p=0.44 pins the band's lower edge.
+    gross = 0.07
+    vwap = round(median - gross, 4)
+    quote = dict(
+        model_median=median,
+        qs_variants=(round(median - 0.01, 4), round(median + 0.0111, 4)),
+    )
+    report = evaluate_candidate(
+        quote, [(vwap, 5000.0)], gamma_liquidity=20000.0, news=_concordant_news()
+    )
+    assert report.exec_edge_gross == gross
+    # canonical order through the public composition: net the fee ...
+    net = round(gross - round(fee_cost(vwap, FEE_RATE_SPORTS), 4), 4)
+    assert report.exec_edge == net
+    # ... THEN halve the net edge inside the band.
+    assert report.haircut == cancellation_haircut(median)
+    assert report.exec_edge_haircut == haircut_edge(net, median)
+    frozen = evaluate_gates(
+        variant_spread=report.variant_spread,
+        worst_variant_edge=report.worst_variant_edge,
+        median_exec_edge=report.exec_edge_gross,
+        gamma_liquidity=20000.0,
+        fee_rate=FEE_RATE_SPORTS,
+        entry_price=vwap,
+        model_median=median,
+    )
+    assert report.checks["exec>=+5c"] is ("exec_edge" not in frozen.failed)
+    # full numeric parity: every frozen numeric gate agrees between doors.
+    numeric_ids = tuple(
+        gate_id
+        for gate_id in ("variant_spread", "worst_edge", "exec_edge", "liq")
+        if gate_id in report.decision.failed
+    )
+    assert numeric_ids == frozen.failed
+
+
+def test_net_bar_boundary_gross_exactly_625c_at_p50():
+    # gross exactly 6.25c at a p=0.50 entry (sports fee exactly 1.25c)
+    # nets to exactly 5.00c -- exactly on the frozen +5c net bar, passes
+    # (epsilon convention); one tick lower (6.24c -> 4.99c net) fails.
+    # Outside the 50-50 band both application orders coincide; the
+    # fee/2 = 0.625c divergence exists only inside the band.
+    common = dict(gamma_liquidity=20000.0, news=_concordant_news())
+    report = evaluate_candidate(
+        dict(model_median=0.5625, qs_variants=(0.5425, 0.5825)),
+        [(0.50, 5000.0)],
+        **common,
+    )
+    assert report.exec_edge_gross == 0.0625
+    assert report.exec_edge == 0.05
+    assert report.haircut == 1.0
+    assert report.exec_edge_haircut == 0.05
+    assert report.checks["exec>=+5c"] is True
+    assert report.decision.passed is True
+    frozen = evaluate_gates(
+        variant_spread=report.variant_spread,
+        worst_variant_edge=report.worst_variant_edge,
+        median_exec_edge=report.exec_edge_gross,
+        gamma_liquidity=20000.0,
+        fee_rate=FEE_RATE_SPORTS,
+        entry_price=0.50,
+    )
+    assert frozen.passed is True and frozen.failed == ()
+    next_tick = evaluate_candidate(
+        dict(model_median=0.5624, qs_variants=(0.5425, 0.5824)),
+        [(0.50, 5000.0)],
+        **common,
+    )
+    assert next_tick.exec_edge == 0.0499
+    assert next_tick.checks["exec>=+5c"] is False
+    assert next_tick.decision.failed == ("exec_edge",)
+
+
+def test_haircut_adjusted_5c_bar_gross_1125c_order_parity():
+    # Inside the 50-50 band the order matters. Median 0.50, entry 0.3881
+    # (fee 1.19c): gross 11.19c -> net 10.00c -> halved exactly 5.00c,
+    # exactly on the +5c bar. The pre-fix reversed flow (caller halves
+    # the GROSS edge first: 5.60c - 1.19c = 4.41c) FAILS -- that
+    # fee/2 shift is the max order-reversal delta (0.625c at the p=0.5
+    # sports maximum) flipping exactly this kind of near-bar decision.
+    report = evaluate_candidate(
+        dict(model_median=0.50, qs_variants=(0.49, 0.51)),
+        [(0.3881, 5000.0)],
+        gamma_liquidity=20000.0,
+        news=_concordant_news(),
+    )
+    assert report.exec_edge_gross == pytest.approx(0.1119, abs=1e-4)
+    assert report.exec_edge == pytest.approx(0.1000, abs=1e-4)
+    assert report.haircut == 0.5
+    assert report.exec_edge_haircut == pytest.approx(0.0500, abs=1e-4)
+    assert report.checks["exec>=+5c"] is True
+    # canonical door: fee pair + model_median applies fee first, halving
+    # the NET edge -- identical outcome.
+    frozen = evaluate_gates(
+        variant_spread=0.02,
+        worst_variant_edge=0.147,
+        median_exec_edge=0.1119,
+        gamma_liquidity=20000.0,
+        fee_rate=FEE_RATE_SPORTS,
+        entry_price=0.3881,
+        model_median=0.50,
+    )
+    assert frozen.passed is True and frozen.failed == ()
+    # the pre-fix caller contract (pre-halved GROSS edge + fee pair)
+    # bars 0.056 - 0.0119 = 4.41c and fails -- the documented delta.
+    pre_halved = evaluate_gates(
+        variant_spread=0.02,
+        worst_variant_edge=0.147,
+        median_exec_edge=round(0.1119 * 0.5, 4),
+        gamma_liquidity=20000.0,
+        fee_rate=FEE_RATE_SPORTS,
+        entry_price=0.3881,
+    )
+    assert pre_halved.passed is False and pre_halved.failed == ("exec_edge",)
+    assert round(fee_cost(0.50, FEE_RATE_SPORTS) / 2, 6) == pytest.approx(0.00625)
+
+
+def test_haircut_adjusted_8c_bar_boundary_under_risk():
+    # under_risk + 50-50 band: gross 17.05c at a p=0.30 entry (sports
+    # fee 1.05c) nets to 16.00c, halved to exactly 8.00c -- exactly on
+    # the +8c screen bar, passes; one tick lower fails. The reversed
+    # order (halve gross first: ~8.52c - 1.05c = 7.47c) fails both.
+    common = dict(under_risk=True, gamma_liquidity=20000.0, news=_concordant_news())
+    report = evaluate_candidate(
+        dict(model_median=0.4705, qs_variants=(0.4305, 0.4905)),
+        [(0.30, 5000.0)],
+        **common,
+    )
+    assert report.exec_edge_gross == 0.1705
+    assert report.exec_edge == 0.16
+    assert report.haircut == 0.5
+    assert report.exec_edge_haircut == 0.08
+    assert report.checks["exec>=+8c"] is True
+    assert report.decision.passed is True
+    next_tick = evaluate_candidate(
+        dict(model_median=0.4700, qs_variants=(0.4300, 0.4900)),
+        [(0.30, 5000.0)],
+        **common,
+    )
+    assert next_tick.exec_edge == pytest.approx(0.1595, abs=1e-4)
+    assert next_tick.exec_edge_haircut == pytest.approx(0.0798, abs=1e-4)
+    assert next_tick.checks["exec>=+8c"] is False
+    assert next_tick.decision.failed == ("exec_edge",)
+
+
+def test_evaluate_gates_model_median_requires_fee_pair_and_finite():
+    base = dict(
+        variant_spread=0.05,
+        worst_variant_edge=0.05,
+        median_exec_edge=0.07,
+        gamma_liquidity=6000.0,
+    )
+    with pytest.raises(ValueError, match="model_median requires the fee pair"):
+        evaluate_gates(**base, model_median=0.50)
+    with pytest.raises(ValueError, match="model_median must be a finite"):
+        evaluate_gates(
+            **base,
+            fee_rate=FEE_RATE_SPORTS,
+            entry_price=0.50,
+            model_median=float("nan"),
+        )
+
+
+# ---------------------------------------------------------------------------
+# Cross-league match_winner enforcement (codex-review finding 4,
+# 2026-11-07): the suspension registry stays descriptive; this check is
+# what makes the book-of-record requirements (explicit bridge +
+# worst-variant >= +5c extra margin) binding on the evaluate path.
+# ---------------------------------------------------------------------------
+
+
+def test_cross_league_mw_without_bridge_rejected():
+    decision = check_cross_league_mw(
+        "match_winner", worst_variant_edge=0.055, cross_league=True, bridge_present=False
+    )
+    assert decision.passed is False
+    assert decision.failed == ("cross_league_bridge",)
+
+
+def test_cross_league_mw_with_bridge_but_45c_worst_edge_rejected():
+    decision = check_cross_league_mw(
+        "match_winner", worst_variant_edge=0.045, cross_league=True, bridge_present=True
+    )
+    assert decision.passed is False
+    assert decision.failed == ("cross_league_worst_edge",)
+
+
+def test_cross_league_mw_with_bridge_and_55c_worst_edge_accepted():
+    decision = check_cross_league_mw(
+        "match_winner", worst_variant_edge=0.055, cross_league=True, bridge_present=True
+    )
+    assert decision.passed is True and decision.failed == ()
+    # boundary: worst exactly +5c passes, next tick fails (round-24
+    # epsilon convention, same as the frozen gates).
+    on_bar = check_cross_league_mw(
+        "match_winner", worst_variant_edge=0.05, cross_league=True, bridge_present=True
+    )
+    assert on_bar.passed is True and on_bar.failed == ()
+    next_tick = check_cross_league_mw(
+        "match_winner", worst_variant_edge=0.0499, cross_league=True, bridge_present=True
+    )
+    assert next_tick.passed is False
+    assert next_tick.failed == ("cross_league_worst_edge",)
+    assert CROSS_LEAGUE_MW_WORST_EDGE_MIN == 0.05
+
+
+def test_cross_league_mw_missing_both_requirements_lists_both():
+    # lineage aliases (ml/1x2) scope into the same rule.
+    decision = check_cross_league_mw(
+        "ml", worst_variant_edge=0.03, cross_league=True, bridge_present=False
+    )
+    assert decision.passed is False
+    assert decision.failed == ("cross_league_bridge", "cross_league_worst_edge")
+
+
+def test_cross_league_mw_domestic_and_other_kinds_pass_through():
+    # domestic match_winner: unchanged -- no bridge/extra-margin rule is
+    # added (the frozen worst>=+4c gate and the deprioritized sizing
+    # keep applying exactly as before).
+    domestic = check_cross_league_mw(
+        "match_winner",
+        worst_variant_edge=0.045,
+        cross_league=False,
+        bridge_present=False,
+    )
+    assert domestic.passed is True and domestic.failed == ()
+    # other market kinds are untouched even when cross_league is set.
+    for kind in ("total", "btts", "spread", "team_total"):
+        passthrough = check_cross_league_mw(
+            kind, worst_variant_edge=0.0, cross_league=True, bridge_present=False
+        )
+        assert passthrough.passed is True and passthrough.failed == ()
+
+
+def test_cross_league_mw_rejects_non_finite_worst_edge():
+    for bad in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(ValueError, match="worst_variant_edge"):
+            check_cross_league_mw(
+                "match_winner", worst_variant_edge=bad, cross_league=True, bridge_present=True
+            )
+
+
+def test_cross_league_mw_enforces_the_registry_wording_on_the_evaluate_path():
+    # composition: suspension_policy stays descriptive (the KIND is
+    # ELIGIBLE_DEPRIORITIZED); this check is what makes the documented
+    # requirements binding before any sizing happens.
+    policy = suspension_policy("match_winner", cross_league=True)
+    assert policy.eligible is True
+    rejected = check_cross_league_mw(
+        "match_winner", worst_variant_edge=0.045, cross_league=True, bridge_present=False
+    )
+    assert rejected.passed is False
+    assert set(rejected.failed) == {"cross_league_bridge", "cross_league_worst_edge"}

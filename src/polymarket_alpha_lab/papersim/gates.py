@@ -44,6 +44,20 @@ moved from gross to net. Gross edges stay visible as
 ``GateReport.exec_edge_gross``, and :func:`evaluate_gates` accepts an
 optional ``fee_rate`` + ``entry_price`` pair to net its supplied edge
 the same way (without the pair it keeps comparing as supplied).
+
+Fee/haircut order centralization + cross-league enforcement (codex
+review 2026-11-07, findings 5 and 4): the canonical exec-edge
+arithmetic -- subtract the fee, THEN apply the 50-50 haircut -- lives
+in ONE helper (:func:`_apply_fee_and_haircut`) called by both
+:func:`evaluate_candidate` and :func:`evaluate_gates`; the frozen door
+additionally accepts ``model_median`` alongside the fee pair so the
+haircut is applied by the library in the canonical position instead of
+the old pre-halved-caller contract (order reversal shifted the barred
+edge by up to fee/2 = 0.625c per share, enough to flip near-bar
+decisions). The cross-league match_winner requirements (explicit
+bridge + worst-variant >= +5c) are now enforced by
+:func:`check_cross_league_mw` instead of remaining descriptive wording
+on the suspension registry.
 """
 
 from __future__ import annotations
@@ -90,6 +104,15 @@ DEPTH_NEAR_BAND = 0.02
 # r15 under_risk screen: Over totals / BTTS-Yes with under-trending form
 # need edge >= +8c (and all-variant agreement, subsumed by worst >= +4c).
 UNDER_RISK_EXEC_EDGE_MIN = 0.08
+
+# Cross-league match_winner extra requirements (codex-review finding 4,
+# 2026-11-07): the book-of-record wording behind
+# REASON_CROSS_LEAGUE_MATCH_WINNER makes bridged cross-league candidacy
+# conditional on an explicit bridge parameter AND worst-variant edge
+# >= +5c (extra margin over the frozen +4c worst gate, which still
+# applies to every candidate). This constant enforces that documented
+# wording; it is NOT a change to any frozen GATES threshold.
+CROSS_LEAGUE_MW_WORST_EDGE_MIN = 0.05
 
 SIDE_ASK = "ask"
 SIDE_BID = "bid"
@@ -348,6 +371,35 @@ def fee_cost(entry_price: float, fee_rate: float) -> float:
     return fee_rate * entry_price * (1.0 - entry_price)
 
 
+def _apply_fee_and_haircut(
+    exec_edge_gross: float,
+    entry_price: float,
+    fee_rate: float,
+    model_median: float | None = None,
+) -> float:
+    """Canonical exec-edge arithmetic: fee first, haircut second.
+
+    Codex-review finding 5 (2026-11-07): the canonical application
+    order is the one :func:`evaluate_candidate` has always used and the
+    frozen anchors (#48 gate arithmetic, entries #62-#68) were produced
+    through -- subtract the per-share :func:`fee_cost` at
+    ``entry_price`` from the GROSS edge first, THEN apply the 50-50
+    cancellation haircut (:func:`haircut_edge`) to the NET edge. Both
+    evaluate doors (:func:`evaluate_candidate`, :func:`evaluate_gates`)
+    call this single helper so the two APIs can never diverge again:
+    reversing the order (haircut first, fee second) lowers the barred
+    edge by ``fee / 2`` -- up to 0.625c per share at the sports-rate
+    maximum (1.25c fee at ``p = 0.5``), enough to flip near-bar
+    decisions. ``model_median`` None returns the net edge unhalved
+    (haircut factor 1). Pure arithmetic with the lineage 4-dp rounding
+    at each step; callers validate their own inputs first.
+    """
+    net = round(exec_edge_gross - round(fee_cost(entry_price, fee_rate), 4), 4)
+    if model_median is None:
+        return net
+    return haircut_edge(net, model_median)
+
+
 def under_risk_check(
     *,
     kind: str,
@@ -462,6 +514,46 @@ def suspension_policy(market_kind: str, *, cross_league: bool = False) -> Suspen
     )
 
 
+def check_cross_league_mw(
+    market_kind: str,
+    *,
+    worst_variant_edge: float,
+    cross_league: bool = False,
+    bridge_present: bool = False,
+) -> GateDecision:
+    """Enforce the documented cross-league match_winner requirements.
+
+    The suspension registry (:func:`suspension_policy`) marks
+    cross-league match_winner ELIGIBLE_DEPRIORITIZED, but the
+    book-of-record wording behind it requires more than the market
+    kind: an explicit bridge parameter AND worst-variant edge >= +5c
+    (extra margin over the frozen +4c worst gate, which still applies
+    to every candidate separately). This check is the enforcement point
+    (codex-review finding 4, 2026-11-07): the registry lookup alone --
+    which stays descriptive -- must never establish cross-league
+    match_winner candidacy. Non-cross-league inputs pass through
+    untouched (``failed=()``): domestic match_winner keeps its existing
+    gates and deprioritized sizing, and every other market kind is
+    unaffected. ``worst_variant_edge`` must be a finite number (the F3
+    rule: non-finite evidence is rejected, never compared); boundary
+    +5c passes, next tick fails (round-24 epsilon convention).
+    """
+    if not math.isfinite(worst_variant_edge):
+        raise ValueError(
+            f"worst_variant_edge must be a finite number, got {worst_variant_edge!r}"
+        )
+    kind = str(market_kind or "").strip().lower()
+    registry_kind = "match_winner" if kind in _MATCH_WINNER_KINDS else kind
+    if registry_kind != "match_winner" or not cross_league:
+        return GateDecision(passed=True, failed=())
+    failed: list[str] = []
+    if not bridge_present:
+        failed.append("cross_league_bridge")
+    if worst_variant_edge < CROSS_LEAGUE_MW_WORST_EDGE_MIN - GATE_EPSILON:
+        failed.append("cross_league_worst_edge")
+    return GateDecision(passed=not failed, failed=tuple(failed))
+
+
 def _quote_field(quote: Any, name: str) -> Any:
     """Read a required field off a quote object or mapping."""
     if isinstance(quote, Mapping):
@@ -532,13 +624,16 @@ def evaluate_candidate(
     ``liq = b['liq'] or 0``). Missing news evidence fails the
     ``news_concordant`` check: candidacy requires concordance.
 
-    Fee accounting (2026-11-05 fix): ``fee_rate`` is charged per share
-    as :func:`fee_cost` at the walked entry price and subtracted from
-    the executable edge BEFORE the exec bar comparison -- the frozen
-    +5c bar (and the +8c under_risk bar) are NET-edge bars. The gross
-    edge is preserved as ``GateReport.exec_edge_gross``; the net edge is
-    ``GateReport.exec_edge`` and the haircut acts on it. ``fee_rate``
-    must be a finite non-negative number.
+    Fee accounting (2026-11-05 fix; order centralized 2026-11-07):
+    ``fee_rate`` is charged per share as :func:`fee_cost` at the walked
+    entry price and subtracted from the executable edge BEFORE the exec
+    bar comparison -- the frozen +5c bar (and the +8c under_risk bar)
+    are NET-edge bars. The gross edge is preserved as
+    ``GateReport.exec_edge_gross``; the net edge is
+    ``GateReport.exec_edge`` and the haircut acts on it. Both steps live
+    in :func:`_apply_fee_and_haircut` (the canonical order shared with
+    :func:`evaluate_gates`). ``fee_rate`` must be a finite non-negative
+    number.
     """
     median = float(_quote_field(model_quote, "model_median"))
     variants = tuple(float(v) for v in _quote_field(model_quote, "qs_variants"))
@@ -588,16 +683,18 @@ def evaluate_candidate(
         haircut = 1.0
     else:
         exec_edge_gross = round(median - walk.vwap, 4)
-        # Fee accounting (2026-11-05 fix): the exec bar is a NET-edge bar.
-        # The per-share fee is charged at the walked entry price and
-        # subtracted from the executable edge BEFORE the bar comparison;
-        # the 50-50 haircut then acts on the NET edge (4-dp rounding at
-        # each step, lineage convention).
-        fee = round(fee_cost(walk.vwap, fee_rate), 4)
-        exec_edge = round(exec_edge_gross - fee, 4)
+        # Fee accounting (2026-11-05 fix; centralized 2026-11-07,
+        # codex-review finding 5): the exec bar is a NET-edge bar and
+        # the canonical order -- fee subtracted from the gross edge
+        # first, 50-50 haircut applied to the net edge second -- lives
+        # ONLY in _apply_fee_and_haircut so both evaluate doors share
+        # byte-identical arithmetic. Numbers are unchanged.
+        exec_edge = _apply_fee_and_haircut(exec_edge_gross, walk.vwap, fee_rate)
         worst_edge = round(worst_model - walk.vwap, 4)
         haircut = cancellation_haircut(median)
-        exec_edge_haircut = round(exec_edge * haircut, 4)
+        exec_edge_haircut = _apply_fee_and_haircut(
+            exec_edge_gross, walk.vwap, fee_rate, median
+        )
     exec_bar = UNDER_RISK_EXEC_EDGE_MIN if under_risk else GATES["exec_edge_min"]
     exec_key = "exec>=+8c" if under_risk else "exec>=+5c"
     checks: dict[str, bool] = {
@@ -665,22 +762,31 @@ def evaluate_gates(
     gamma_liquidity: float,
     fee_rate: float | None = None,
     entry_price: float | None = None,
+    model_median: float | None = None,
 ) -> GateDecision:
     """Evaluate the four frozen numeric gates for one candidate.
 
-    ``median_exec_edge`` is compared with ``exec_edge_min`` as supplied:
-    callers must apply the 50-50 cancellation haircut (:func:`haircut_edge`)
-    BEFORE calling, per the r15 application order (edge halved first,
-    then barred). Boundary values pass (round-24 epsilon tolerances).
+    ``median_exec_edge`` is compared with ``exec_edge_min`` as supplied
+    when no fee pair is passed (the frozen as-supplied contract: callers
+    who already computed the canonical barred edge, or who replay frozen
+    gross/net records, pass it directly and keep byte-identical
+    behavior). Boundary values pass (round-24 epsilon tolerances).
 
-    Fee accounting (2026-11-05 fix): passing ``fee_rate`` together with
+    Fee accounting (2026-11-05 fix; order centralized 2026-11-07,
+    codex-review finding 5): passing ``fee_rate`` together with
     ``entry_price`` (both keyword-only, both or neither) makes the exec
     gate a NET-edge gate -- ``median_exec_edge`` is then interpreted as
-    the GROSS edge and :func:`fee_cost` at ``entry_price`` is subtracted
-    from it before the bar comparison, exactly as :func:`evaluate_candidate`
-    does internally. Without the pair, the edge is compared as supplied
-    (the frozen as-supplied contract; callers who already netted the fee
-    or replay frozen gross records keep byte-identical behavior).
+    the GROSS edge and the canonical chain from
+    :func:`_apply_fee_and_haircut` is applied to it: fee subtracted
+    first, 50-50 cancellation haircut applied to the net edge second.
+    When ``model_median`` rides along with the fee pair, the haircut is
+    applied by THIS function in the canonical position -- do NOT
+    pre-halve ``median_exec_edge`` before calling (that was the pre-fix
+    contract; combined with ``model_median`` it would double-apply the
+    haircut, and alone it reverses the canonical order, lowering the
+    barred edge by up to fee/2 = 0.625c). Without ``model_median`` the
+    fee pair nets the supplied GROSS edge only (haircut factor 1 --
+    correct for candidates outside the 50-50 band).
 
     Non-finite inputs (NaN, +/-inf) are rejected with :class:`ValueError`
     (codex-review F3 fix): NaN compares False against every threshold and
@@ -698,6 +804,15 @@ def evaluate_gates(
             "evaluate_gates inputs must be finite numbers; non-finite: "
             + ", ".join(non_finite)
         )
+    if model_median is not None and not math.isfinite(model_median):
+        raise ValueError(
+            f"model_median must be a finite number, got {model_median!r}"
+        )
+    if model_median is not None and (fee_rate is None or entry_price is None):
+        raise ValueError(
+            "model_median requires the fee pair (fee_rate + entry_price); "
+            "without the pair the exec edge is compared as supplied"
+        )
     if (fee_rate is None) != (entry_price is None):
         raise ValueError(
             "fee accounting requires both fee_rate and entry_price "
@@ -712,8 +827,8 @@ def evaluate_gates(
             raise ValueError(
                 f"entry_price must be a finite number, got {entry_price!r}"
             )
-        median_exec_edge = round(
-            median_exec_edge - round(fee_cost(entry_price, fee_rate), 4), 4
+        median_exec_edge = _apply_fee_and_haircut(
+            median_exec_edge, entry_price, fee_rate, model_median
         )
     failed: list[str] = []
     if variant_spread > GATES["variant_spread_max"] + GATE_EPSILON:

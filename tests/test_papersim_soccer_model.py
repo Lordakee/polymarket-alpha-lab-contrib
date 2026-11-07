@@ -363,6 +363,37 @@ def test_match_lambdas_unresolvable_inputs_return_none() -> None:
     assert soccer_model.fixture_variants(snapshot, "Alpha", "EPL", "Ghost", "EPL") is None
 
 
+def test_fixture_variants_early_season_returning_team() -> None:
+    """Codex review 2026-11-07 finding 6 at the sweep level.
+
+    A roster team with prior-season rows but ZERO current-season rows
+    (early-season returning side) keeps its prior evidence in the blend
+    and last-only variants instead of silently collapsing to league
+    average; the current-only variant has no data for it and keeps the
+    documented league-average (1.0, 1.0) fallback.
+    """
+    snapshot = _mini_snapshot()
+    snapshot["EPL_2025"]["teams"]["5"] = {"title": "Returning", "history": [{"xG": 3.0, "xGA": 0.75}]}  # type: ignore[index]
+    snapshot["EPL_2026"]["teams"]["5"] = {"title": "Returning", "history": []}  # type: ignore[index]
+
+    variants = soccer_model.fixture_variants(snapshot, "Returning", "EPL", "Beta", "EPL")
+    assert variants is not None
+    lambdas = {v.spec.name: v.lambdas for v in variants}
+    # last-only: att = 3.0/1.5 = 2.0, def_Beta(last) = 1.0/1.5;
+    # att_Beta(last) = 2.0/1.5, def = 0.75/1.5 = 0.5.
+    assert lambdas["last-only"] == pytest.approx((2.0, 1.0))
+    # current-only: Returning falls back to (1.0, 1.0); Beta's current
+    # multipliers are (2.0/1.5, 1.0/1.5).
+    assert lambdas["current-only"] == pytest.approx((1.0, 2.0))
+    # The variants that can see the prior evidence lift the returning
+    # side above its no-data baseline; the median pair moves with them.
+    assert lambdas["last-only"][0] > lambdas["current-only"][0]
+    assert lambdas["blend w=.5 p=8 rho0"][0] > lambdas["current-only"][0]
+    median = soccer_model.match_lambdas(snapshot, "Returning", "EPL", "Beta", "EPL")
+    assert median is not None
+    assert median[0] > 1.0  # above the pure league-average baseline
+
+
 def test_banned_cross_league_path_returns_none() -> None:
     data = json.loads((FIXTURES / "regression_banned_path.json").read_text(encoding="utf-8"))
     case = data["case"]
