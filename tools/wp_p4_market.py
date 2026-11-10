@@ -239,7 +239,7 @@ def load_market_archive(root: str | Path) -> MarketAudit:
             if not path.resolve().is_relative_to(root):
                 raise ValueError("market archive path escapes declared root")
             data = path.read_bytes()
-            relative = str(path.relative_to(root))
+            relative = path.relative_to(root).as_posix()
             sources.append({"path": relative, "sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)})
             rows, omitted = parse_scan(json.loads(data), relative)
             observations.extend(rows)

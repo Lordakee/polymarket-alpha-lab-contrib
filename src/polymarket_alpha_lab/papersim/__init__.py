@@ -109,6 +109,20 @@ from polymarket_alpha_lab.papersim.gates import (
     under_risk_check,
     walk_book,
 )
+from polymarket_alpha_lab.papersim.espn_nba import (
+    NBA_TEAMS,
+    build_snapshot as build_nba_snapshot,
+    fetch_nba_season,
+    load_nba_snapshot,
+)
+from polymarket_alpha_lab.papersim.nba_model import (
+    NbaFixture,
+    NbaPrediction,
+    VARIANTS as NBA_VARIANTS,
+    fixture_prediction as nba_fixture_prediction,
+    team_ratings as nba_team_ratings,
+)
+
 from polymarket_alpha_lab.papersim.ledger import (
     DEFAULT_PAPERSIM_PG_DSN,
     EXITED_OUTCOME,
@@ -292,6 +306,15 @@ __all__ = [
     "RecordSummary",
     "RecentForm",
     "REASON_CROSS_LEAGUE_MATCH_WINNER",
+    "NBA_TEAMS",
+    "NBA_VARIANTS",
+    "NbaFixture",
+    "NbaPrediction",
+    "build_nba_snapshot",
+    "fetch_nba_season",
+    "load_nba_snapshot",
+    "nba_fixture_prediction",
+    "nba_team_ratings",
     "check_cross_league_mw",
     "REASON_DOMESTIC_MATCH_WINNER",
     "REASON_ELIGIBLE_KIND",

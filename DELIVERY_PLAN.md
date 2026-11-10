@@ -3486,3 +3486,37 @@ $150、全部冻结阈值不动。
   `docs/paper-sim/wp-p4-optimization-2026-11-07.md`；本地交付字节清单在
   `docs/paper-sim/wp-p4-evidence-manifest.json`。没有推送、没有数据库写入、
   没有接入扫描，最终晋升决定仍属 owner／ZCode 协调者。
+
+## 74. WP-NBA: 篮球影子模型（2026-11-10，未达入场标准）
+
+**Owner 授权（verbatim）**："看看今天未来12小时的足球和篮球场次和赔率，如果
+当前模型不适用，有没有办法搭建新的模型？"（2026-11-09）+ 可行性 GO
+（~/paper-sim/round46/nba_feasibility.md）。
+
+**范围（本节提交）**：papersim 影子基础设施，与 recalib.py 同模式——
+入库、隔离、不接任何入场路径：
+
+- `espn_nba.py`（1173 行）：ESPN NBA 适配器（限速/缓存/原子写/fail-closed，
+  fotmob 同款纪律 + F#8 有限非负校验；ET 日历日期推导含底特律 10-27/28
+  B2B 回归测试；冻结 30 队表）。
+- `nba_model.py`（1077 行）：EWMA ORtg/DRtg（半衰期网格）×乘法节奏×加法
+  效率交互，正态边际/总分（σ 走前残差自拟合+夹断），6 变体包络
+  （3 半衰期 × 2 σ 尺度），严格因果屏障，fail-closed 拒绝路径。
+- `tools/wp_nba_validate.py`：A-E 镜像验证工具。
+- 服务器真实回填快照：~/paper-sim/nba/snapshot_20261110.json（30 队
+  154 场 2026-27，sha256 eca00867…）。
+
+**验证结论（~/paper-sim/review/wp_nba_validation/，n=30 走向前）**：
+A/C/D(ML) PASS——ML Brier 0.164 vs 掷币 0.250，评级 vs 胜率 ρ=0.914；
+**B/E FAIL——总分族输给掷币（log-loss 0.838 vs 0.693）、对 DK 市场
+MAD 11.5c / 对 PM 收盘 8.8c（bar 6c），5 次热门翻转市场对 4 次**。
+变体纪律优秀（0% 超 6c）。**裁定：禁止入场**；~2 周后样本 30→90+ 复测
+（关键指标：MAD 是否随数据量收敛 11.6c→11.3c 的趋势）+ 总分族诊断
+（+1.2pt 偏置、σ 触顶、节奏分裂 Dean-Oliver vs 2026-27 pace shift）。
+通过入场门之前 NBA 无任何 ledger/entry 接线。
+
+**独立复审**：VERDICT PASS（0 P0-P2，6 P3 记录在案：status-shape 非
+fail-closed、同日异对手重复键、聚合 σ 中位数语义、门面导入顺序装饰性、
+_parse_score 布尔穿透（ESPN 线不发）、覆盖小项）。附带修复：
+tools/wp_p4_market.py 路径 posix 化（Windows 首跑暴露的移植缺陷，
+双平台 28+28 绿）。
