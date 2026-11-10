@@ -3520,3 +3520,31 @@ fail-closed、同日异对手重复键、聚合 σ 中位数语义、门面导�
 _parse_score 布尔穿透（ESPN 线不发）、覆盖小项）。附带修复：
 tools/wp_p4_market.py 路径 posix 化（Windows 首跑暴露的移植缺陷，
 双平台 28+28 绿）。
+
+## 75. WP-P5 κ 换表 + 客方折减——跨联赛 MW 解冻（2026-11-10）
+
+**Owner 授权（verbatim）**："按你推荐的做"（2026-11-10，采纳决策备忘录建议
+SWAP + FROZEN TABLE + HAIRCUT 0.06）。
+
+**证据链**：P5 裁定（占位符根因）→ FotMob 2023/24+2024/25 回填（5257 场
+零失败）→ 双季节严格 T1-T5（G2 PASS，T2 汇总 0.051）→ 300 次 bootstrap
+（无折减脆弱：25-26 中位 0.082；0.06 折减 → 94% 复验通过，T1 代价 1.6%）
+→ 供应商不变性证明（冻结表两种口径逐位相同）。工件：
+~/paper-sim/review/wp_p5/two_season/{two_season_report.json,sensitivity/}。
+
+**本节提交**：league_strength.py 新冻结表 pre_2025_26（EPL +0.021655 /
+La_liga −0.071492 / Serie_A −0.053532 / Bundesliga −0.095116 / Ligue_1
+−0.182982 / nuisance −0.300105；旧表保留 SUPERSEDED_KAPPA_WP_P2B 可回滚）；
+AWAY_HAIRCUT=0.06（exp(−0.06) 客队 λ 纯乘，倾斜除法前应用以保纯倾斜浮点
+精确性）；xg.py 跨联赛分支接线；4 个锚定测试按新语义最小更新 + 7 新测试
+（表值逐位钉定 artifact JSON）；usage.md 桥接章重写。
+
+**验收**：papersim 全面 499 通过/9 跳过；selfcheck 10/10（国内锚点逐字节
+不变——折减只在跨联赛路径）；独立复审 VERDICT PASS（0 P0-P2，3 P3：
+注释符号笔误[已修]、容器 docstring 大小写示例、1 处 libm 敏感精确等值）。
+
+**运营状态变更**：跨联赛 MW 解除运营冻结（注册表本为
+ELIGIBLE_DEPRIORITIZED，未改动）；MD5（11/24-26）起以 $150 + 新表 +
+折减 + check_cross_league_mw 强制参与。旧表可回滚（SUPERSEDED 常量 +
+round31 工件）。EPL 优势从 +0.127 修正到 +0.022——旧值大半是占位符先验
+假象，这正是 P2b 降级揭露、本次回填修复的核心。

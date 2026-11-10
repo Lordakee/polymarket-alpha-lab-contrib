@@ -261,7 +261,8 @@ def test_cross_league_with_bridge_returns_lambdas() -> None:
     )
     assert lambdas is not None
     assert lambdas[0] == pytest.approx(85 / 56, rel=1e-12)
-    assert lambdas[1] == pytest.approx(10 / 7, rel=1e-12)
+    # Away carries the WP-P5 away haircut on top of the bridge tilt.
+    assert lambdas[1] == pytest.approx(10 / 7 * league_strength.AWAY_HAIRCUT_FACTOR, rel=1e-12)
 
     # Explicit season threading resolves both leagues' blocks.
     explicit = xg.pair_lambdas(
@@ -615,8 +616,8 @@ def test_cross_league_asymmetric_base_rates_keep_own_league_rates() -> None:
 
     - lambda_home = bundesliga home rate 2.5 * 1 * 1 * 1 = 2.5 — NOT
       ligue_1's home rate 1.0;
-    - lambda_away = ligue_1 away rate 2.0 * 1 * 1 / 1 = 2.0 — NOT
-      bundesliga's away rate 0.5.
+    - lambda_away = ligue_1 away rate 2.0 * 1 * 1 * haircut = 2.0 * exp(-0.06)
+      ≈ 1.8835 — NOT bundesliga's away rate 0.5 (haircut per WP-P5).
     """
     snapshot = _asymmetric_snapshot()
 
@@ -624,7 +625,7 @@ def test_cross_league_asymmetric_base_rates_keep_own_league_rates() -> None:
         snapshot, HOF_TEAM, HOF_LEAGUE, LYO_TEAM, LYO_LEAGUE,
         last_weight=0.5, prior_games=8.0, bridge=NEUTRAL_BRIDGE,
     )
-    assert neutral == (2.5, 2.0)
+    assert neutral == (2.5, 2.0 * league_strength.AWAY_HAIRCUT_FACTOR)
 
     # Every sweep variant, not just the blend: with exactly-average
     # teams all ten modes reduce to the same hand-computed pair.
@@ -632,11 +633,13 @@ def test_cross_league_asymmetric_base_rates_keep_own_league_rates() -> None:
         snapshot, HOF_TEAM, HOF_LEAGUE, LYO_TEAM, LYO_LEAGUE, bridge=NEUTRAL_BRIDGE
     )
     assert variants is not None
-    assert [variant.lambdas for variant in variants] == [(2.5, 2.0)] * len(variants)
+    assert [variant.lambdas for variant in variants] == [
+        (2.5, 2.0 * league_strength.AWAY_HAIRCUT_FACTOR)
+    ] * len(variants)
     medians = soccer_model.match_lambdas(
         snapshot, HOF_TEAM, HOF_LEAGUE, LYO_TEAM, LYO_LEAGUE, bridge=NEUTRAL_BRIDGE
     )
-    assert medians == (2.5, 2.0)
+    assert medians == (2.5, 2.0 * league_strength.AWAY_HAIRCUT_FACTOR)
 
     # Bridged (f = exp(ln 1.25) ~ 1.25): lambda_home = 2.5 * f and
     # lambda_away = 2.0 / f — the own-league base rates tilted by the
@@ -651,7 +654,7 @@ def test_cross_league_asymmetric_base_rates_keep_own_league_rates() -> None:
     )
     assert bridged is not None
     assert bridged[0] == pytest.approx(2.5 * factor, rel=1e-15)
-    assert bridged[1] == pytest.approx(2.0 / factor, rel=1e-15)
+    assert bridged[1] == pytest.approx(2.0 * league_strength.AWAY_HAIRCUT_FACTOR / factor, rel=1e-15)
 
     # Reversing the fixture swaps WHICH league supplies each rate:
     # ligue_1 at home supplies its home rate 1.0, bundesliga away
@@ -662,4 +665,189 @@ def test_cross_league_asymmetric_base_rates_keep_own_league_rates() -> None:
     )
     assert reversed_pair is not None
     assert reversed_pair[0] == pytest.approx(1.0 / factor, rel=1e-15)
-    assert reversed_pair[1] == pytest.approx(0.5 * factor, rel=1e-15)
+    assert reversed_pair[1] == pytest.approx(
+        0.5 * league_strength.AWAY_HAIRCUT_FACTOR * factor, rel=1e-15
+    )
+
+
+# ---------------------------------------------------------------------------
+# WP-P5 frozen production table + away-side haircut (2026-11-10)
+# ---------------------------------------------------------------------------
+
+
+def test_shipped_kappa_table_pins_pre_2025_26_values() -> None:
+    """The production κ table is the WP-P5 canonical pre_2025_26
+    freeze, verbatim from tables.pre_2025_26.kappa of
+    sensitivity/canon_boot/two_season_report.json (sha 6ceadb6a…) —
+    fit rule "obs kickoff day < 2025-09-16", leak-free, n_train=547.
+    Rounded memo figures are NOT acceptable; the file's exact values
+    are pinned here so a re-freeze or transcription slip fails."""
+    assert dict(league_strength.KAPPA.kappa) == {
+        "EPL": 0.021655,
+        "La_liga": -0.071492,
+        "Serie_A": -0.053532,
+        "Bundesliga": -0.095116,
+        "Ligue_1": -0.182982,
+        "nuisance": -0.300105,
+    }
+
+
+def _capitalized_snapshot() -> dict[str, object]:
+    """The bridge snapshot remapped to the capitalized league-block
+    convention the frozen κ tables are keyed in (``Bundesliga_2026``,
+    ``Ligue_1_2026`` — the production merged big-5 snapshot blocks;
+    the WP-P2b/WP-P5 fits group leagues exactly so)."""
+    remap = {HOF_LEAGUE: "Bundesliga", LYO_LEAGUE: "Ligue_1", "EPL": "EPL"}
+    snapshot: dict[str, object] = {}
+    for key, block in _bridge_snapshot().items():
+        league, _, season = key.rpartition("_")
+        snapshot[f"{remap.get(league, league)}_{season}"] = block
+    return snapshot
+
+
+def test_shipped_kappa_table_is_immutable_and_threads_through_path() -> None:
+    """MappingProxyType discipline on the shipped table: item writes
+    raise TypeError, and the table resolves real fixtures through the
+    guarded modeling path (capitalized league keys, as keyed)."""
+    with pytest.raises(TypeError):
+        league_strength.KAPPA.kappa["EPL"] = 9.9  # type: ignore[index]
+    with pytest.raises(TypeError):
+        league_strength.KAPPA.kappa["Eredivisie"] = 0.0  # type: ignore[index]
+    lambdas = soccer_model.match_lambdas(
+        _capitalized_snapshot(), HOF_TEAM, "Bundesliga", LYO_TEAM, "Ligue_1",
+        bridge=league_strength.KAPPA.kappa,
+    )
+    assert lambdas is not None
+    # A league absent from the table still refuses the fixture (no
+    # default κ): Eredivisie is not a KAPPA key.
+    assert soccer_model.match_lambdas(
+        _capitalized_snapshot(), HOF_TEAM, "Eredivisie", LYO_TEAM, "Ligue_1",
+        bridge=league_strength.KAPPA.kappa,
+    ) is None
+
+
+def test_superseded_wp_p2b_table_retained_for_rollback() -> None:
+    """Rollback provenance: the superseded WP-P2b table (in-sample
+    n=835 fit, archived at round31/raw/league_strength_kappa.json)
+    stays importable with its exact values, is documented as
+    superseded, and is NOT the active production table."""
+    assert dict(league_strength.SUPERSEDED_KAPPA_WP_P2B.kappa) == {
+        "EPL": 0.126994,
+        "La_liga": -0.086886,
+        "Serie_A": -0.0961,
+        "Bundesliga": -0.111525,
+        "Ligue_1": -0.164953,
+        "nuisance": -0.300105,
+    }
+    assert league_strength.SUPERSEDED_KAPPA_WP_P2B is not league_strength.KAPPA
+    # The two tables genuinely differ (the swap took effect)...
+    assert (
+        dict(league_strength.SUPERSEDED_KAPPA_WP_P2B.kappa)
+        != dict(league_strength.KAPPA.kappa)
+    )
+    # ...on the Big-5 strengths, while the capped nuisance term carries over.
+    assert (
+        dict(league_strength.SUPERSEDED_KAPPA_WP_P2B.kappa)["nuisance"]
+        == dict(league_strength.KAPPA.kappa)["nuisance"]
+        == -0.300105
+    )
+    # Same immutability discipline on the superseded table.
+    with pytest.raises(TypeError):
+        league_strength.SUPERSEDED_KAPPA_WP_P2B.kappa["EPL"] = 0.0  # type: ignore[index]
+    # Both tables are first-class documented module constants.
+    assert "KAPPA" in league_strength.__all__
+    assert "SUPERSEDED_KAPPA_WP_P2B" in league_strength.__all__
+
+
+def test_away_haircut_constant_and_factor_arithmetic() -> None:
+    """The WP-P5 away haircut is exactly 0.06 and its factor exactly
+    exp(-0.06) — hand-checkable: exp(-0.06) = 0.9417645335842487…"""
+    assert league_strength.AWAY_HAIRCUT == 0.06
+    assert league_strength.AWAY_HAIRCUT_FACTOR == pytest.approx(
+        math.exp(-0.06), rel=1e-15
+    )
+    assert league_strength.AWAY_HAIRCUT_FACTOR == pytest.approx(
+        0.9417645335842487, rel=1e-15
+    )
+    # The factor is the constant's exponential, wired not hardcoded.
+    assert league_strength.AWAY_HAIRCUT_FACTOR == math.exp(
+        -league_strength.AWAY_HAIRCUT
+    )
+
+
+def test_apply_away_haircut_arithmetic() -> None:
+    """Hand-checkable corrector arithmetic at the exact 0.06: pure
+    multiplication of the bridged away λ by exp(-0.06)."""
+    # 1.5 * exp(-0.06) = 1.5 * 0.9417645335842487 = 1.4126468003763731…
+    assert league_strength.apply_away_haircut(1.5) == pytest.approx(
+        1.4126468003763731, rel=1e-12
+    )
+    # The asymmetric-snapshot pair's away rate 2.0 under the haircut.
+    assert league_strength.apply_away_haircut(2.0) == pytest.approx(
+        2.0 * math.exp(-0.06), rel=1e-15
+    )
+    # Pure multiplicative tilt: proportional in the input, zero fixed.
+    assert (
+        league_strength.apply_away_haircut(2.0)
+        / league_strength.apply_away_haircut(1.0)
+        == pytest.approx(2.0, rel=1e-15)
+    )
+    assert league_strength.apply_away_haircut(0.0) == 0.0
+    # The clipped HOF-LYO away rate 10/7 haircut exactly as the
+    # harness would (ba * exp(lc_a - kd - haircut)).
+    assert league_strength.apply_away_haircut(10 / 7) == pytest.approx(
+        (10 / 7) * math.exp(-0.06), rel=1e-15
+    )
+
+
+def test_bridged_away_haircut_composes_with_bridge_factor() -> None:
+    """The full WP-P5 composition on the hand-computable snapshot,
+    replicating the harness formula exactly:
+
+        home_bridged = home_neutral * f            (NOT haircut)
+        away_bridged = away_neutral / f * exp(-0.06)
+
+    where f is the clamped bridge factor — the harness's
+    ``bh * exp(lc_h + kd)`` / ``ba * exp(lc_a - kd - haircut)``.
+    """
+    snapshot = _bridge_snapshot()
+    neutral = xg.pair_lambdas(
+        snapshot, HOF_TEAM, HOF_LEAGUE, LYO_TEAM, LYO_LEAGUE,
+        last_weight=0.5, prior_games=8.0, bridge=NEUTRAL_BRIDGE,
+    )
+    bridged = xg.pair_lambdas(
+        snapshot, HOF_TEAM, HOF_LEAGUE, LYO_TEAM, LYO_LEAGUE,
+        last_weight=0.5, prior_games=8.0, bridge=STRONG_BUNDES_LIGA_BRIDGE,
+    )
+    assert neutral is not None and bridged is not None
+    f = league_strength.bridge_factor(
+        STRONG_BUNDES_LIGA_BRIDGE, HOF_LEAGUE, LYO_LEAGUE
+    )
+    assert f == pytest.approx(1.25)
+    # Home side: tilted by f, never haircut.
+    assert bridged[0] == pytest.approx(neutral[0] * f, rel=1e-12)
+    # Away side: tilted by 1/f AND then haircut by exp(-0.06).
+    assert league_strength.apply_away_haircut(bridged[1]) == pytest.approx(
+        neutral[1] / f * math.exp(-0.06), rel=1e-12
+    )
+    # The haircut moves the away rate DOWN by exactly 5.8235…%:
+    # 1 - exp(-0.06) = 0.05823546641575131.
+    assert 1.0 - (
+        league_strength.apply_away_haircut(bridged[1]) / bridged[1]
+    ) == pytest.approx(0.05823546641575131, rel=1e-12)
+
+
+def test_shipped_vs_superseded_table_fixture_displacement() -> None:
+    """The swap's headline geometry: the OLD WP-P2b table drove EPL
+    vs Ligue_1 to the clamp (Δκ = 0.291947 > ln 1.25), the NEW frozen
+    table sits inside it (Δκ = 0.204637 < ln 1.25) — the shipped
+    bridge is milder on the strongest pair and no longer saturates."""
+    new_f = league_strength.bridge_factor(
+        league_strength.KAPPA.kappa, "EPL", "Ligue_1"
+    )
+    old_f = league_strength.bridge_factor(
+        league_strength.SUPERSEDED_KAPPA_WP_P2B.kappa, "EPL", "Ligue_1"
+    )
+    assert new_f == pytest.approx(math.exp(0.021655 - (-0.182982)), rel=1e-15)
+    assert old_f == 1.25  # clamped under the superseded table
+    assert new_f < old_f

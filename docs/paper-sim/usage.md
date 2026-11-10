@@ -190,15 +190,20 @@ DoH + `curl --resolve`, resumable on-disk matchDetails cache). The
 library fetch functions target environments with normal DNS
 resolution.
 
-## The cross-league bridge path (WP-P2a)
+## The cross-league bridge path (WP-P2a / WP-P5)
 
 Domestic xG multipliers are measured relative to their OWN league's
 average and are not cross-league comparable. Combining them raw is
 what produced the HOF-LYO favorite flip. The sanctioned path threads
-an explicit league-strength κ table through the modeling calls:
+an explicit league-strength κ table through the modeling calls. Since
+2026-11-10 the production table is frozen IN the module (WP-P5
+two-season revalidation):
 
 ```python
 from polymarket_alpha_lab.papersim import league_strength, soccer_model
+
+# Path 0 — the shipped frozen production table (WP-P5, pre_2025_26):
+table = league_strength.KAPPA
 
 # Path 1 — flat JSON config file: {"bundesliga": 0.05, "ligue_1": 0.0}
 table = league_strength.load_kappa_table("kappa.json")
@@ -224,20 +229,70 @@ multipliers, and the pair is tilted by the clamped factor
 home rate `* f`, away rate `/ f` — so the team from the stronger
 (larger-κ) league is boosted on both sides of the ball. The clamp
 bounds any κ error to a 1.25x displacement per side (edge ratio at
-most `1.25² = 1.5625`) until the κ table is calibrated by a passing
-UCL/UEL walk-forward backtest (WP-P2b; κ must be monotone in the UEFA
-country-coefficient anchor). Behavior details:
+most `1.25² = 1.5625`); the κ table is now calibrated (WP-P5) and the
+clamp is retained as frozen policy. Behavior details:
 
 - Same-league fixtures are byte-identical with and without a bridge:
   the argument is never consulted when `home_league == away_league`.
 - A league missing from the bridge still yields `None` (refuse the
-  fixture; there is no default κ).
+  fixture; there is no default κ — `KAPPA` is an explicit constant
+  you must pass, not an implicit default).
 - κ values must be finite numbers; NaN/Inf/boolean κ raise
   `ValueError` (a NaN would otherwise leak through the clamp as a
-  plausible 1.25 factor). The loaded table is deeply immutable
-  (read-only mapping; mutation raises `TypeError`).
-- κ estimation is WP-P2b and not yet run; until its report exists,
-  round scripts keep using same-league fixtures only.
+  plausible 1.25 factor). Every table (loaded or shipped) is deeply
+  immutable (read-only mapping; mutation raises `TypeError`).
+
+**The shipped frozen table (WP-P5, 2026-11-10).**
+`league_strength.KAPPA` holds the `pre_2025_26` freeze from the
+canonical two-season run (values verbatim from
+`tables.pre_2025_26.kappa` of
+`~/paper-sim/review/wp_p5/two_season/sensitivity/canon_boot/two_season_report.json`,
+sha 6ceadb6a…; decision memo `sensitivity/decision_memo.md`, owner
+authorization 2026-11-10):
+
+| league | κ |
+|---|---|
+| EPL | +0.021655 |
+| La_liga | -0.071492 |
+| Serie_A | -0.053532 |
+| Bundesliga | -0.095116 |
+| Ligue_1 | -0.182982 |
+| nuisance | -0.300105 (fit cap) |
+
+Provenance: two-season zero-placeholder refit on UCL/UEL FT matches
+(2023/24 + 2024/25 FotMob backfill for club multipliers, 2025/26
+Understat for p2b evaluation continuity); fit rule "obs kickoff day <
+2025-09-16", leak-free, n_train=547; strict time-ordered T1-T5 gate
+protocol with the formal G2 PASS on the canonical run; the frozen
+tables are provider-invariant (byte-wise identical under the
+mixed-source and all-FotMob source maps, max κ shift 0.000000);
+bootstrap 95% CIs from B=300 match-resample refits (e.g. EPL
+[-0.0658, +0.1737], Ligue_1 [-0.2798, -0.0411], full table in the
+module comment). Re-freeze cadence: per the report's G2 rule the
+table is frozen pre-season each year. Keys follow the capitalized
+league-group convention of the production merged big-5 snapshot
+blocks (`Bundesliga_2026`, `Ligue_1_2026`, ...); a lowercase
+Understat-style league key does not resolve and the fixture is
+refused.
+
+The table it superseded (WP-P2b, in-sample n=835 fit, archived at
+`~/paper-sim/round31/raw/league_strength_kappa.json`) stays importable
+as `league_strength.SUPERSEDED_KAPPA_WP_P2B` for rollback provenance
+only — never thread it as the production bridge.
+
+**Away-side haircut 0.06 (WP-P5).** The away side is the known weak
+joint of the bridged pair (2025-26 T2 fragile at 0.079, bootstrap p50
+already above 0.08). The pre-registered corrector family `exp(-h)`,
+h ∈ {0.06, 0.08, 0.10}, was selected at the mildest value: the
+BRIDGED away λ is multiplied by `exp(-0.06)` (factor
+`league_strength.AWAY_HAIRCUT_FACTOR` = 0.9417645335842487, helper
+`league_strength.apply_away_haircut(lambda_away)`), exactly mirroring
+the harness corrector (`ba * exp(lc_a - kd - haircut)`; the home side
+is untouched). It applies to bridged cross-league away rates ONLY —
+the same-league path never takes a haircut. Evidence: pooled T2
+0.05069 → 0.01785 with bootstrap replicate pass 0.76 → 0.94; the
+fragile 2025-26 season T2 0.07900 → 0.03828; cost 1.6% of the pooled
+T1 edge (-0.00944 → -0.00929); no gate regression anywhere.
 
 ## DSN and password-file conventions
 

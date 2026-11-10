@@ -65,7 +65,7 @@ import json
 from dataclasses import dataclass
 from typing import Mapping
 
-from polymarket_alpha_lab.papersim.league_strength import bridge_factor
+from polymarket_alpha_lab.papersim.league_strength import AWAY_HAIRCUT_FACTOR, bridge_factor
 
 __all__ = [
     "DOMESTIC_LEAGUES",
@@ -593,9 +593,14 @@ def _cross_league_pair_lambdas(
         * (attack_home ** shrink)
         * (defense_away ** shrink)
         * factor,
+        # Away side carries the WP-P5 away haircut (bootstrap-stabilized T2,
+        # two_season harness formula: ba * exp(lc_a - kd - haircut)). Applied
+        # before the bridge tilt so the pure-tilt float-exactness property
+        # (bridged == neutral * factor, per-side) is preserved.
         ratings_away.goal_fit.away_rate
         * (attack_away ** shrink)
         * (defense_home ** shrink)
+        * AWAY_HAIRCUT_FACTOR
         / factor,
     )
 

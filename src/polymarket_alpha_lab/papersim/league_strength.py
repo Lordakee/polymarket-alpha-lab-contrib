@@ -4,7 +4,12 @@ Single responsibility: hold the league -> kappa (log-strength) table
 and compute the clamped multiplicative bridge factor that makes xG
 multipliers from two different domestic leagues comparable. This is
 the WP-P2a mechanism module: it consumes a kappa table (estimated and
-anchored elsewhere, WP-P2b) and exposes no estimation of its own.
+anchored elsewhere) and exposes no estimation of its own. Since
+2026-11-10 the production κ table is frozen IN this module
+(:data:`KAPPA`, WP-P5 two-season revalidation) together with the
+away-side corrector :data:`AWAY_HAIRCUT`; the superseded WP-P2b
+table stays importable as :data:`SUPERSEDED_KAPPA_WP_P2B` for
+rollback provenance.
 
 Motivation (review/FIXES.md sections 5-6, 2026-10-30): domestic xG
 attack / defense multipliers are measured relative to their OWN
@@ -31,17 +36,25 @@ Model (frozen mechanism, κ values are calibrated separately):
   country-coefficient order at the 2026 freeze), the bridge moves the
   HOF-LYO fixture toward Hoffenheim, the direction the market showed.
 - The clamp bounds the bridge displacement to a factor of 1.25 per
-  side (edge ratio at most ``1.25**2 = 1.5625``): until the κ table is
-  calibrated by a passing UCL/UEL walk-forward backtest, no kappa
-  error can displace a modeled favorite by more than that
-  (DELIVERY_PLAN known-gap #1: cap the away-side edge until
-  calibrated).
+  side (edge ratio at most ``1.25**2 = 1.5625``): the κ table is now
+  calibrated (WP-P5 two-season strict walk-forward, G2 PASS), and the
+  clamp is retained as frozen policy so no re-estimation error can
+  displace a modeled favorite by more than that (DELIVERY_PLAN
+  known-gap #1: cap the away-side edge).
+- The away side additionally carries the WP-P5 pre-registered
+  corrector :data:`AWAY_HAIRCUT` = 0.06: the BRIDGED away λ is
+  multiplied by ``exp(-AWAY_HAIRCUT)`` (see
+  :func:`apply_away_haircut`). This mirrors the two-season harness
+  corrector exactly (``ba * exp(lc_a - kd - haircut)``; the home side
+  is untouched) and applies only to bridged cross-league rates — the
+  same-league path never consults this module.
 
 κ reference anchor: UEFA men's country coefficients
 (:data:`UEFA_COEFFICIENT_REFERENCE_URL`) — higher coefficient means a
 stronger league, so κ derived from it is monotone in league strength.
-The anchor is documentation for the WP-P2b estimation pass; this
-module never fetches it and performs no network access.
+The anchor is documentation for the estimation passes (WP-P2b, then
+the WP-P5 two-season refit that produced :data:`KAPPA`); this module
+never fetches it and performs no network access.
 """
 
 from __future__ import annotations
@@ -53,10 +66,15 @@ from types import MappingProxyType
 from typing import Mapping
 
 __all__ = [
+    "AWAY_HAIRCUT",
+    "AWAY_HAIRCUT_FACTOR",
     "BRIDGE_CLAMP_LOG",
     "BRIDGE_CLAMP_RATIO",
+    "KAPPA",
     "LeagueStrengthTable",
+    "SUPERSEDED_KAPPA_WP_P2B",
     "UEFA_COEFFICIENT_REFERENCE_URL",
+    "apply_away_haircut",
     "bridge_factor",
     "load_kappa_report",
     "load_kappa_table",
@@ -78,6 +96,28 @@ BRIDGE_CLAMP_LOG = math.log(BRIDGE_CLAMP_RATIO)
 UEFA_COEFFICIENT_REFERENCE_URL = (
     "https://www.uefa.com/nationalassociations/uefarankings/"
 )
+
+#: Away-side haircut ``h`` (WP-P5 corrector, shipped 2026-11-10 with
+#: owner authorization "按你推荐的做" on the SWAP + FROZEN TABLE +
+#: HAIRCUT 0.06 recommendation). The pre-registered family was
+#: ``exp(-h)`` for ``h`` in {0.06, 0.08, 0.10}; 0.06 is the mildest.
+#: Mechanics mirror the two-season harness corrector EXACTLY
+#: (``~/paper-sim/review/wp_p5/two_season/two_season_revalidate.py``,
+#: ``eval_variant``: away ``ba * exp(lc_a - kd - haircut)``, home
+#: side untouched): the bridged away λ is multiplied by
+#: ``exp(-AWAY_HAIRCUT)`` via :func:`apply_away_haircut`. It applies
+#: ONLY to bridged cross-league away rates; the same-league path
+#: never consults it. Provenance: WP-P5 canonical run + bootstrap
+#: (``~/paper-sim/review/wp_p5/two_season/sensitivity/canon_boot/
+#: two_season_report.json``, sha 6ceadb6a…): pooled T2 0.05069 ->
+#: 0.01785 with bootstrap replicate pass 0.76 -> 0.94; the fragile
+#: 2025-26 season T2 0.07900 -> 0.03828; cost 1.6% of the pooled T1
+#: edge (-0.00944 -> -0.00929); no gate regression anywhere.
+AWAY_HAIRCUT = 0.06
+
+#: ``exp(-AWAY_HAIRCUT)`` — the multiplicative factor applied to the
+#: bridged away λ (0.9417645335842487 for the shipped 0.06 haircut).
+AWAY_HAIRCUT_FACTOR = math.exp(-AWAY_HAIRCUT)
 
 
 @dataclass(frozen=True)
@@ -101,6 +141,83 @@ class LeagueStrengthTable:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "kappa", MappingProxyType(dict(self.kappa)))
+
+
+#: FROZEN production league-strength κ table (WP-P5 two-season
+#: revalidation; shipped 2026-11-10 by owner authorization
+#: "按你推荐的做" on the SWAP + FROZEN TABLE + HAIRCUT 0.06
+#: recommendation).
+#:
+#: Provenance — exact values are ``tables.pre_2025_26.kappa`` of the
+#: canonical two-season run + kappa bootstrap
+#: (``~/paper-sim/review/wp_p5/two_season/sensitivity/canon_boot/
+#: two_season_report.json``, sha 6ceadb6a…; decision memo
+#: ``sensitivity/decision_memo.md``, 2026-11-10):
+#:
+#: - Two-season zero-placeholder refit on UCL/UEL FT matches
+#:   (2023/24 + 2024/25 FotMob backfill for club multipliers,
+#:   2025/26 Understat for p2b evaluation continuity); fit rule
+#:   ``"obs kickoff day < 2025-09-16"``, leak-free, n_train=547,
+#:   3 UEFA-coefficient ridge columns.
+#: - Strict time-ordered T1-T5 gate protocol; the canonical run is
+#:   the formal G2 PASS (both verdicts, full-mode 3552 s, T5
+#:   determinism).
+#: - Provider-invariant: the frozen candidate tables are byte-wise
+#:   identical under the mixed-source and all-FotMob source maps
+#:   (max κ shift 0.000000; no 2025-26 observation enters the frozen
+#:   fit), so the swap carries no G1 provider risk.
+#: - Bootstrap 95% CIs (B=300 match-resample refits, pre_2025_26):
+#:   EPL +0.0217 [-0.0658, +0.1737]; La_liga -0.0715 [-0.1609,
+#:   +0.0571]; Serie_A -0.0535 [-0.1281, +0.0939]; Bundesliga -0.0951
+#:   [-0.1850, +0.0382]; Ligue_1 -0.1830 [-0.2798, -0.0411];
+#:   nuisance -0.3001 [-0.3001, -0.1650] (capped: the -0.300105
+#:   point equals the fit cap 0.30010459245033816).
+#: - Re-freeze cadence: per the report's G2 rule the table is frozen
+#:   pre-season each year (pre_2024_25 is the prior freeze, retained
+#:   in the report; ``full_through_2026_01_30_IN_SAMPLE`` there is a
+#:   reference fit, NOT shippable).
+#:
+#: Thread ``bridge=KAPPA.kappa`` through the soccer-modeling entry
+#: points; the mapping is deeply immutable (read-only view; mutation
+#: raises ``TypeError``). Keys follow the capitalized league-group
+#: convention of the production merged big-5 snapshot blocks
+#: (``EPL_2026``, ``La_liga_2026``, ``Serie_A_2026``,
+#: ``Bundesliga_2026``, ``Ligue_1_2026``) that the WP-P2b/WP-P5 fits
+#: grouped on; a lowercase Understat-style league key will NOT resolve
+#: and the fixture is refused.
+KAPPA = LeagueStrengthTable(
+    kappa={
+        "EPL": 0.021655,
+        "La_liga": -0.071492,
+        "Serie_A": -0.053532,
+        "Bundesliga": -0.095116,
+        "Ligue_1": -0.182982,
+        "nuisance": -0.300105,
+    }
+)
+
+#: SUPERSEDED WP-P2b κ table — retained for ROLLBACK PROVENANCE
+#: ONLY; never thread it as the production bridge. It was the
+#: production table from 2026-11-06 (WP-P2b validation) until the
+#: WP-P5 swap on 2026-11-10, archived verbatim at
+#: ``~/paper-sim/round31/raw/league_strength_kappa.json`` (server
+#: ubuntu@154.89.153.24): an in-sample fit over the full three-season
+#: UCL/UEL window (n=835, ridge_lambda 15, UEFA-coefficient ridge
+#: targets, nuisance at the 0.300105 cap) that reused the Understat
+#: 2025/26 club multipliers for the earlier seasons. The WP-P5 refit
+#: (:data:`KAPPA`) replaced it because it is two-season
+#: zero-placeholder, strictly time-ordered (leak-free freeze) and
+#: provider-invariant. Deeply immutable, same as the shipped table.
+SUPERSEDED_KAPPA_WP_P2B = LeagueStrengthTable(
+    kappa={
+        "EPL": 0.126994,
+        "La_liga": -0.086886,
+        "Serie_A": -0.0961,
+        "Bundesliga": -0.111525,
+        "Ligue_1": -0.164953,
+        "nuisance": -0.300105,
+    }
+)
 
 
 def _validated_kappa_entry(league: object, value: object) -> float:
@@ -214,3 +331,21 @@ def bridge_factor(
     delta = kappa_home - kappa_away
     clamped = max(-BRIDGE_CLAMP_LOG, min(BRIDGE_CLAMP_LOG, delta))
     return math.exp(clamped)
+
+
+def apply_away_haircut(lambda_away: float) -> float:
+    """Apply the WP-P5 away-side haircut to one bridged away λ.
+
+    Returns ``lambda_away * AWAY_HAIRCUT_FACTOR`` — the exact mirror
+    of the two-season harness corrector (``eval_variant`` in
+    ``two_season_revalidate.py``: away ``ba * exp(lc_a - kd -
+    haircut)``, i.e. the bridged away rate divided by the bridge
+    factor and THEN multiplied by ``exp(-0.06)``; the home rate is
+    never haircut). Apply it to the AWAY λ of a bridged cross-league
+    pair only; same-league rates are out of scope by construction.
+
+    Kept a pure multiplication on purpose (no clamping, no further
+    validation): the harness applies the corrector at exactly this
+    point of the arithmetic and nothing else.
+    """
+    return float(lambda_away) * AWAY_HAIRCUT_FACTOR
