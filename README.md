@@ -1,5 +1,9 @@
 # Polymarket Alpha Lab
 
+> **当前主线是模拟盘（paper-sim）**：状态、里程碑与等待事项见 `DELIVERY_PLAN.md` 顶部
+> **状态板**（2026-11-12 起）。V1 六包处于"工程完成、未激活"（OD-A 待决）。审计整改
+> 进行中：交接包 `docs/handoffs/2026-11-12-audit/`，执行记录 `DELIVERY_PLAN.md` §77。
+
 Polymarket Alpha Lab is a research-first project for finding, scoring, and validating Polymarket markets before any capital is committed.
 
 **Current delivery status:** [DELIVERY_PLAN.md](DELIVERY_PLAN.md) is the single

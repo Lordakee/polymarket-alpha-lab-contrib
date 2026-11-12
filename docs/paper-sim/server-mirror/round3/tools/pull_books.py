@@ -1,0 +1,47 @@
+import json, urllib.request, time, datetime
+
+CLOB = "https://clob.polymarket.com"
+def get(url):
+    req = urllib.request.Request(url, headers={"User-Agent": "research/0.1"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read().decode())
+
+print("UTC now:", datetime.datetime.now(datetime.timezone.utc).isoformat())
+d = json.load(open("/home/ubuntu/paper-sim/round3/raw/ou25_events.json"))
+out = {}
+for slug in d:
+    mm = d[slug].get(slug + "-more-markets", {}).get("markets", [])
+    for m in mm:
+        q = str(m.get("question") or "")
+        keep = None
+        if q.endswith(": O/U 2.5"): keep = "OU25"
+        elif q.endswith(": O/U 1.5"): keep = "OU15"
+        elif q.endswith(": O/U 3.5"): keep = "OU35"
+        elif q.endswith("Both Teams to Score"): keep = "BTTS"
+        if not keep: continue
+        toks = m.get("tokens")
+        try: toks = json.loads(toks) if isinstance(toks, str) else toks
+        except Exception: toks = []
+        if not toks: continue
+        key = "%s|%s" % (slug, keep)
+        row = {"q": q, "outcomes": m.get("outcomes"), "gamma_bid": m.get("bestBid"), "gamma_ask": m.get("bestAsk"), "books": []}
+        for tok in toks:
+            try:
+                b = get(CLOB + "/book?token_id=" + tok["token_id"])
+                bids = sorted(b.get("bids", []), key=lambda x: -float(x["price"]))[:5]
+                asks = sorted(b.get("asks", []), key=lambda x: float(x["price"]))[:5]
+                row["books"].append({"token": tok["token_id"], "outcome": tok.get("outcome"), "bids": bids, "asks": asks})
+            except Exception as e:
+                row["books"].append({"err": str(e)})
+            time.sleep(0.25)
+        out[key] = row
+        for bk in row["books"]:
+            if "err" in bk: print("  ERR", key, bk["err"]); continue
+            b = bk["bids"][0] if bk["bids"] else None
+            a = bk["asks"][0] if bk["asks"] else None
+            print("%-42s %-6s bid=%s x%s  ask=%s x%s" % (
+                key.split("|")[1] + " " + slug[-14:], str(bk.get("outcome"))[:6],
+                b["price"] if b else "-", (b["size"] if b else ""),
+                a["price"] if a else "-", (a["size"] if a else "")))
+json.dump(out, open("/home/ubuntu/paper-sim/round3/raw/ou25_books.json", "w"), indent=1)
+print("saved ou25_books.json")

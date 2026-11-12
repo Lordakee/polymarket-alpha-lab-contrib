@@ -9,6 +9,11 @@ matrix job repeats the identical closed inventory under the pinned PG18 tuple
 while the Windows matrix job stays byte-identical as frozen history until the
 coordinator's controlled required-context replacement removes it. Both
 matrices are pinned here so neither can silently drift.
+
+FX-07 (2026-11-12) makes the real-Postgres matrix actually run: a push-to-main
+trigger with database-facing path filters, a weekly (never daily) schedule,
+and a fourth Linux-only ``papersim`` partition whose opt-in DB tests receive a
+one-shot loopback cluster assembled from the same pinned PG18 prefix.
 """
 from collections import Counter
 import json
@@ -96,33 +101,50 @@ CLAUDE_FILES = ('tests/test_research_claude_exec.py', 'tests/test_research_claud
 
 CLAUDE_PROBE_FILES = ('tests/test_claude_cli_probe.py', 'tests/test_claude_cli_probe_review.py')
 
+# FX-07 (2026-11-12): the live Linux matrix gains a fourth DB-facing
+# partition; the retired Windows matrix stays frozen without it. The push
+# paths below mirror the fix-list exactly (audit handoff 03-fix-list.md).
+PAPERSIM_FILES = ('tests/test_papersim_ledger.py', 'tests/test_papersim_perf_view_fix.py')
+WINDOWS_PARTITIONS = ('storage', 'research', 'dispatch')
+LINUX_PARTITIONS = ('storage', 'research', 'dispatch', 'papersim')
+PUSH_PATHS = (
+    'supabase/migrations/**',
+    'database/**',
+    'src/polymarket_alpha_lab/project_postgres/**',
+    'src/polymarket_alpha_lab/*_psycopg.py',
+    'src/polymarket_alpha_lab/papersim/**',
+    'tests/test_project_postgres*',
+    'tests/test_papersim_*',
+    '.github/workflows/native-postgres.yml',
+)
+
 EXPECTED_INVENTORY = Counter([*ORIGINAL_FILES, SELF, *ADMISSION_FILES, *UNCAPPED_FILES,
                               *AUDIT_FILES, *PROCESS_FILES, *PROFILE_FILES, *CLAUDE_FILES,
                               *CLAUDE_PROBE_FILES])
 
 
-def matrices(source):
-    """Every closed matrix include block, each immediately followed by runs-on."""
-    blocks, rest = [], source
-    while True:
-        _, separator, rest = rest.partition('        include: ')
-        if not separator:
-            return blocks
-        value, end = json.JSONDecoder().raw_decode(rest)
-        assert rest[end:].lstrip().startswith('runs-on:')
-        blocks.append(value)
+def include_block(job):
+    """The single closed matrix include of one job, followed by runs-on."""
+    _, separator, rest = job.partition('        include: ')
+    assert separator
+    value, end = json.JSONDecoder().raw_decode(rest)
+    assert rest[end:].lstrip().startswith('runs-on:')
+    return value
 
 
-def validated(value):
-    assert type(value) is list and len(value) == 3
-    assert [p['partition'] for p in value] == ['storage', 'research', 'dispatch']
-    for partition in value:
+def validated(block, partitions):
+    assert type(block) is list and len(block) == len(partitions)
+    assert [p['partition'] for p in block] == list(partitions)
+    for partition in block:
         assert set(partition) == {'partition', 'files'}
         assert type(partition['files']) is list and partition['files']
         assert all(type(f) is str and re.fullmatch(r'tests/test_[a-z0-9_]+[.]py', f)
                    for f in partition['files'])
-    assert Counter(f for p in value for f in p['files']) == EXPECTED_INVENTORY
-    return value
+    inventory = Counter(EXPECTED_INVENTORY)
+    if 'papersim' in partitions:
+        inventory.update(PAPERSIM_FILES)
+    assert Counter(f for p in block for f in p['files']) == inventory
+    return block
 
 
 def jobs(text):
@@ -153,29 +175,32 @@ def jobs(text):
 
 
 def test_native_partitions_preserve_exact_original_inventory():
-    text = WORKFLOW.read_text()
-    blocks = matrices(text)
-    # The frozen Windows matrix and the new Linux matrix must each be complete,
-    # closed and identical: no platform may drop or duplicate scenario coverage.
-    assert len(blocks) == 2
-    for block in blocks:
-        parts = validated(block)
-        assert len(ORIGINAL_FILES) == len(set(ORIGINAL_FILES)) == 51
-        assert set(ADMISSION_FILES) <= set(parts[2]['files'])
-        assert set(UNCAPPED_FILES) <= set(parts[2]['files'])
-        assert set(AUDIT_FILES) <= set(parts[2]['files'])
-        assert set(PROCESS_FILES) <= set(parts[2]['files'])
-        assert set(PROFILE_FILES) <= set(parts[2]['files'])
-        assert set(CLAUDE_FILES) <= set(parts[2]['files'])
-        assert set(CLAUDE_PROBE_FILES) <= set(parts[2]['files'])
-        for part in parts:
-            assert all((ROOT / path).is_file() for path in part['files'])
+    chunks = jobs(WORKFLOW.read_text())
+    windows = validated(include_block(chunks['windows-native-part']), WINDOWS_PARTITIONS)
+    linux = validated(include_block(chunks['linux-native-part']), LINUX_PARTITIONS)
+    # The frozen Windows matrix and the live Linux matrix must each be
+    # complete and closed: no platform may drop or duplicate scenario
+    # coverage. Only the Linux matrix carries the FX-07 papersim partition.
+    assert len(ORIGINAL_FILES) == len(set(ORIGINAL_FILES)) == 51
+    assert [p['files'] for p in windows] == [p['files'] for p in linux[:3]]
+    assert linux[3]['partition'] == 'papersim'
+    assert linux[3]['files'] == list(PAPERSIM_FILES)
+    dispatch = linux[2]['files']
+    assert set(ADMISSION_FILES) <= set(dispatch)
+    assert set(UNCAPPED_FILES) <= set(dispatch)
+    assert set(AUDIT_FILES) <= set(dispatch)
+    assert set(PROCESS_FILES) <= set(dispatch)
+    assert set(PROFILE_FILES) <= set(dispatch)
+    assert set(CLAUDE_FILES) <= set(dispatch)
+    assert set(CLAUDE_PROBE_FILES) <= set(dispatch)
+    for part in [*windows, *linux]:
+        assert all((ROOT / path).is_file() for path in part['files'])
         # Both new unit modules and the REAL backup proof stay together on the
         # storage partition of every platform matrix.
-        assert {'tests/test_project_postgres_backup_native.py',
-                'tests/test_project_postgres_backup_catalog.py',
-                'tests/test_project_postgres_backup_catalog_review.py'} <= set(parts[0]['files'])
-    assert validated(blocks[0]) == validated(blocks[1])
+        if part['partition'] == 'storage':
+            assert {'tests/test_project_postgres_backup_native.py',
+                    'tests/test_project_postgres_backup_catalog.py',
+                    'tests/test_project_postgres_backup_catalog_review.py'} <= set(part['files'])
 
 
 def test_native_partition_limits_and_failure_policy_are_explicit():
@@ -219,6 +244,51 @@ def test_linux_partitions_and_pg18_prefix_are_explicit():
     assert '    timeout-minutes: 2\n' in gate
     assert gate.count('run: |') == 1
     assert 'test "$NATIVE_RESULT" = success' in gate
+
+
+def test_triggers_cover_manual_pr_weekly_push_and_papersim_paths():
+    head = WORKFLOW.read_text().split('permissions:', 1)[0]
+    assert head.startswith('name: Native project PostgreSQL\non:\n')
+    assert '\n  workflow_dispatch:\n' in head
+    # The pre-existing main-branch pull_request trigger stays intact.
+    assert '\n  pull_request:\n    branches: [main]\n    paths:\n' in head
+    # FX-07: direct pushes to main (this repository's working mode since late
+    # September) must run the real-Postgres matrix for database-facing paths.
+    push = head.partition('\n  push:\n')[2].partition('\n  schedule:')[0]
+    assert push.startswith('    branches: [main]\n    paths:\n')
+    assert tuple(re.findall(r"^      - '([^']+)'$", push, flags=re.M)) == PUSH_PATHS
+    # Weekly schedule only: day-of-month and month stay wildcard, so
+    # quota-limited private minutes are never spent on daily database runs.
+    crons = re.findall(r"- cron: '([^']+)'", head)
+    assert len(crons) == 1
+    minute, hour, day, month, weekday = crons[0].split(' ')
+    assert minute.isdigit() and hour.isdigit() and day == month == '*'
+    assert weekday.isdigit()
+
+
+def test_linux_papersim_partition_boots_throwaway_pg18_cluster():
+    worker = jobs(WORKFLOW.read_text())['linux-native-part']
+    parts = {p['partition']: p['files'] for p in include_block(worker)}
+    # Exactly the two DB-facing papersim modules: the offline papersim face
+    # already runs in offline-verification.yml.
+    assert parts['papersim'] == list(PAPERSIM_FILES)
+    assert "if: matrix.partition == 'papersim'" in worker
+    # One-shot loopback cluster assembled from the SAME pinned PG18 prefix
+    # (binaries only): no installed cluster, role or password is used.
+    assert 'PREFIX="$RUNNER_TEMP/pg18-portable-prefix"' in worker
+    assert 'DATA="$RUNNER_TEMP/papersim-pgdata"' in worker
+    assert '"$PREFIX/bin/initdb" -U paper_sim -D "$DATA"' in worker
+    assert '"$PREFIX/bin/pg_ctl" -D "$DATA"' in worker
+    assert '"$PREFIX/bin/createdb" -h 127.0.0.1 -p 55432 -U paper_sim paper_sim' in worker
+    # The opt-in ledger integration check needs the real relations: the
+    # verbatim checked-in ledger migration is applied, loudly.
+    assert 'ON_ERROR_STOP=1' in worker
+    assert '-f supabase/migrations/20261101000000_papersim_ledger.sql' in worker
+    # Both opt-in gates receive their environment from the throwaway cluster
+    # (the names deliberately survive the job's PG* environment scrub).
+    assert 'PAPERSIM_PG_DSN=postgresql://paper_sim@127.0.0.1:55432/paper_sim' in worker
+    assert 'WP_P4_READONLY_PG=1' in worker
+    assert '>> "$GITHUB_ENV"' in worker
 
 
 def test_original_native_options_and_cleanliness_remain_required():
@@ -305,6 +375,8 @@ def test_partition_inventory_rejects_silent_coverage_changes(change):
         head, separator, tail = text.partition('  linux-native-part:')
         assert separator
         text = head + separator + tail.replace('"partition": "storage"', '"partition": "unknown"', 1)
+    chunks = jobs(text)
     with pytest.raises((AssertionError, ValueError)):
-        for block in matrices(text):
-            validated(block)
+        for job_id, partitions in (('windows-native-part', WINDOWS_PARTITIONS),
+                                   ('linux-native-part', LINUX_PARTITIONS)):
+            validated(include_block(chunks[job_id]), partitions)

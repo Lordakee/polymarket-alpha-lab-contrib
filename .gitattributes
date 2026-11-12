@@ -1,3 +1,8 @@
 # Migration hashes bind exact reviewed bytes on every checkout platform.
 /supabase/migrations/*.sql text eol=lf
 /database/migrations.lock.json text eol=lf
+
+# Server mirror + ledger snapshots are verbatim archives (hash-pinned by
+# MANIFEST.sha256): no EOL conversion, no whitespace checks.
+docs/paper-sim/server-mirror/** -text -whitespace -diff
+docs/paper-sim/ledger-snapshots/** -text -whitespace

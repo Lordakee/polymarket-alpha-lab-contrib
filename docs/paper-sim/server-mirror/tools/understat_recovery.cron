@@ -1,0 +1,3 @@
+# Install this marked entry in ubuntu's existing crontab; preserve other jobs.
+# The script is a bounded single attempt, locks out overlap, and stops fetching after success.
+*/30 * * * * /usr/bin/python3 /home/ubuntu/paper-sim/tools/understat_refresh.py >> /home/ubuntu/paper-sim/round28/raw/understat_cron.log 2>&1 # paper-sim-understat-round28-recovery

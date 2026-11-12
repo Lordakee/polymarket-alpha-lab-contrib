@@ -9,9 +9,13 @@ Canonical lineage: ``r5c -> r15 -> r23`` (current head
 ``round23/raw/model23.py``). Policy carried from the head and from
 ``review/FIXES.md`` (2026-10-30):
 
-- ``match_winner`` (1X2) is SUSPENDED — domestic eligible under tightened
-  gates but deprioritized; cross-league (UCL/UEL/international) 1X2 is
-  BANNED until a league-strength-bridged walk-forward backtest passes.
+- ``match_winner`` (1X2): domestic is eligible-deprioritized ($150
+  marginal tier); cross-league became conditionally eligible with the
+  WP-P5 two-season bridged walk-forward pass (2026-11-12, §75) — entry
+  requires ``gates.check_cross_league_mw`` (bridge present AND
+  worst-variant edge >= +5c) and sizes at a fixed $150 via
+  ``risk_policy.CROSS_LEAGUE_ML_CLASS``; international 1X2 remains
+  research-only (``intl_model.INTL_MW_RESEARCH_ONLY``).
 - Spreads are flagged-only (blowout-tail rule).
 - The cross-league guard ``lgh != lga -> None`` must never be relaxed by
   callers or bespoke scripts; the HOF-LYO favorite-flip defect came from
@@ -21,9 +25,8 @@ Canonical lineage: ``r5c -> r15 -> r23`` (current head
   (``polymarket_alpha_lab.papersim.league_strength``) threaded through
   ``fixture_variants`` / ``match_lambdas`` /
   ``candidate_from_variants`` into ``xg.pair_lambdas``; relaxation
-  without a bridge remains banned, and cross-league 1X2 stays BANNED
-  regardless (the suspension above is lifted only by the walk-forward
-  backtest, not by the bridge alone).
+  without a bridge remains banned; cross-league MW follows the
+  conditional §75 path above (the away side carries the WP-P5 haircut).
 
 Implementation notes (frozen arithmetic, do not tune):
 

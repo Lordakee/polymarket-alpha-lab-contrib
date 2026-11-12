@@ -1,5 +1,7 @@
 """WP-P1 W4 tests: papersim ledger DDL mirror, DSN validation, settlement
-arithmetic and the bankroll identity.
+arithmetic and the bankroll identity. Extended 2026-11-12 with the
+FX-01 net-PnL semantics (fee_total / pnl_net, fee-aware settlement,
+queue_performance) and the tools/papersim_ledger_report.py wiring.
 
 Unit paths open no sockets and no database connections. The single
 optional integration check runs only when ``PAPERSIM_PG_DSN`` is
@@ -11,6 +13,7 @@ printed or committed here.
 
 from dataclasses import fields
 from hashlib import sha256
+import importlib.util
 import json
 import os
 import re
@@ -18,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from polymarket_alpha_lab.papersim import ledger
+from polymarket_alpha_lab.papersim import fees, ledger
 from polymarket_alpha_lab.supabase_local_dsn import validate_local_postgres_dsn
 from polymarket_alpha_lab.supabase_papersim_config import SupabasePapersimConfig
 
@@ -26,6 +29,9 @@ ROOT = Path(__file__).resolve().parents[1]
 MIGRATION_PATH = ROOT / "supabase" / "migrations" / ledger.PAPERSIM_LEDGER_MIGRATION_NAME
 MANIFEST_PATH = ROOT / "database" / "migrations.lock.json"
 INTEGRATION_LABEL = "papersim-ledger-integration"
+SNAPSHOT_PATH = ROOT / "docs" / "paper-sim" / "review-2026-10-30" / "settled_ledger.json"
+TOOL_PATH = ROOT / "tools" / "papersim_ledger_report.py"
+_SPORTS = fees.taker_fee_rate("sports")
 
 
 def test_ddl_is_byte_identical_to_checked_in_migration():
@@ -460,3 +466,421 @@ def test_papersim_ledger_integration_relations_exist():
             ([name for name, _ in expected],),
         ).fetchall()
     assert {(str(name), str(kind)) for name, kind in rows} == expected
+
+
+# ---------------------------------------------------------------------------
+# FX-01 (2026-11-12): net-PnL semantics, queue_performance and the
+# read-only report tool. Rates come from the FX-06 table, never literals
+# in the settlement code; the hand cases below are the fix-list's.
+# ---------------------------------------------------------------------------
+
+
+def test_papersettlement_fee_field_defaults_keep_gross_contract():
+    settlement = ledger.PaperSettlement(
+        classification=ledger.OUTCOME_SETTLED, proceeds=100.0, pnl=50.0
+    )
+    assert settlement.fee_total == 0.0
+    assert settlement.pnl_net == 50.0
+    assert tuple(field.name for field in fields(ledger.PaperSettlement)) == (
+        "classification",
+        "proceeds",
+        "pnl",
+        "fee_total",
+    )
+
+
+def test_settle_natural_win_fee_hand_case():
+    # $250 @ 0.56, sports rate 0.05: shares 446.4286, entry fee
+    # 250 * 0.05 * 0.44 = 5.50; win gross +196.43, net +190.93.
+    settlement = ledger.settle_natural(
+        250.0, 0.56, "YES", "YES", fee_rate=_SPORTS
+    )
+    assert _SPORTS == 0.05
+    assert 250.0 / 0.56 == pytest.approx(446.4286, abs=1e-4)
+    assert settlement.pnl == pytest.approx(196.43, abs=0.01)
+    assert settlement.fee_total == pytest.approx(5.50, abs=1e-9)
+    assert settlement.pnl_net == pytest.approx(190.93, abs=0.01)
+    assert settlement.win_loss == "win"
+
+
+def test_settle_natural_loss_fee_hand_case():
+    # Same entry losing: gross -250.00, net -255.50.
+    settlement = ledger.settle_natural(250.0, 0.56, "YES", "NO", fee_rate=_SPORTS)
+    assert settlement.pnl == pytest.approx(-250.00, abs=1e-9)
+    assert settlement.fee_total == pytest.approx(5.50, abs=1e-9)
+    assert settlement.pnl_net == pytest.approx(-255.50, abs=0.01)
+    assert settlement.win_loss == "loss"
+
+
+def test_settle_natural_entry_fee_matches_fees_module_exactly():
+    rate = fees.taker_fee_rate("crypto")
+    settlement = ledger.settle_natural(750.0, 0.515, "YES", "YES", fee_rate=rate)
+    assert settlement.fee_total == pytest.approx(
+        fees.entry_fee(750.0, 0.515, rate), abs=1e-12
+    )
+    zero = ledger.settle_natural(250.0, 0.56, "YES", "YES", fee_rate=0.0)
+    assert zero.fee_total == 0.0
+    assert zero.pnl_net == zero.pnl
+
+
+def test_settle_exit_fee_hand_case():
+    # $400 @ 0.69, exit 0.585, both legs sports rate: shares 579.7101,
+    # entry fee 400 * 0.05 * 0.31 = 6.20, exit fee
+    # 579.7101 * 0.05 * 0.585 * 0.415 = 7.04; gross -60.87, net -74.11.
+    # (The live book recorded -60.70 on 580 whole shares; the exact
+    # per-share arithmetic is authoritative here.)
+    settlement = ledger.settle_exit(
+        400.0, 0.69, 0.585, fee_rate=_SPORTS, exit_fee_rate=_SPORTS
+    )
+    assert settlement.pnl == pytest.approx(-60.87, abs=0.01)
+    assert settlement.fee_total == pytest.approx(13.24, abs=0.01)
+    assert settlement.pnl_net == pytest.approx(-74.11, abs=0.01)
+    assert settlement.win_loss is None
+
+
+def test_settle_exit_fee_legs_are_independent_and_default_free():
+    both = ledger.settle_exit(400.0, 0.69, 0.585, fee_rate=_SPORTS, exit_fee_rate=_SPORTS)
+    entry_only = ledger.settle_exit(400.0, 0.69, 0.585, fee_rate=_SPORTS)
+    exit_only = ledger.settle_exit(400.0, 0.69, 0.585, exit_fee_rate=_SPORTS)
+    none_charged = ledger.settle_exit(400.0, 0.69, 0.585)
+    assert entry_only.fee_total == pytest.approx(6.20, abs=0.01)
+    assert exit_only.fee_total == pytest.approx(7.04, abs=0.01)
+    assert both.fee_total == pytest.approx(
+        entry_only.fee_total + exit_only.fee_total, abs=1e-9
+    )
+    assert none_charged.fee_total == 0.0
+    assert none_charged.pnl_net == none_charged.pnl
+    # Bounds remain fee-free: selling at 0 or 1 costs nothing.
+    zero = ledger.settle_exit(200.0, 0.5, 0.0, fee_rate=_SPORTS, exit_fee_rate=_SPORTS)
+    assert zero.fee_total == pytest.approx(200.0 * 0.05 * 0.5, abs=1e-9)
+
+
+@pytest.mark.parametrize("bad", [-0.01, float("nan"), float("inf")])
+def test_settle_functions_reject_bad_fee_rates(bad):
+    with pytest.raises(ValueError, match="fee_rate"):
+        ledger.settle_natural(250.0, 0.56, "YES", "YES", fee_rate=bad)
+    with pytest.raises(ValueError, match="fee_rate"):
+        ledger.settle_exit(400.0, 0.69, 0.585, fee_rate=bad)
+    with pytest.raises(ValueError, match="exit_fee_rate"):
+        ledger.settle_exit(400.0, 0.69, 0.585, exit_fee_rate=bad)
+
+
+def _snapshot_rows():
+    return json.loads(SNAPSHOT_PATH.read_text(encoding="utf-8"))
+
+
+def test_queue_performance_recorded_mode_reproduces_published_audit_numbers():
+    # FX-01 acceptance: on the 10-30 snapshot the report must reproduce
+    # gross 23.30% (principal 10,954.36, pnl 2,552.43) and land the net
+    # ROI in 20-21% (exact value depends on per-market classification).
+    performance = ledger.queue_performance(
+        _snapshot_rows(), pnl_source=ledger.PNL_SOURCE_RECORDED
+    )
+    assert performance.entries == 40
+    assert performance.voided_excluded == 0
+    assert performance.unresolved_excluded == 0
+    assert performance.stake == pytest.approx(10954.36, abs=0.01)
+    assert performance.gross_pnl == pytest.approx(2552.43, abs=0.01)
+    assert performance.gross_roi == pytest.approx(0.2330, abs=0.0005)
+    assert performance.entry_fees == pytest.approx(294.25, abs=0.05)
+    assert performance.exit_fees == pytest.approx(27.09, abs=0.02)
+    assert 0.20 <= performance.net_roi_entry_fees_only <= 0.21
+    assert 0.20 <= performance.net_roi <= 0.21
+    assert performance.fee_schedule_as_of == fees.FEE_SCHEDULE_AS_OF
+    # Classification table: gold/equity rows in crypto_touch are
+    # sports-rate (scan team rule), crypto teams are crypto-rate.
+    classification = dict(
+        (team, (category, rate))
+        for team, category, rate in performance.team_classification
+    )
+    assert classification["commodities_gold"] == ("sports", 0.05)
+    assert classification["equity_indices"] == ("sports", 0.05)
+    assert classification["crypto_eth"] == ("crypto", 0.07)
+    # crypto_touch is a MIXED queue: 2 crypto rows at 0.07 + 1 equity
+    # row at 0.05 (V-6: queue entry fees 32.81).
+    touch = next(q for q in performance.queues if q.market_type == "crypto_touch")
+    assert touch.categories == ("crypto", "sports")
+    assert touch.entries == 3
+    assert touch.entry_fees == pytest.approx(32.81, abs=0.02)
+
+
+def _synthetic_rows():
+    return [
+        {
+            "id": 1, "team": "sports_soccer", "market_type": "ou_over",
+            "side": "YES", "stake": 250.0, "price": 0.56,
+            "outcome": "YES", "pnl": 196.43,
+        },
+        {
+            "id": 2, "team": "sports_soccer", "market_type": "ou_over",
+            "side": "YES", "stake": 350.0, "price": 0.56,
+            "outcome": "NO", "pnl": -350.0,
+        },
+        {
+            "id": 3, "team": "crypto_eth", "market_type": "crypto_touch",
+            "side": "YES", "stake": 750.0, "price": 0.515,
+            "outcome": "YES", "pnl": 706.31,
+        },
+        {
+            "id": 4, "team": "crypto_btc", "market_type": "crypto_daily",
+            "side": "YES", "stake": 250.0, "price": 0.5,
+            "outcome": "win", "pnl": 250.0,
+        },
+        {
+            "id": 5, "team": "crypto_btc", "market_type": "crypto_daily",
+            "side": "YES", "stake": 100.0, "price": 0.25,
+            "outcome": "loss", "pnl": -100.0,
+        },
+        {
+            "id": 6, "team": "macro_rates", "market_type": "macro",
+            "side": "NO", "stake": 400.0, "price": 0.69,
+            "outcome": "EXITED", "pnl": -60.70,
+        },
+        {
+            "id": 7, "team": "sports_soccer", "market_type": "btts",
+            "side": "YES", "stake": 150.0, "price": 0.4,
+            "outcome": "VOIDED", "pnl": 0.0,
+        },
+        {
+            "id": 8, "team": "sports_soccer", "market_type": "btts",
+            "side": "YES", "stake": 150.0, "price": 0.4,
+            "outcome": None, "pnl": None,
+        },
+    ]
+
+
+def test_queue_performance_recomputed_mode_v6_semantics():
+    performance = ledger.queue_performance(_synthetic_rows())
+    assert performance.entries == 6
+    assert performance.voided_excluded == 1
+    assert performance.unresolved_excluded == 1
+    # Gross: recomputed per entry; exits take the recorded pnl.
+    # r1 250@0.56 YES hit: +196.43; r2 miss: -350.00;
+    # r3 750@0.515 hit: +706.31; r4 win label: +250.00;
+    # r5 loss label: -100.00; r6 exit recorded: -60.70.
+    expected_gross = (
+        (250.0 / 0.56 - 250.0)
+        - 350.0
+        + (750.0 / 0.515 - 750.0)
+        + (250.0 / 0.5 - 250.0)
+        - 100.0
+        - 60.70
+    )
+    assert performance.gross_pnl == pytest.approx(expected_gross, abs=0.01)
+    # Entry fees: stake * rate * (1 - price) per row, team-rule rates.
+    expected_entry_fees = (
+        250.0 * 0.05 * 0.44
+        + 350.0 * 0.05 * 0.44
+        + 750.0 * 0.07 * 0.485
+        + 250.0 * 0.07 * 0.50
+        + 100.0 * 0.07 * 0.75
+        + 400.0 * 0.05 * 0.31
+    )
+    assert performance.entry_fees == pytest.approx(expected_entry_fees, abs=0.01)
+    # Exit fee: exit price reconstructed from recorded pnl
+    # (-60.70 + 400) / (400 / 0.69) ~= 0.585 -> sell fee ~= 7.04.
+    assert performance.exit_fees == pytest.approx(7.04, abs=0.02)
+    assert performance.net_pnl == pytest.approx(
+        expected_gross - expected_entry_fees - 7.04, abs=0.05
+    )
+    # VOIDED stake is refunded: not in the denominator.
+    expected_stake = 250.0 + 350.0 + 750.0 + 250.0 + 100.0 + 400.0
+    assert performance.stake == pytest.approx(expected_stake, abs=1e-9)
+    daily = next(q for q in performance.queues if q.market_type == "crypto_daily")
+    assert daily.categories == ("crypto",)
+    assert daily.net_roi == pytest.approx(
+        ((250.0 / 0.5 - 250.0) - 100.0 - 250.0 * 0.07 * 0.5 - 100.0 * 0.07 * 0.75)
+        / 350.0,
+        abs=1e-6,
+    )
+
+
+def test_queue_performance_cross_checks_settle_arithmetic():
+    rows = [
+        {
+            "team": "sports_soccer", "market_type": "ou_over", "side": "YES",
+            "stake": 250.0, "price": 0.56, "outcome": "YES", "pnl": 999.0,
+        },
+    ]
+    performance = ledger.queue_performance(rows)
+    settlement = ledger.settle_natural(
+        250.0, 0.56, "YES", "YES", fee_rate=_SPORTS
+    )
+    assert performance.gross_pnl == pytest.approx(settlement.pnl, abs=1e-9)
+    assert performance.entry_fees == pytest.approx(settlement.fee_total, abs=1e-9)
+    # recorded mode ignores the recomputation and uses the recorded pnl.
+    recorded = ledger.queue_performance(rows, pnl_source=ledger.PNL_SOURCE_RECORDED)
+    assert recorded.gross_pnl == pytest.approx(999.0, abs=1e-9)
+
+
+def test_queue_performance_rejects_unknown_inputs():
+    rows = [
+        {
+            "team": "sports_soccer", "market_type": "ou_over", "side": "YES",
+            "stake": 250.0, "price": 0.56, "outcome": "MUTUAL", "pnl": 0.0,
+        },
+    ]
+    with pytest.raises(ValueError, match="unknown resolution outcome"):
+        ledger.queue_performance(rows)
+    with pytest.raises(ValueError, match="pnl_source"):
+        ledger.queue_performance([], pnl_source="as-published")
+    # recorded mode and EXITED rows require a recorded pnl.
+    missing = [
+        {
+            "team": "sports_soccer", "market_type": "ou_over", "side": "YES",
+            "stake": 250.0, "price": 0.56, "outcome": "YES",
+        },
+    ]
+    with pytest.raises(ValueError, match="recorded"):
+        ledger.queue_performance(missing, pnl_source=ledger.PNL_SOURCE_RECORDED)
+    exited_missing = [
+        {
+            "team": "macro_rates", "market_type": "macro", "side": "NO",
+            "stake": 400.0, "price": 0.69, "outcome": "EXITED",
+        },
+    ]
+    with pytest.raises(ValueError, match="recorded"):
+        ledger.queue_performance(exited_missing)
+    empty = ledger.queue_performance([])
+    assert empty.entries == 0
+    assert empty.gross_roi is None
+    assert empty.net_roi is None
+    assert empty.queues == ()
+
+
+# ---------------------------------------------------------------------------
+# tools/papersim_ledger_report.py (FX-01 read-only report)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def report_tool():
+    spec = importlib.util.spec_from_file_location(
+        "papersim_ledger_report_under_test", TOOL_PATH
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_report_tool_runs_on_audit_snapshot_with_acceptance_numbers(
+    report_tool, capsys,
+):
+    exit_code = report_tool.main(["--ledger-json", str(SNAPSHOT_PATH)])
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "gross roi: +23.30%" in out
+    assert "2552.43" in out
+    assert "10954.36" in out
+    assert "entries counted: 40" in out
+    assert "pnl source: recorded" in out
+    # Net ROI lands in the required 20-21% band (both fee variants).
+    for line in out.splitlines():
+        if "net roi:" in line:
+            value = float(line.split("net roi: ")[1].strip("%+\n"))
+            assert 20.0 <= value <= 21.0, line
+    assert "commodities_gold -> sports (0.05)" in out
+    assert "crypto_eth -> crypto (0.07)" in out
+    assert "crypto+sports" in out  # the mixed crypto_touch queue
+    assert "ESTIMATES" in out  # the historical-net caveat
+
+
+def test_report_tool_csv_mode_recomputed_default(tmp_path, report_tool, capsys):
+    decisions = tmp_path / "decisions.csv"
+    resolutions = tmp_path / "resolutions.csv"
+    decisions.write_text(
+        "id,market_id,team,market_type,side,stake,price\n"
+        "1,m1,sports_soccer,ou_over,YES,250.0,0.56\n"
+        "2,m2,commodities_gold,crypto_touch,YES,249.73,0.565\n"
+        "3,m3,sports_soccer,btts,YES,150.0,0.40\n"
+        "4,m4,crypto_eth,crypto_touch,YES,750.0,0.515\n",
+        encoding="utf-8",
+    )
+    resolutions.write_text(
+        "market_id,outcome,payoff,pnl\n"
+        "m1,YES,446.43,196.43\n"
+        "m2,YES,441.99,192.27\n"
+        "m3,VOIDED,150.00,0.00\n"
+        "4,NO,0.00,-750.00\n",  # market_id mismatch -> unresolved join miss
+        encoding="utf-8",
+    )
+    exit_code = report_tool.main(
+        ["--decisions-csv", str(decisions), "--resolutions-csv", str(resolutions)]
+    )
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "pnl source: recomputed" in out
+    # m1 + m2 counted; m3 VOIDED (refunded); m4 join miss (unresolved).
+    assert "entries counted: 2" in out
+    assert "VOIDED refunded/excluded: 1" in out
+    assert "unresolved/open excluded: 1" in out
+    # Gold row in crypto_touch is sports-rate; the unresolved crypto_eth
+    # row is excluded and never classified.
+    assert "commodities_gold -> sports (0.05)" in out
+    assert "crypto_eth" not in out
+
+
+def test_report_tool_pg_mode_is_read_only_join(report_tool, monkeypatch):
+    captured: dict[str, object] = {}
+
+    class _Cursor:
+        description = [
+            type("Col", (), {"name": name})()
+            for name in (
+                "id", "market_id", "team", "market_type", "side",
+                "stake", "price", "outcome", "pnl",
+            )
+        ]
+
+        def fetchall(self):
+            return [(1, "m1", "sports_soccer", "ou_over", "YES", 250.0, 0.56, "YES", 196.43)]
+
+    class _Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def execute(self, sql):
+            captured["sql"] = sql
+            return _Cursor()
+
+        def close(self):
+            captured["closed"] = True
+
+    def fake_connect(dsn, **kwargs):
+        captured["dsn"] = dsn
+        captured["kwargs"] = kwargs
+        return _Connection()
+
+    monkeypatch.setattr(
+        report_tool.ledger, "papersim_dsn", lambda: "postgresql://paper_sim@127.0.0.1:55432/paper_sim"
+    )
+    rows = report_tool.load_rows_pg(fake_connect)
+    sql = str(captured["sql"]).lower()
+    assert sql.strip().startswith("select")
+    assert "left join public.resolutions" in sql
+    assert "update" not in sql and "insert" not in sql and "delete" not in sql
+    # Session is forced read-only at connect time.
+    assert str(captured["kwargs"].get("options", "")).find("default_transaction_read_only=on") >= 0
+    assert rows == [
+        {
+            "id": 1, "market_id": "m1", "team": "sports_soccer",
+            "market_type": "ou_over", "side": "YES", "stake": 250.0,
+            "price": 0.56, "outcome": "YES", "pnl": 196.43,
+        }
+    ]
+    # The connection is explicitly closed (review P3#4).
+    assert captured.get("closed") is True
+
+
+def test_report_tool_requires_exactly_one_source(report_tool):
+    with pytest.raises(SystemExit):
+        report_tool.build_parser().parse_args([])
+    with pytest.raises(SystemExit):
+        report_tool.build_parser().parse_args(
+            ["--ledger-json", "x.json", "--from-pg"]
+        )
+    with pytest.raises(SystemExit, match="resolutions-csv"):
+        report_tool.main(["--decisions-csv", "decisions.csv"])

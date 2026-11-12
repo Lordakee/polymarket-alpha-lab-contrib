@@ -120,10 +120,12 @@ treat `None` as "not modelable", never re-derive cross-league lambdas
 themselves. There is no other relaxation path: no config flag, no
 environment variable, no default bridge.
 
-Note: cross-league **match_winner (1X2) markets remain BANNED**
-regardless of the bridge — `gates.suspension_policy` still suspends
-them until a league-strength-bridged UCL/UEL walk-forward backtest
-passes. The bridge below only re-enables the totals/BTTS-style
+Note (2026-11-12): cross-league **match_winner is conditionally
+eligible** — the WP-P5 two-season walk-forward passed (§75): a bridged
+cross-league MW entry requires `gates.check_cross_league_mw`
+(bridge present AND worst-variant edge >= +5c) and is sized via
+`risk_policy.CROSS_LEAGUE_ML_CLASS` at a fixed $150. The bridge
+re-enables totals/BTTS-style
 channels through the guarded modeling path.
 
 ## FotMob Championship snapshots (WP-P3)
@@ -133,8 +135,8 @@ no credentials) into the same Understat snapshot wire shape
 `xg.load_xg_snapshot` consumes. It exists for domestic leagues OUTSIDE
 Understat's Big-5 coverage: the EFL Championship is the validated
 source (league key `"Championship"`, `xg.DOMESTIC_LEAGUES` documents
-the known keys); Eredivisie's league id is verified but the adapter
-has not been validated against it yet.
+the known keys); Eredivisie was validated 2026-11-07 (§71: gates A-D pass, E fail ->
+totals-family enterable).
 
 ```python
 from polymarket_alpha_lab.papersim import fotmob
@@ -181,8 +183,7 @@ the snapshot season (relegated/promoted sides) fall back to
 league-average multipliers and the model compresses strong away
 favorites. Until that is fixed, Championship snapshots are sanctioned
 for **O/U totals, BTTS and team totals only**; 1X2 stays deprioritized
-under the frozen domestic match_winner policy (and cross-league 1X2
-remains banned regardless of any bridge).
+under the frozen domestic match_winner policy (and cross-league MW follows the §75 conditional path above).
 
 On this host `www.fotmob.com` DNS is pinned: for actual backfills use
 the server-side Phase 1 tool (`paper-sim/tools/fotmob_adapter.py`:

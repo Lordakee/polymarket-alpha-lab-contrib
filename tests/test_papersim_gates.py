@@ -40,6 +40,7 @@ from polymarket_alpha_lab.papersim.gates import (
     POLICY_ELIGIBLE,
     POLICY_ELIGIBLE_DEPRIORITIZED,
     POLICY_FLAGGED_ONLY,
+    REASON_SPREADS_FLAGGED_ONLY,
     SUSPENSION_REGISTRY,
     UNDER_RISK_EXEC_EDGE_MIN,
     BookWalk,
@@ -844,7 +845,7 @@ def test_n1_composite_rejects_nonfinite_model_evidence():
     # non-leading NaN, and infinities pass threshold comparisons outright.
     base_book = [(0.56, 5000.0)]
     nan_variant = dict(model_median=0.62, qs_variants=(0.60, float("nan"), 0.63))
-    with pytest.raises(ValueError, match="qs_variants\[1\]"):
+    with pytest.raises(ValueError, match=r"qs_variants\[1\]"):
         evaluate_candidate(
             nan_variant, base_book, gamma_liquidity=20000.0, news=_concordant_news()
         )
@@ -1370,3 +1371,59 @@ def test_cross_league_mw_enforces_the_registry_wording_on_the_evaluate_path():
     )
     assert rejected.passed is False
     assert set(rejected.failed) == {"cross_league_bridge", "cross_league_worst_edge"}
+
+
+# ---------------------------------------------------------------------------
+# FX-14 (2026-11-12): the frozen constant sites are read-only views.
+# GATES and SUSPENSION_REGISTRY are MappingProxyType-wrapped (the same
+# mechanism as the league_strength kappa table), so the frozen values
+# cannot be mutated in place by any caller or test.
+# ---------------------------------------------------------------------------
+
+
+def test_gates_mapping_is_read_only_view():
+    from types import MappingProxyType
+
+    assert isinstance(GATES, MappingProxyType)
+    with pytest.raises(TypeError):
+        GATES["exec_edge_min"] = 0.01
+    with pytest.raises(TypeError):
+        del GATES["liq_min"]
+    # Mutator methods are absent outright (AttributeError); item
+    # assignment/deletion raise TypeError (the FX-14 acceptance).
+    with pytest.raises((TypeError, AttributeError)):
+        GATES.setdefault("new_threshold", 1.0)
+    with pytest.raises((TypeError, AttributeError)):
+        GATES.pop("exec_edge_min")
+    with pytest.raises((TypeError, AttributeError)):
+        GATES.update({"exec_edge_min": 0.01})
+    # Frozen VALUES re-pinned (book of record).
+    assert dict(GATES) == {
+        "variant_spread_max": 0.06,
+        "worst_edge_min": 0.04,
+        "exec_edge_min": 0.05,
+        "liq_min": 5000.0,
+    }
+
+
+def test_suspension_registry_is_read_only_view():
+    from types import MappingProxyType
+
+    assert isinstance(SUSPENSION_REGISTRY, MappingProxyType)
+    with pytest.raises(TypeError):
+        SUSPENSION_REGISTRY[("match_winner", True)] = (
+            POLICY_BANNED,
+            False,
+            "forged",
+        )
+    with pytest.raises(TypeError):
+        del SUSPENSION_REGISTRY[("spread", False)]
+    with pytest.raises((TypeError, AttributeError)):
+        SUSPENSION_REGISTRY.update({("spread", False): (POLICY_ELIGIBLE, True, "x")})
+    # Lookups still work and the entries are unchanged.
+    assert SUSPENSION_REGISTRY[("match_winner", True)][0] == POLICY_ELIGIBLE_DEPRIORITIZED
+    assert SUSPENSION_REGISTRY[("spread", False)] == (
+        POLICY_FLAGGED_ONLY,
+        False,
+        REASON_SPREADS_FLAGGED_ONLY,
+    )

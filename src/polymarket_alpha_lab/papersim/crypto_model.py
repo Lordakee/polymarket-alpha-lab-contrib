@@ -25,6 +25,12 @@ Canonical lineage: ``r19`` (current head ``round19/model19.py``, raw inputs
   spread. The pre-fix orientation used ``max`` for the YES side on
   touch-down markets, overstating YES fair value by the full A/B spread
   (about 3.4c on the ETH-2000 30d regression anchor).
+- Terminal-market direction is explicit (FX-13, 2026-11-12 audit P-8):
+  ``terminal_yes_probability`` and ``conservative_edges_for_terminal``
+  reorient the stored ``P(S_T <= barrier)`` record into the market's YES
+  side via ``yes_when="below"|"above"`` before any edge arithmetic, so an
+  ``above on date`` market can no longer be priced as a below-barrier
+  market by omission.
 - Terminal horizons anchor to the scan timestamp and run to market close
   (``Dec31_2359`` in the r19 record).
 
@@ -40,16 +46,20 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Mapping
 
 # Frozen r19 window table: number of 6h bars per realized-vol window.
 # 7d = 28 bars, 30d = 120 (the signature table), 60d = 240, 87d = 348.
-VOL_WINDOW_BARS: Mapping[str, int] = {
+# Wrapped in a read-only ``MappingProxyType`` view (FX-14, audit P-11),
+# same treatment as the league_strength kappa table: a book-of-record
+# freeze must not be mutable at runtime.
+VOL_WINDOW_BARS: Mapping[str, int] = MappingProxyType({
     "7d": 28,
     "30d": 120,
     "60d": 240,
     "87d": 348,
-}
+})
 
 # The r19 scan table prices every candidate off the 30-day window.
 SIGNATURE_WINDOW = "30d"
@@ -117,6 +127,26 @@ class TerminalProbability:
     asset: str
     barrier: float
     horizon_hours: float
+    convention_a: float
+    convention_b: float
+
+
+@dataclass(frozen=True)
+class TerminalYesProbability:
+    """YES-oriented convention pair for one at-expiry market (FX-13).
+
+    Built by :func:`terminal_yes_probability` from a ``TerminalProbability``
+    record (which stores ``P(S_T <= barrier)``) once the caller states which
+    side the market's YES means. Carrying ``yes_when`` on the record makes
+    the direction explicit at the point of use, so downstream edge code can
+    no longer price an ``above on date`` market as a below-barrier market
+    by omission (2026-11-12 audit finding P-8).
+    """
+
+    asset: str
+    barrier: float
+    horizon_hours: float
+    yes_when: str
     convention_a: float
     convention_b: float
 
@@ -272,7 +302,7 @@ def terminal_probability(
 
 
 def conservative_edges(
-    probabilities: TouchProbability | TerminalProbability,
+    probabilities: TouchProbability | TerminalProbability | TerminalYesProbability,
     *,
     yes_ask: float,
     no_ask: float,
@@ -287,6 +317,12 @@ def conservative_edges(
     markets (``TouchProbability``) and at-expiry markets
     (``TerminalProbability``) alike: the probability pair models whichever
     side the market's YES means.
+
+    For at-expiry (``above/below on date``) markets, use
+    :func:`conservative_edges_for_terminal` instead: it applies this same
+    rule after an explicit direction transform, whereas a raw
+    ``TerminalProbability`` passed here is priced as a *below-barrier* YES
+    market (2026-11-12 audit finding P-8).
     """
     conv_a = probabilities.convention_a
     conv_b = probabilities.convention_b
@@ -297,4 +333,86 @@ def conservative_edges(
         fair_no=fair_no,
         edge_yes=fair_yes - yes_ask,
         edge_no=fair_no - no_ask,
+    )
+
+
+def terminal_yes_probability(
+    probabilities: TerminalProbability,
+    *,
+    yes_when: str,
+) -> TerminalYesProbability:
+    """Reorient a terminal record into the market's YES probabilities.
+
+    ``TerminalProbability`` stores ``P(S_T <= barrier)`` under both
+    conventions, while :func:`conservative_edges` treats its inputs as the
+    market's YES probabilities. For an ``above on date`` market the YES
+    side is the complement, and a caller that omits the transform prices
+    both sides with YES and NO swapped (audit finding P-8). This function
+    makes the transform explicit (FX-13):
+
+    - ``yes_when="below"`` returns both convention values unchanged;
+    - ``yes_when="above"`` returns each convention's complement
+      ``1 - convention_x``.
+
+    Any other ``yes_when`` raises ``ValueError``. Touch records raise
+    ``TypeError``: touch markets have no direction to state -- their YES
+    side is the touch event itself and their record goes straight to
+    :func:`conservative_edges`.
+    """
+    if not isinstance(probabilities, TerminalProbability):
+        raise TypeError(
+            "terminal_yes_probability expects a TerminalProbability, got "
+            f"{type(probabilities).__name__}; touch records go straight "
+            "to conservative_edges"
+        )
+    if yes_when == "below":
+        conv_a = probabilities.convention_a
+        conv_b = probabilities.convention_b
+    elif yes_when == "above":
+        conv_a = 1.0 - probabilities.convention_a
+        conv_b = 1.0 - probabilities.convention_b
+    else:
+        raise ValueError(
+            f"yes_when must be 'below' or 'above', got {yes_when!r}"
+        )
+    return TerminalYesProbability(
+        asset=probabilities.asset,
+        barrier=probabilities.barrier,
+        horizon_hours=probabilities.horizon_hours,
+        yes_when=yes_when,
+        convention_a=conv_a,
+        convention_b=conv_b,
+    )
+
+
+def conservative_edges_for_terminal(
+    probabilities: TerminalProbability,
+    *,
+    yes_when: str,
+    yes_ask: float,
+    no_ask: float,
+) -> ConservativeEdges:
+    """Per-side conservative edges for an at-expiry market (FX-13).
+
+    Direction-explicit wrapper around :func:`conservative_edges`: converts
+    the terminal record to YES probabilities via
+    :func:`terminal_yes_probability` first, then applies the unchanged
+    conservative rule (``fair_yes = min(pA, pB)``,
+    ``fair_no = 1 - max(pA, pB)``). The rule is symmetric under
+    complementation, so the two directions mirror exactly: for the same
+    barrier and symmetric quotes, ``above``'s YES fair value and edge equal
+    ``below``'s NO fair value and edge.
+
+    Entry points and scan code handling ``above/below on date`` markets
+    must go through this function rather than calling
+    :func:`conservative_edges` on a raw terminal record.
+    """
+    yes_pair = terminal_yes_probability(probabilities, yes_when=yes_when)
+    # Structural pass-through: conservative_edges only reads
+    # convention_a/convention_b, which TerminalYesProbability carries
+    # already oriented as the market's YES side.
+    return conservative_edges(
+        yes_pair,
+        yes_ask=yes_ask,
+        no_ask=no_ask,
     )

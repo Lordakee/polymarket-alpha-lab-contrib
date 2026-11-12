@@ -18,6 +18,13 @@ Unit invariants plus the frozen r19 regression anchors from
   used as ``NOW``), read from ``round19/raw/{eth,btc}_candles.json``;
   the estimator must reproduce the frozen window tables bit-exactly, and
   the A/B touch anchors must reproduce within 1e-4.
+- FX-13 (audit P-8, 2026-11-12): at-expiry market direction is explicit
+  via ``terminal_yes_probability`` / ``conservative_edges_for_terminal``
+  with ``yes_when="below"|"above"``; ``below`` is the identity transform
+  (existing behavior unchanged), ``above`` is the exact complement, and
+  the two directions mirror under symmetric quotes.
+- FX-14 (audit P-11, 2026-11-12): the frozen r19 window table
+  ``VOL_WINDOW_BARS`` is a read-only mapping view.
 """
 
 from __future__ import annotations
@@ -31,11 +38,14 @@ import pytest
 
 from polymarket_alpha_lab.papersim import crypto_model
 from polymarket_alpha_lab.papersim.crypto_model import (
+    TerminalYesProbability,
     TouchProbability,
     conservative_edges,
+    conservative_edges_for_terminal,
     realized_vol_daily,
     realized_vol_windows,
     terminal_probability,
+    terminal_yes_probability,
     touch_probability,
 )
 
@@ -265,6 +275,39 @@ def test_realized_vol_windows_reproduce_frozen_r19_tables():
     trimmed = ETH_CLOSES_360[-120:]
     assert realized_vol_windows(trimmed)["30d"] == eth["30d"]
     assert realized_vol_windows(trimmed)["87d"] == realized_vol_daily(trimmed)
+
+
+def test_vol_window_bars_is_read_only_view():
+    # FX-14 (audit P-11): the frozen r19 window table is a read-only
+    # mapping view; every mutation path raises TypeError.
+    frozen = {"7d": 28, "30d": 120, "60d": 240, "87d": 348}
+    assert crypto_model.VOL_WINDOW_BARS == frozen
+    assert list(crypto_model.VOL_WINDOW_BARS) == ["7d", "30d", "60d", "87d"]
+    with pytest.raises(TypeError):
+        crypto_model.VOL_WINDOW_BARS["7d"] = 29
+    with pytest.raises(TypeError):
+        crypto_model.VOL_WINDOW_BARS["90d"] = 360
+    with pytest.raises(TypeError):
+        del crypto_model.VOL_WINDOW_BARS["7d"]
+    # Mutating methods are absent from the read-only view (mappingproxy
+    # implements only the Mapping protocol), so they cannot even be
+    # looked up -- as strong as raising on assignment.
+    with pytest.raises(AttributeError):
+        crypto_model.VOL_WINDOW_BARS.pop("7d")
+    with pytest.raises(AttributeError):
+        crypto_model.VOL_WINDOW_BARS.popitem()
+    with pytest.raises(AttributeError):
+        crypto_model.VOL_WINDOW_BARS.update({"7d": 29})
+    with pytest.raises(AttributeError):
+        crypto_model.VOL_WINDOW_BARS.setdefault("90d", 360)
+    with pytest.raises(AttributeError):
+        crypto_model.VOL_WINDOW_BARS.clear()
+    # Nothing was mutated through the attempts, and the estimator still
+    # reads the unchanged frozen table.
+    assert crypto_model.VOL_WINDOW_BARS == frozen
+    assert realized_vol_windows(ETH_CLOSES_360) == pytest.approx(
+        EXPECTED_ETH_WINDOWS, rel=1e-12
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -544,6 +587,147 @@ def test_touch_probability_degenerate_paths():
     assert (flat_above.convention_a, flat_above.convention_b) == (1.0, 1.0)
 
 
+# ---------------------------------------------------------------------------
+# FX-13 (audit P-8): explicit terminal-market direction
+# ---------------------------------------------------------------------------
+
+
+def _eth2000_terminal():
+    return terminal_probability(
+        spot=ETH_SPOT,
+        sigma_daily=ETH_SIG30,
+        barrier=2000.0,
+        horizon_hours=FIXTURE_HORIZON_HOURS,
+        asset="ETH",
+    )
+
+
+def test_terminal_yes_probability_below_is_identity():
+    # "below" returns both convention values unchanged: the stored record
+    # is already P(S_T <= barrier), i.e. the YES side of a below market.
+    term = _eth2000_terminal()
+    yes = terminal_yes_probability(term, yes_when="below")
+    assert isinstance(yes, TerminalYesProbability)
+    assert yes.yes_when == "below"
+    assert yes.asset == term.asset == "ETH"
+    assert yes.barrier == term.barrier == 2000.0
+    assert yes.horizon_hours == term.horizon_hours
+    assert yes.convention_a == term.convention_a
+    assert yes.convention_b == term.convention_b
+
+
+def test_terminal_yes_probability_above_is_exact_complement():
+    # "above" returns each convention's exact complement 1 - p.
+    term = _eth2000_terminal()
+    yes = terminal_yes_probability(term, yes_when="above")
+    assert yes.yes_when == "above"
+    assert yes.convention_a == 1.0 - term.convention_a
+    assert yes.convention_b == 1.0 - term.convention_b
+    assert yes.convention_a + term.convention_a == pytest.approx(1.0, abs=1e-15)
+    assert yes.convention_b + term.convention_b == pytest.approx(1.0, abs=1e-15)
+
+
+def test_terminal_yes_probability_rejects_unknown_direction():
+    term = _eth2000_terminal()
+    for bad in ("up", "Above", "ABOVE", "", "below ", "down", "touch", None, 1):
+        with pytest.raises(ValueError, match="yes_when"):
+            terminal_yes_probability(term, yes_when=bad)
+
+
+def test_terminal_yes_probability_rejects_touch_records():
+    # Touch markets have no direction to state: their YES side is the
+    # touch event itself and their record goes straight to
+    # conservative_edges.
+    touch = _eth2000_probs()
+    with pytest.raises(TypeError, match="TerminalProbability"):
+        terminal_yes_probability(touch, yes_when="below")
+
+
+def test_conservative_edges_for_terminal_below_matches_existing_path():
+    # The below orientation through the new function is bit-identical to
+    # the existing conservative_edges on the raw record: FX-13 changes no
+    # below-barrier behavior.
+    term = _eth2000_terminal()
+    direct = conservative_edges(term, yes_ask=0.45, no_ask=0.56)
+    via_new = conservative_edges_for_terminal(
+        term, yes_when="below", yes_ask=0.45, no_ask=0.56
+    )
+    assert via_new == direct
+
+
+def test_conservative_edges_for_terminal_above_mirrors_below():
+    # FX-13 acceptance: for the same barrier under symmetric quotes
+    # (above's yes_ask == below's no_ask and vice versa), above's YES
+    # fair value/edge equals below's NO fair value/edge, and vice versa.
+    term = _eth2000_terminal()
+    below = conservative_edges_for_terminal(
+        term, yes_when="below", yes_ask=0.45, no_ask=0.56
+    )
+    above = conservative_edges_for_terminal(
+        term, yes_when="above", yes_ask=0.56, no_ask=0.45
+    )
+    assert above.fair_yes == pytest.approx(below.fair_no, abs=1e-15)
+    assert above.fair_no == pytest.approx(below.fair_yes, abs=1e-15)
+    assert above.edge_yes == pytest.approx(below.edge_no, abs=1e-15)
+    assert above.edge_no == pytest.approx(below.edge_yes, abs=1e-15)
+    # Explicit orientation for the above market: conservative YES is
+    # min(1 - pA, 1 - pB) == 1 - max(pA, pB) and conservative NO is
+    # max(pA, pB)-complement's mirror, i.e. min(pA, pB).
+    low = min(term.convention_a, term.convention_b)
+    high = max(term.convention_a, term.convention_b)
+    assert above.fair_yes == pytest.approx(1.0 - high, abs=1e-15)
+    assert above.fair_no == pytest.approx(low, abs=1e-15)
+
+
+def test_above_market_naive_pricing_error_is_material():
+    # The hazard P-8 documented: pricing an above market with the raw
+    # below-barrier record (no direction transform) misstates YES fair
+    # value by 1 - (low + high) -- more than 50c on this frozen anchor
+    # (pA ~= 0.2224, pB ~= 0.2531), far beyond any gate threshold.
+    term = _eth2000_terminal()
+    low = min(term.convention_a, term.convention_b)
+    high = max(term.convention_a, term.convention_b)
+    naive = conservative_edges(term, yes_ask=0.45, no_ask=0.56)
+    above = conservative_edges_for_terminal(
+        term, yes_when="above", yes_ask=0.45, no_ask=0.56
+    )
+    assert above.fair_yes - naive.fair_yes == pytest.approx(
+        1.0 - (low + high), abs=1e-12
+    )
+    assert above.fair_yes - naive.fair_yes > 0.5
+
+
+def test_conservative_edges_for_terminal_validates_direction_and_type():
+    term = _eth2000_terminal()
+    with pytest.raises(ValueError, match="yes_when"):
+        conservative_edges_for_terminal(
+            term, yes_when="sideways", yes_ask=0.5, no_ask=0.5
+        )
+    with pytest.raises(TypeError, match="TerminalProbability"):
+        conservative_edges_for_terminal(
+            _eth2000_probs(), yes_when="below", yes_ask=0.5, no_ask=0.5
+        )
+
+
+def test_terminal_direction_on_degenerate_flat_path():
+    # Zero-vol terminal records are exactly 0/1; complements stay exact.
+    flat = terminal_probability(
+        spot=ETH_SPOT, sigma_daily=0.0, barrier=2000.0, horizon_hours=240.0,
+        asset="ETH",
+    )
+    assert (flat.convention_a, flat.convention_b) == (0.0, 0.0)
+    below = terminal_yes_probability(flat, yes_when="below")
+    above = terminal_yes_probability(flat, yes_when="above")
+    assert (below.convention_a, below.convention_b) == (0.0, 0.0)
+    assert (above.convention_a, above.convention_b) == (1.0, 1.0)
+    edges = conservative_edges_for_terminal(
+        flat, yes_when="above", yes_ask=0.99, no_ask=0.01
+    )
+    assert edges.fair_yes == 1.0
+    assert edges.fair_no == 0.0
+    assert edges.edge_yes == pytest.approx(0.01, abs=1e-15)
+
+
 def test_input_validation():
     with pytest.raises(ValueError):
         touch_probability(
@@ -579,3 +763,6 @@ def test_module_documents_conventions_and_r12_warning():
     assert "mirror sign bug" in source
     assert "min(pA, pB)" in source
     assert "1 - max(pA, pB)" in source
+    # FX-13: conservative_edges must point at-expiry callers at the
+    # direction-explicit wrapper (audit P-8).
+    assert "conservative_edges_for_terminal" in crypto_model.conservative_edges.__doc__

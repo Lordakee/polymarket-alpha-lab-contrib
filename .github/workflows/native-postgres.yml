@@ -94,6 +94,24 @@ on:
       - 'supabase/migrations/**'
       - 'tests/test_native_postgres_workflow*.py'
       - '.github/workflows/native-postgres.yml'
+  # FX-07 (2026-11-12): this repository works by direct pushes to main, so a
+  # pull_request-only trigger left the real-Postgres matrix unrun. Push now
+  # runs it for the database-facing surfaces. The schedule is weekly, never
+  # daily: the four partitions together cost tens of minutes and
+  # private-repository minutes are quota-limited.
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**'
+      - 'database/**'
+      - 'src/polymarket_alpha_lab/project_postgres/**'
+      - 'src/polymarket_alpha_lab/*_psycopg.py'
+      - 'src/polymarket_alpha_lab/papersim/**'
+      - 'tests/test_project_postgres*'
+      - 'tests/test_papersim_*'
+      - '.github/workflows/native-postgres.yml'
+  schedule:
+    - cron: '17 4 * * 1'
 permissions:
   contents: read
 concurrency:
@@ -378,6 +396,13 @@ jobs:
               "tests/test_claude_cli_probe.py",
               "tests/test_claude_cli_probe_review.py"
             ]
+          },
+          {
+            "partition": "papersim",
+            "files": [
+              "tests/test_papersim_ledger.py",
+              "tests/test_papersim_perf_view_fix.py"
+            ]
           }
         ]
     runs-on: ubuntu-24.04
@@ -418,6 +443,23 @@ jobs:
           test "$(find "$PREFIX" -type l | wc -l)" -eq 0
           test -x "$PREFIX/bin/postgres" && test -f "$PREFIX/share/postgres.bki"
           "$PREFIX/bin/postgres" --version
+      - name: Assemble throwaway papersim cluster
+        # FX-07 partition 4: one-shot loopback paper_sim cluster built from
+        # the SAME pinned PG18 prefix above. Binaries only -- no installed
+        # cluster, role or password is used. The verbatim checked-in ledger
+        # migration is applied so the opt-in integration checks see the real
+        # relations; the offline papersim face stays in offline-verification.
+        if: matrix.partition == 'papersim'
+        run: |
+          set -euo pipefail
+          PREFIX="$RUNNER_TEMP/pg18-portable-prefix"
+          DATA="$RUNNER_TEMP/papersim-pgdata"
+          "$PREFIX/bin/initdb" -U paper_sim -D "$DATA" --no-locale --encoding=UTF8
+          "$PREFIX/bin/pg_ctl" -D "$DATA" -l "$RUNNER_TEMP/papersim-pg.log" start -o "-p 55432 -h 127.0.0.1 -k $RUNNER_TEMP"
+          "$PREFIX/bin/createdb" -h 127.0.0.1 -p 55432 -U paper_sim paper_sim
+          "$PREFIX/bin/psql" -h 127.0.0.1 -p 55432 -U paper_sim -d paper_sim -v ON_ERROR_STOP=1 -q -f supabase/migrations/20261101000000_papersim_ledger.sql
+          printf 'PAPERSIM_PG_DSN=postgresql://paper_sim@127.0.0.1:55432/paper_sim\n' >> "$GITHUB_ENV"
+          printf 'WP_P4_READONLY_PG=1\n' >> "$GITHUB_ENV"
       - name: Prove isolated native partition
         env:
           NATIVE_TEST_FILES: ${{ join(matrix.files, ' ') }}

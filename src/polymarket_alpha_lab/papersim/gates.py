@@ -35,9 +35,10 @@ numeric inputs instead of letting them slip past the comparisons, and
 :func:`rank_candidates` orders only the survivors (passed decisions).
 
 Fee accounting (2026-11-05 review finding): the exec-edge bar is a NET
-bar. Polymarket charges ``notional * rate * p * (1 - p)`` per trade
-(rate 0.07 crypto / 0.05 sports), so :func:`evaluate_candidate`
-subtracts :func:`fee_cost` at the walked entry price from the
+bar. Polymarket charges ``shares * rate * p * (1 - p)`` per trade (C =
+share count; rate 0.07 crypto / 0.05 sports), so
+:func:`evaluate_candidate` subtracts :func:`fee_cost` at the walked
+entry price from the
 executable edge BEFORE the +5c (or +8c under_risk) comparison. The
 frozen threshold VALUES are unchanged -- only the edge definition
 moved from gross to net. Gross edges stay visible as
@@ -65,18 +66,25 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any
 
 # Frozen entry-gate thresholds (book of record).
 # var<=6c; worst-variant exec >= +4c; median exec >= +5c (CLOB $250-VWAP
 # ask); liq >= $5k. Additional eligibility (entry .10-.92, book fills
 # $250, eligible market kinds) is enforced by callers.
-GATES: Mapping[str, float] = {
-    "variant_spread_max": 0.06,
-    "worst_edge_min": 0.04,
-    "exec_edge_min": 0.05,
-    "liq_min": 5000.0,
-}
+# Read-only since FX-14 (2026-11-12): the mapping is wrapped in
+# types.MappingProxyType (the same mechanism as the league_strength
+# kappa table), so item assignment/deletion raises TypeError. The four
+# VALUES are frozen book-of-record constants either way.
+GATES: Mapping[str, float] = MappingProxyType(
+    {
+        "variant_spread_max": 0.06,
+        "worst_edge_min": 0.04,
+        "exec_edge_min": 0.05,
+        "liq_min": 5000.0,
+    }
+)
 
 # Comparison tolerance carried from the round-24 finalize pass
 # (round24/raw/finalize24.py): boundary values pass, next tick fails.
@@ -89,8 +97,8 @@ ENTRY_WINDOW: tuple[float, float] = (0.10, 0.92)
 DEFAULT_NOTIONAL_USD = 250.0
 
 # Polymarket trading-fee model (fee-accounting fix, 2026-11-05 review):
-# fee = notional * rate * p * (1 - p), i.e. a per-share cost of
-# ``rate * p * (1 - p)`` at entry price ``p`` (:func:`fee_cost`). The
+# fee = shares * rate * p * (1 - p) (C = share count), i.e. a per-share
+# cost of ``rate * p * (1 - p)`` at entry price ``p`` (:func:`fee_cost`). The
 # crypto book pays 7% and the sports book 5%. The frozen exec bar
 # (>= +5c) is applied to the NET edge -- gross executable edge minus
 # this per-share fee -- so a 5c bar means 5c AFTER fees. The four
@@ -158,12 +166,16 @@ REASON_ELIGIBLE_KIND = (
 )
 
 # Registry: (normalized market kind, cross_league) -> (policy, eligible, reason).
-SUSPENSION_REGISTRY: Mapping[tuple[str, bool], tuple[str, bool, str]] = {
-    ("match_winner", True): (POLICY_ELIGIBLE_DEPRIORITIZED, True, REASON_CROSS_LEAGUE_MATCH_WINNER),
-    ("match_winner", False): (POLICY_ELIGIBLE_DEPRIORITIZED, True, REASON_DOMESTIC_MATCH_WINNER),
-    ("spread", False): (POLICY_FLAGGED_ONLY, False, REASON_SPREADS_FLAGGED_ONLY),
-    ("spread", True): (POLICY_FLAGGED_ONLY, False, REASON_SPREADS_FLAGGED_ONLY),
-}
+# Read-only since FX-14 (2026-11-12): MappingProxyType-wrapped like GATES
+# and the league_strength kappa table; lookups only, never mutation.
+SUSPENSION_REGISTRY: Mapping[tuple[str, bool], tuple[str, bool, str]] = MappingProxyType(
+    {
+        ("match_winner", True): (POLICY_ELIGIBLE_DEPRIORITIZED, True, REASON_CROSS_LEAGUE_MATCH_WINNER),
+        ("match_winner", False): (POLICY_ELIGIBLE_DEPRIORITIZED, True, REASON_DOMESTIC_MATCH_WINNER),
+        ("spread", False): (POLICY_FLAGGED_ONLY, False, REASON_SPREADS_FLAGGED_ONLY),
+        ("spread", True): (POLICY_FLAGGED_ONLY, False, REASON_SPREADS_FLAGGED_ONLY),
+    }
+)
 
 # Kind aliases seen across the lineage records.
 _MATCH_WINNER_KINDS = frozenset({"match_winner", "1x2", "ml"})
@@ -361,9 +373,12 @@ def haircut_edge(exec_edge: float, model_median: float) -> float:
 def fee_cost(entry_price: float, fee_rate: float) -> float:
     """Per-share Polymarket trading fee at ``entry_price``.
 
-    Polymarket charges ``notional * rate * p * (1 - p)`` on a trade, so
-    the fee per share bought at price ``p`` is ``rate * p * (1 - p)``
-    (:data:`FEE_RATE_CRYPTO` = 0.07, :data:`FEE_RATE_SPORTS` = 0.05).
+    Polymarket charges ``shares * rate * p * (1 - p)`` on a trade
+    (C = share count), so the fee per share bought at price ``p`` is
+    ``rate * p * (1 - p)``
+    (:data:`FEE_RATE_CRYPTO` = 0.07, :data:`FEE_RATE_SPORTS` = 0.05;
+    the full category schedule lives in
+    :mod:`polymarket_alpha_lab.papersim.fees`).
     The fee is symmetric around ``p = 0.5`` where it is maximal (1.25c
     per share at the sports rate). Pure arithmetic; callers round to the
     lineage 4-dp convention where determinism matters.

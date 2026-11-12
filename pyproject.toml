@@ -26,3 +26,7 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+# FX-22 first item (2026-11-12): a SyntaxWarning anywhere in the collected
+# suite fails the run. Deliberately SyntaxWarning-only; no other warning
+# category is promoted to an error.
+filterwarnings = ["error::SyntaxWarning"]
