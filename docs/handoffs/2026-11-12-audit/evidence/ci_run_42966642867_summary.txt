@@ -86,3 +86,16 @@ SKIPPED [1] tests/test_research_process_review.py:541: explicit native containme
 SKIPPED [1] tests/test_research_process_review.py:570: explicit native containment proof is opt-in
 SKIPPED [1] tests/test_research_process_review.py:612: explicit native containment proof is opt-in
 SKIPPED [1] tests/test_team_evidence_aggregation_attempt_disposable.py:62: set POLYMARKET_ALPHA_LAB_RUN_TEAM_EVIDENCE_AGGREGATION_DISPOSABLE_DB=1 to run the authorized disposable proof
+
+Warnings summary from the same job log:
+
+=============================== warnings summary ===============================
+tests/test_papersim_gates.py:847
+  tests/test_papersim_gates.py:847: SyntaxWarning: invalid escape sequence '\['
+    with pytest.raises(ValueError, match="qs_variants\[1\]"):
+
+tests/test_research_process_linux.py: 20 warnings
+  tests/test_research_process_linux.py:2794: DeprecationWarning: This process (pid=2232) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    pid = os.fork()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html

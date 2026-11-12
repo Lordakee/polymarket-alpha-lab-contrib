@@ -1168,10 +1168,10 @@
  },
  "method": {
   "baseline_commit": "e8c8a95cd9fea90db02518879e7d30931b5f6926",
-  "tool": "evidence/audit_static.py (AST only; no repository code is imported or executed)",
+  "tool": "evidence/audit_static.py (AST only; no repository code is imported or executed); this file is assembled from its output by evidence/build_metrics.py",
   "entry_points": "console script polymarket_alpha_lab.cli, polymarket_alpha_lab.__main__, every src module with an if __name__ == \"__main__\" guard, every package module imported by scripts/*.py and tools/**/*.py",
   "edges": "import / from-import (absolute and relative) plus string literals equal to a package module name",
   "root_init": "edges out of polymarket_alpha_lab/__init__.py are excluded for the reachable set (used_excl_init); loaded_incl_init includes them",
-  "creation_dates": "git log --diff-filter=A (first commit that added each file), full history of main (2584 commits)"
+  "creation_dates": "git log --diff-filter=A --name-only --format='@@%ad' --date=short -- 'src/*.py' (first commit that added each file; full history of main)"
  }
 }

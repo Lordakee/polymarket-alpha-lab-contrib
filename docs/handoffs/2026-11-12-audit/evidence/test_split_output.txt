@@ -1,0 +1,6 @@
+{'files': 3276, 'lines': 1437073}
+touches_reachable [800, 355791]
+only_unreachable [2337, 1055362]
+no_package_import [137, 25738]
+root_attr_unresolved [2, 182]
+root exports mapped: 369

@@ -1,0 +1,6 @@
+import polymarket_alpha_lab (root)     modules_loaded_at_import= 135 lines=  79234
+papersim.cli                           modules_loaded_at_import= 148 lines=  87006
+papersim.gates                         modules_loaded_at_import= 147 lines=  86453
+project_postgres.cli                   modules_loaded_at_import= 144 lines=  80445
+cli                                    modules_loaded_at_import= 244 lines= 128590
+research_dispatch_cli                  modules_loaded_at_import= 170 lines=  85119

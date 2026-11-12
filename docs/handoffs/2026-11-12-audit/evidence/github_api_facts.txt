@@ -1,0 +1,73 @@
+GitHub API facts for wmqfl861/polymarket-alpha-lab, collected with the gh CLI on 2026-11-12 (Asia/Shanghai).
+Each block shows the request path and the fields that were read. Read-only GET requests only.
+
+## commits on main (last page number of per_page=1 listing)
+total_commits=2584
+
+## repository
+private=true default_branch=main pushed_at=2026-11-12T06:50:32Z
+
+## branch protection (GET repos/wmqfl861/polymarket-alpha-lab/branches/main/protection)
+{"message":"Upgrade to GitHub Pro or make this repository public to enable this feature.","documentation_url":"https://docs.github.com/rest/branches/branch-protection#get-branch-protection","status":"403"}gh: Upgrade to GitHub Pro or make this repository public to enable this feature. (HTTP 403)
+
+## branches (paged, per_page=100): total and count by prefix
+total=202   (includes handoff/audit-2026-11-12, created by this audit after the review; 201 at the time of review)
+     80 review
+     53 feature
+     22 audit
+     19 handoff
+     12 engineering
+      7 dev
+      4 fix
+      2 docs
+      1 work
+      1 maintenance
+      1 main
+
+## open pull requests
+#67 created=2026-09-21 head=work/pal-parallel-20260921-ad7a9c77be5a497ab908bb33b031a182 title=PAL 20260920 longtask: soak driver, property and oracle tests (ORIGINAL_CANDIDATE d929cc35
+#41 created=2026-09-15 head=feature/wp06-handoff-cold-evidence-20260915 title=WP-06: first-invocation PowerShell handoff evidence without weakening gates
+#35 created=2026-09-15 head=feature/wp05-paper-replay-20260915 title=WP-05: original research to explicit-cost hypothetical paper replay
+#34 created=2026-09-15 head=feature/wp05-research-paper-20260915 title=WP-05: cost-aware paper scenarios joined to original strict research evaluation
+
+## workflow run history (total runs; three most recent)
+- offline-verification.yml
+  total=218
+  run=42966642867 event=push conclusion=success branch=main sha=e8c8a95c created=2026-11-11T05:34:27Z
+  run=42964993496 event=push conclusion=success branch=main sha=f7aece92 created=2026-11-11T05:19:20Z
+  run=42953130156 event=push conclusion=success branch=main sha=026f9585 created=2026-11-11T03:29:50Z
+- native-postgres.yml
+  total=96
+  run=35505009886 event=pull_request conclusion=success branch=feature/wp02-claude-cli-probe-20260920 sha=b0bd04a2 created=2026-09-20T10:25:04Z
+  run=35503763400 event=pull_request conclusion=failure branch=feature/wp02-claude-cli-probe-20260920 sha=a64e7033 created=2026-09-20T09:58:44Z
+  run=35477986640 event=pull_request conclusion=success branch=feature/wp02-claude-no-session-20260920 sha=092ab985 created=2026-09-20T00:08:44Z
+- native-distribution.yml
+  total=99
+  run=35702308670 event=pull_request conclusion=success branch=work/pal-parallel-20260921-ad7a9c77be5a497ab908bb33b031a182 sha=af8ee274 created=2026-09-22T07:58:30Z
+  run=35684842148 event=pull_request conclusion=success branch=work/pal-parallel-20260921-ad7a9c77be5a497ab908bb33b031a182 sha=b061b7d7 created=2026-09-22T03:53:56Z
+  run=35674968871 event=pull_request conclusion=success branch=work/pal-parallel-20260921-ad7a9c77be5a497ab908bb33b031a182 sha=7cbea9a9 created=2026-09-22T01:13:29Z
+- research-paper.yml
+  total=70
+  run=35702308674 event=pull_request conclusion=success branch=work/pal-parallel-20260921-ad7a9c77be5a497ab908bb33b031a182 sha=af8ee274 created=2026-09-22T07:58:30Z
+  run=35684842101 event=pull_request conclusion=success branch=work/pal-parallel-20260921-ad7a9c77be5a497ab908bb33b031a182 sha=b061b7d7 created=2026-09-22T03:53:56Z
+  run=35674968800 event=pull_request conclusion=success branch=work/pal-parallel-20260921-ad7a9c77be5a497ab908bb33b031a182 sha=7cbea9a9 created=2026-09-22T01:13:29Z
+- claude-probe-environment.yml
+  total=4
+  run=35512340340 event=pull_request conclusion=success branch=feature/wp02-probe-preparation-20260920 sha=faa91588 created=2026-09-20T13:02:32Z
+  run=35510808899 event=pull_request conclusion=cancelled branch=feature/wp02-probe-preparation-20260920 sha=d243b22f created=2026-09-20T12:30:25Z
+  run=35510469146 event=pull_request conclusion=failure branch=feature/wp02-probe-preparation-20260920 sha=3eea4384 created=2026-09-20T12:23:24Z
+- handoff-first-run.yml
+  total=2
+  run=34999498597 event=pull_request conclusion=success branch=feature/wp06-handoff-first-run-20260916 sha=15c920a3 created=2026-09-15T17:09:36Z
+  run=34996563447 event=pull_request conclusion=success branch=feature/wp06-handoff-first-run-20260916 sha=f3537b27 created=2026-09-15T16:41:16Z
+- handoff-first-run-campaign.yml
+  total=0
+- t1-relay-crossing-preview.yml
+  total=0
+
+## native-postgres.yml runs created after 2026-09-21
+total=0
+
+## all workflow runs created after 2026-09-23, by workflow name and event
+      1 Graph Update: uv in /. #1681930897	dynamic
+     10 Offline verification	push

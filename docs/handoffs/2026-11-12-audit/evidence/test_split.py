@@ -49,6 +49,6 @@ for f in sorted((root/'tests').rglob('*.py')):
     elif unresolved or root_alias: k='root_attr_unresolved'
     else: k='no_package_import'
     cls[k][0]+=1; cls[k][1]+=n
-print(tot); 
+print(tot)
 for k,v in cls.items(): print(k, v)
 print('root exports mapped:',len(export))
