@@ -1208,7 +1208,7 @@ def prove_explicit_migration_and_old_catalog_refusal(rig) -> None:
     for section in ('markets', 'attempts', 'claims', 'outcomes'):
         assert snapshot['snapshot'][section] == rig['snapshot'][section]
     assert snapshot['snapshot']['ledger'][:63] == rig['snapshot']['ledger']
-    assert len(snapshot['snapshot']['ledger']) == 68
+    assert len(snapshot['snapshot']['ledger']) == 70
     assert snapshot['instance'] == rig['identity']
     lock_file = original / 'database/migrations.lock.json'
     staged_lock = lock_file.read_bytes()

@@ -26,7 +26,7 @@ from tests.test_project_postgres_uncapped_native import authorization
 from tests.test_team_research_cross_source import Model
 
 ROOT = Path(__file__).resolve().parents[1]
-TAIL = '20260919000000_research_uncapped_audit.sql'
+TAIL = '20261107000000_papersim_perf_view_fix.sql'  # manifest tail as of 2026-11-12 (migrations #69/#70 added papersim)
 ENABLED = os.environ.get('POLYMARKET_ALPHA_LAB_RUN_NATIVE_PROJECT_POSTGRES') == '1'
 _CRASH = r'''
 import os,sys
@@ -67,7 +67,7 @@ def test_audited_uncapped_upgrade_calls_uncertainty_and_process_loss(tmp_path, m
     shutil.copytree(ROOT/'supabase/migrations', root/'supabase/migrations')
     manifest_file = root/'database/migrations.lock.json'
     full = manifest_file.read_bytes(); manifest = json.loads(full)
-    assert len(manifest['migrations']) == 68 and manifest['migrations'][-1]['name'] == TAIL
+    assert len(manifest['migrations']) == 70 and manifest['migrations'][-1]['name'] == TAIL
     (root/'supabase/migrations'/TAIL).unlink()
     manifest_file.write_text(json.dumps(dict(manifest, migrations=manifest['migrations'][:-1])))
     with socket.socket() as sock:
@@ -426,14 +426,14 @@ def test_operator_assembly_native_two_team_stop_restart_replay_and_audit(tmp_pat
     (root/'pyproject.toml').write_text('[project]\nname="polymarket-alpha-lab"\n')
     shutil.copytree(ROOT/'database', root/'database')
     shutil.copytree(ROOT/'supabase/migrations', root/'supabase/migrations')
-    assert len(json.loads((root/'database/migrations.lock.json').read_text())['migrations']) == 68
+    assert len(json.loads((root/'database/migrations.lock.json').read_text())['migrations']) == 70
     with socket.socket() as sock:
         sock.bind(('127.0.0.1',0)); port = sock.getsockname()[1]
     import_runtime_directory(root,prefix); db = ProjectPostgres(root); restarted = None
     try:
         # (a) Real fixture: full 68-migration init and the first explicit up,
         # then the time-sensitive typed inputs (freshness starts at prepared()).
-        assert db.initialize(port=port)['migrations_applied'] == 68
+        assert db.initialize(port=port)['migrations_applied'] == 70
         assert db.up()['status'] == 'running'
         work = root/'Claude Synthetic Work'; work.mkdir()
         process = ResearchProcessSpec((str(work/'claude-native'),), str(work),
@@ -1031,7 +1031,7 @@ def test_contained_operator_two_by_two_stop_restart_replay_and_audit(tmp_path, m
     db = ProjectPostgres(root)
     restarted = None
     try:
-        assert db.initialize(port=port)['migrations_applied'] == 68
+        assert db.initialize(port=port)['migrations_applied'] == 70
         assert db.up()['status'] == 'running'
         profile = ClaudeExecProfile(
             process=ResearchProcessSpec(
@@ -1237,7 +1237,7 @@ def test_contained_driver_loss_preserves_incomplete_claim_and_replays_inert(tmp_
     db = ProjectPostgres(root)
     driver = None
     try:
-        assert db.initialize(port=port)['migrations_applied'] == 68
+        assert db.initialize(port=port)['migrations_applied'] == 70
         assert db.up()['status'] == 'running'
         environment = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'),
                        'PYTHONPATH': (str(ROOT) + os.pathsep + str(ROOT / 'src')
@@ -1439,7 +1439,7 @@ def test_contained_driver_loss_useful_recovery_fresh_parent_rounds(tmp_path, mon
     db = ProjectPostgres(root)
     driver = None
     try:
-        assert db.initialize(port=port)['migrations_applied'] == 68
+        assert db.initialize(port=port)['migrations_applied'] == 70
         assert db.up()['status'] == 'running'
         environment = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'),
                        'PYTHONPATH': (str(ROOT) + os.pathsep + str(ROOT / 'src')

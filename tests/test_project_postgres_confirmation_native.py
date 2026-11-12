@@ -58,7 +58,7 @@ def test_original_forecasts_manual_confirmation_replay_restart_and_preservation(
     port=pick_port()
     import_runtime_directory(root,prefix);db=ProjectPostgres(root)
     try:
-        assert db.initialize(port=port)['migrations_applied']==68
+        assert db.initialize(port=port)['migrations_applied']==70
         with db.session() as session:
             identity=db._state()
             now=datetime.now(UTC)

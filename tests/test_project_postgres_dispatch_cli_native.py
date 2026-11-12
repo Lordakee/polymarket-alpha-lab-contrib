@@ -145,7 +145,7 @@ def test_operator_rounds_stop_restart_failures_and_process_loss(tmp_path, monkey
     import_runtime_directory(root, prefix)
     db = ProjectPostgres(root)
     try:
-        assert db.initialize(port=port)['migrations_applied'] == 68
+        assert db.initialize(port=port)['migrations_applied'] == 70
         requests = tuple(prepared(1100+i, 'crypto_btc' if i%2 == 0 else 'crypto_eth') for i in range(6))
         with db.session() as session:
             identity = db._state()

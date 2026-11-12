@@ -95,7 +95,7 @@ def test_paper_operator_capture_replay_inspect_and_rejection(tmp_path, monkeypat
         return json.loads(child.stdout)
 
     try:
-        assert db.initialize(port=port)['migrations_applied'] == 68
+        assert db.initialize(port=port)['migrations_applied'] == 70
         with db.session() as session:
             identity = db._state()
             originals, scenarios = [], []

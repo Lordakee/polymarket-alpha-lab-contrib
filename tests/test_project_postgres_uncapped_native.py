@@ -95,7 +95,7 @@ def test_uncapped_claims_codex_protocol_stop_restart_and_process_loss(tmp_path, 
         return CodexExecModel(model_id='synthetic-function-model', transport=SyntheticExec(calls, lock))
     def forbidden(_): pytest.fail('original history must not start another model')
     try:
-        assert db.initialize(port=port)['migrations_applied'] == 68
+        assert db.initialize(port=port)['migrations_applied'] == 70
         identity = db._state()
         with db.session() as research:
             prior = research.run_research(request=prepared(1900), model_factory=lambda _:Model())
