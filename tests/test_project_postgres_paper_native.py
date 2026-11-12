@@ -50,7 +50,7 @@ def test_paper_assembly_replays_reads_preserves_failures_and_blocks_incomplete(t
     port=pick_port()
     import_runtime_directory(root,prefix);db=ProjectPostgres(root)
     try:
-        assert db.initialize(port=port)['migrations_applied']==68
+        assert db.initialize(port=port)['migrations_applied']==70
         with db.session() as s:
             identity=db._state();original=[];scenarios=[];made=[]
             def factory(team): made.append(team);return Model()

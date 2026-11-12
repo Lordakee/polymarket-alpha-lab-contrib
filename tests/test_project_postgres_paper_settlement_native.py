@@ -57,7 +57,7 @@ def test_paper_settlement_snapshot_outcomes_denominators_restart_and_no_writes(t
     port=pick_port()
     import_runtime_directory(root,prefix);db=ProjectPostgres(root)
     try:
-        assert db.initialize(port=port)['migrations_applied']==68
+        assert db.initialize(port=port)['migrations_applied']==70
         with db.session() as s:
             identity=db._state();now=datetime.now(UTC)
             opening=now.replace(second=0,microsecond=0)+timedelta(minutes=2)
