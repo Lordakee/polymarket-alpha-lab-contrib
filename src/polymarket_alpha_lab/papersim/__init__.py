@@ -123,6 +123,17 @@ from polymarket_alpha_lab.papersim.nba_model import (
     team_ratings as nba_team_ratings,
 )
 
+from polymarket_alpha_lab.papersim.intl_data import (
+    compute_elo_history,
+    load_intl_snapshot,
+)
+from polymarket_alpha_lab.papersim.intl_model import (
+    INTL_MW_RESEARCH_ONLY,
+    IntlFixture,
+    IntlPrediction,
+    fixture_prediction as intl_fixture_prediction,
+)
+
 from polymarket_alpha_lab.papersim.ledger import (
     DEFAULT_PAPERSIM_PG_DSN,
     EXITED_OUTCOME,
@@ -307,6 +318,12 @@ __all__ = [
     "RecentForm",
     "REASON_CROSS_LEAGUE_MATCH_WINNER",
     "NBA_TEAMS",
+    "INTL_MW_RESEARCH_ONLY",
+    "IntlFixture",
+    "IntlPrediction",
+    "compute_elo_history",
+    "intl_fixture_prediction",
+    "load_intl_snapshot",
     "NBA_VARIANTS",
     "NbaFixture",
     "NbaPrediction",

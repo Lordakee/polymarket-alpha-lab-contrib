@@ -3548,3 +3548,34 @@ ELIGIBLE_DEPRIORITIZED，未改动）；MD5（11/24-26）起以 $150 + 新表 +
 折减 + check_cross_league_mw 强制参与。旧表可回滚（SUPERSEDED 常量 +
 round31 工件）。EPL 优势从 +0.127 修正到 +0.022——旧值大半是占位符先验
 假象，这正是 P2b 降级揭露、本次回填修复的核心。
+
+## 76. WP-INTL: 国家队 Elo-Poisson 影子模型（2026-11-12）
+
+**Owner 授权（verbatim）**："你先看看未来24小时所有足球篮球的场次和赔率，有没有
+可以买的？有没有可以新建模的？"（2026-11-11）+ 可行性 GO-SHADOW-ONLY
+（~/paper-sim/round47/nl_ego_feasibility.md 实为 nl_elo_feasibility.md）。
+
+**范围（本节提交）**：papersim 第三域影子基础设施——
+- `intl_data.py`（1143 行）：martj42 49,940 场 + eloratings 适配器（K 分级
+  60/50/40/20、G 乘数、自算 Elo 引擎与官方 ρ=0.9966）；快照
+  ~/paper-sim/intl/snapshot_20261112.json（337 队）。
+- `intl_model.py`（~1050 行）：Elo→GD（slope 0.47）→λ 拆分→复用
+  soccer_model 的 Dixon-Coles 纯函数；9 变体包络（3 斜率×3 总分）；
+  严格因果重放；INTL_MW_RESEARCH_ONLY=True；来源混用拒绝。
+- `tools/wp_intl_validate.py` + 服务器部署：A-E 镜像验证 + 影子记录器。
+
+**验证结论（~/paper-sim/review/wp_intl_validation/）**：A-E 全 PASS——
+走前 762 场欧国联 1X2 LL 0.9624 vs 基线 1.0853；**2024-11 PM 收盘 MAD
+3.9c**（home 5.0/draw 2.3/away 4.3，20 场 60 项）——三大模型中最接近
+市场者（NBA 11.5c）。**但入场论点未通过**：强边际（+4.42c）在 1X2 族
+（政策禁止），可入场的 O2.5 族仅 +0.18c（门槛 1.5c）且 95.5% 场次变体
+离散超 6c → **全部族 research-only**；11/14-17 影子队列确认，入场最早
+2027-03 且需先过族级门槛。斜率 0.47 非回测最优（1X2 0.40/O2.5 0.55，
+差 ≤0.4c 在包络内）——默认不变。待议：国际 ML 族解禁提案（走前+MAD
+双过关，留待影子期后评估）。
+
+**复审**：4 轮 FAIL→PASS（P1 K 表并行建造分歧→委托修复 337/337 重放
+奇偶；两轮声明-树不符→死 API 删除+EOL 稳健匹配+复现前置验证；教训入
+memory lesson-eol-matching-and-remediation-claims）。附注：wp_intl3
+服务器部署副本为修复前模块（影响限于非 UEFA 队 ≤18 点/UEFA ≤1 点），
+11/14-17 影子运行起用修复版。全面 546 通过/9 跳过；selfcheck 10/10。
