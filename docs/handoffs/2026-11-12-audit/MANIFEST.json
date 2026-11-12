@@ -1,0 +1,104 @@
+{
+ "format": "audit-handoff-manifest-v1",
+ "directory": "docs/handoffs/2026-11-12-audit",
+ "baseline_commit": "e8c8a95cd9fea90db02518879e7d30931b5f6926",
+ "excluded": [
+  "05-local-agent-prompt.md",
+  "MANIFEST.json",
+  "MANIFEST.sha256"
+ ],
+ "file_count": 18,
+ "total_bytes": 455592,
+ "files": [
+  {
+   "path": "docs/handoffs/2026-11-12-audit/01-audit-report.md",
+   "bytes": 41313,
+   "sha256": "21f61378c302526b754fc07fdbaa1bc77e080b7b36d114f9dc3e7cb2ab09f134"
+  },
+  {
+   "path": "docs/handoffs/2026-11-12-audit/02-blueprint-v2.md",
+   "bytes": 22890,
+   "sha256": "29295dbbde59e76cc6dfcc3b0a79baaeed0a14acf130a4b06d9b7ad79ca1c9b1"
+  },
+  {
+   "path": "docs/handoffs/2026-11-12-audit/03-fix-list.md",
+   "bytes": 38698,
+   "sha256": "71610895d4d2fc5ee85cd620c4891eca349f6bcb1ef8f31160f468a0f1f83398"
+  },
+  {
+   "path": "docs/handoffs/2026-11-12-audit/04-development-plan.md",
+   "bytes": 19391,
+   "sha256": "c97ff15c7745783a16b380ecb28f2f179fcc0146c8fa1227697cc3ca01535ca6"
+  },
+  {
+   "path": "docs/handoffs/2026-11-12-audit/README.md",
+   "bytes": 8600,
+   "sha256": "c8e96b92fc3cd33439b9144012162d7b5d5f44e670e0dc1dead768b6ee802d4e"
+  },
+  {
+   "path": "docs/handoffs/2026-11-12-audit/evidence/audit_static.py",
+   "bytes": 16465,
+   "sha256": "7eb98c3bce666b4ef97c244247e1b2c4c3499f2c270e8560d268aec0d8c48e22"
+  },
+  {
+   "path": "docs/handoffs/2026-11-12-audit/evidence/build_metrics.py",
+   "bytes": 5153,
+   "sha256": "ef48b8ea711f7e4efa6cb8abe0445f0a42316b9529f0c6873c230fb8819c7b5b"
+  },
+  {
+   "path": "docs/handoffs/2026-11-12-audit/evidence/ci_run_42966642867_summary.txt",
+   "bytes": 11099,
+   "sha256": "7494f682a64b44ee83c48bf4c15ba84f814623c8a72c5fa00683fdff7a4fab26"
+  },
+  {
+   "path": "docs/handoffs/2026-11-12-audit/evidence/github_api_facts.txt",
+   "bytes": 4775,
+   "sha256": "38628b36098b8912589be53a8905745dbdca71ac0dab57c685a47a4577192221"
+  },
+  {
+   "path": "docs/handoffs/2026-11-12-audit/evidence/init_reach.py",
+   "bytes": 2925,
+   "sha256": "ffd8f3dc55f2728606e3b49bc48596f96b0920e51bc8aefb5e509dde63e8fc4f"
+  },
+  {
+   "path": "docs/handoffs/2026-11-12-audit/evidence/init_reach_output.txt",
+   "bytes": 498,
+   "sha256": "7de07e6e56c394fcfd0a49ac1c6321bbdb1895ba9f213b3e26c4f64758568452"
+  },
+  {
+   "path": "docs/handoffs/2026-11-12-audit/evidence/ledger_stats.py",
+   "bytes": 5349,
+   "sha256": "f08f320c9d1485a5da99305342d10bc0751a60093464bbc70689e54ac2703cc6"
+  },
+  {
+   "path": "docs/handoffs/2026-11-12-audit/evidence/ledger_stats_output.txt",
+   "bytes": 1680,
+   "sha256": "0a0c2910a03cc11d63918d2c0887370c45b9ad4e5eb07603706f3f217026234e"
+  },
+  {
+   "path": "docs/handoffs/2026-11-12-audit/evidence/metrics.json",
+   "bytes": 25668,
+   "sha256": "bc367f4588b6acd5ba2599f16cecff6a26178fef579dd476a00cac09f29385f4"
+  },
+  {
+   "path": "docs/handoffs/2026-11-12-audit/evidence/reachable_modules.txt",
+   "bytes": 23772,
+   "sha256": "a6e8b6fade38cc4ed72a73dde96bd81102d78502393cf30acbc235d49531cc91"
+  },
+  {
+   "path": "docs/handoffs/2026-11-12-audit/evidence/test_split.py",
+   "bytes": 2666,
+   "sha256": "2ea6ae3f946e6a852dd2953972f6ffd6fdeb8517ec65f0789a2cf08cb3726111"
+  },
+  {
+   "path": "docs/handoffs/2026-11-12-audit/evidence/test_split_output.txt",
+   "bytes": 185,
+   "sha256": "940a30e78a5b6961d29e4e4726966f4eddf8b4cfef3d10c713a06acf0316bfd9"
+  },
+  {
+   "path": "docs/handoffs/2026-11-12-audit/evidence/unreachable_modules.tsv",
+   "bytes": 224465,
+   "sha256": "4e43d3e2f10538ea15b60d73124faef13bc95fbc4cc3be52f592c1649830ba80"
+  }
+ ]
+}
