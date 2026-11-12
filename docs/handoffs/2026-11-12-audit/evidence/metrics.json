@@ -1,0 +1,1177 @@
+{
+ "total": {
+  "modules": 2857,
+  "lines": 2473957,
+  "bytes": 93118649
+ },
+ "root_init_lines": 874,
+ "root_init_direct_imports": 76,
+ "entry": {
+  "console": [
+   "polymarket_alpha_lab.cli",
+   "polymarket_alpha_lab.__main__"
+  ],
+  "main_guard_modules": [
+   "polymarket_alpha_lab.__main__",
+   "polymarket_alpha_lab.cli",
+   "polymarket_alpha_lab.papersim.cli",
+   "polymarket_alpha_lab.papersim.espn_nba",
+   "polymarket_alpha_lab.project_postgres.cli"
+  ],
+  "script_files": 23,
+  "script_targets": 32,
+  "tool_files": 7,
+  "tool_targets": [
+   "polymarket_alpha_lab",
+   "polymarket_alpha_lab.papersim",
+   "polymarket_alpha_lab.papersim.espn_nba",
+   "polymarket_alpha_lab.papersim.nba_model",
+   "polymarket_alpha_lab.papersim.recalib",
+   "polymarket_alpha_lab.papersim.soccer_model"
+  ]
+ },
+ "used_excl_init": {
+  "modules": 419,
+  "lines": 158659,
+  "bytes": 6043460
+ },
+ "loaded_incl_init": {
+  "modules": 471,
+  "lines": 193578,
+  "bytes": 7418927
+ },
+ "not_used": {
+  "modules": 2438,
+  "lines": 2315298,
+  "bytes": 87075189
+ },
+ "not_used_but_test_imported": {
+  "modules": 2435,
+  "lines": 2311721,
+  "bytes": 86941396
+ },
+ "not_used_no_tests": {
+  "modules": 3,
+  "lines": 3577,
+  "bytes": 133793
+ },
+ "not_used_no_tests_list": [
+  "polymarket_alpha_lab.candidate_decision_base_rate_anchor_score",
+  "polymarket_alpha_lab.candidate_decision_base_rate_drift_score",
+  "polymarket_alpha_lab.research_strategy_claim_memory_quorum_router_report"
+ ],
+ "group_reach": {
+  "console_cli": {
+   "modules": 330,
+   "lines": 138547,
+   "bytes": 5121319
+  },
+  "scripts": {
+   "modules": 81,
+   "lines": 13897,
+   "bytes": 664674
+  },
+  "tools": {
+   "modules": 15,
+   "lines": 8685,
+   "bytes": 342713
+  },
+  "main_guard_modules": {
+   "modules": 409,
+   "lines": 156796,
+   "bytes": 5950129
+  },
+  "papersim_cli": {
+   "modules": 14,
+   "lines": 8174,
+   "bytes": 318216
+  },
+  "project_postgres_cli": {
+   "modules": 72,
+   "lines": 12545,
+   "bytes": 595840
+  }
+ },
+ "zero_indegree_not_used": {
+  "modules": 2279,
+  "lines": 2227792,
+  "bytes": 83690936
+ },
+ "families_first_token": {
+  "research": {
+   "modules": 1170,
+   "lines": 1285902,
+   "used_modules": 46,
+   "used_lines": 7344
+  },
+  "market": {
+   "modules": 399,
+   "lines": 402380,
+   "used_modules": 0,
+   "used_lines": 0
+  },
+  "strategy": {
+   "modules": 360,
+   "lines": 269422,
+   "used_modules": 28,
+   "used_lines": 12249
+  },
+  "team": {
+   "modules": 177,
+   "lines": 127964,
+   "used_modules": 50,
+   "used_lines": 15601
+  },
+  "paper": {
+   "modules": 253,
+   "lines": 98440,
+   "used_modules": 151,
+   "used_lines": 59741
+  },
+  "candidate": {
+   "modules": 71,
+   "lines": 67096,
+   "used_modules": 6,
+   "used_lines": 3902
+  },
+  "probability": {
+   "modules": 97,
+   "lines": 49444,
+   "used_modules": 7,
+   "used_lines": 2934
+  },
+  "specialist": {
+   "modules": 35,
+   "lines": 20116,
+   "used_modules": 0,
+   "used_lines": 0
+  },
+  "proposal": {
+   "modules": 16,
+   "lines": 17510,
+   "used_modules": 0,
+   "used_lines": 0
+  },
+  "cli": {
+   "modules": 1,
+   "lines": 15136,
+   "used_modules": 1,
+   "used_lines": 15136
+  },
+  "action": {
+   "modules": 20,
+   "lines": 9572,
+   "used_modules": 20,
+   "used_lines": 9572
+  },
+  "supabase": {
+   "modules": 60,
+   "lines": 8923,
+   "used_modules": 40,
+   "used_lines": 5701
+  },
+  "operator": {
+   "modules": 17,
+   "lines": 8612,
+   "used_modules": 0,
+   "used_lines": 0
+  },
+  "pkg:papersim": {
+   "modules": 12,
+   "lines": 7773,
+   "used_modules": 12,
+   "used_lines": 7773
+  },
+  "manual": {
+   "modules": 11,
+   "lines": 7516,
+   "used_modules": 0,
+   "used_lines": 0
+  },
+  "forecast": {
+   "modules": 9,
+   "lines": 6737,
+   "used_modules": 2,
+   "used_lines": 1211
+  },
+  "source": {
+   "modules": 13,
+   "lines": 6502,
+   "used_modules": 0,
+   "used_lines": 0
+  },
+  "cost": {
+   "modules": 9,
+   "lines": 5553,
+   "used_modules": 2,
+   "used_lines": 1280
+  },
+  "phase": {
+   "modules": 14,
+   "lines": 4910,
+   "used_modules": 0,
+   "used_lines": 0
+  },
+  "outcome": {
+   "modules": 8,
+   "lines": 4397,
+   "used_modules": 6,
+   "used_lines": 2318
+  },
+  "local": {
+   "modules": 9,
+   "lines": 3366,
+   "used_modules": 7,
+   "used_lines": 2027
+  },
+  "post": {
+   "modules": 2,
+   "lines": 2716,
+   "used_modules": 0,
+   "used_lines": 0
+  },
+  "crypto": {
+   "modules": 7,
+   "lines": 2648,
+   "used_modules": 0,
+   "used_lines": 0
+  },
+  "autonomous": {
+   "modules": 6,
+   "lines": 2616,
+   "used_modules": 4,
+   "used_lines": 2358
+  },
+  "category": {
+   "modules": 3,
+   "lines": 2508,
+   "used_modules": 0,
+   "used_lines": 0
+  },
+  "domain": {
+   "modules": 4,
+   "lines": 2470,
+   "used_modules": 1,
+   "used_lines": 167
+  },
+  "pkg:project": {
+   "modules": 14,
+   "lines": 2357,
+   "used_modules": 14,
+   "used_lines": 2357
+  },
+  "evidence": {
+   "modules": 2,
+   "lines": 2249,
+   "used_modules": 0,
+   "used_lines": 0
+  },
+  "portfolio": {
+   "modules": 2,
+   "lines": 2026,
+   "used_modules": 0,
+   "used_lines": 0
+  },
+  "analytics": {
+   "modules": 2,
+   "lines": 2002,
+   "used_modules": 0,
+   "used_lines": 0
+  }
+ },
+ "suffix_top": {
+  "report": {
+   "modules": 1157,
+   "lines": 1222091,
+   "used_modules": 0,
+   "used_lines": 0
+  },
+  "digest": {
+   "modules": 381,
+   "lines": 394952,
+   "used_modules": 2,
+   "used_lines": 970
+  },
+  "v<N>": {
+   "modules": 380,
+   "lines": 332600,
+   "used_modules": 0,
+   "used_lines": 0
+  },
+  "score": {
+   "modules": 82,
+   "lines": 82305,
+   "used_modules": 1,
+   "used_lines": 610
+  },
+  "row": {
+   "modules": 56,
+   "lines": 33265,
+   "used_modules": 38,
+   "used_lines": 23348
+  },
+  "gate": {
+   "modules": 36,
+   "lines": 22211,
+   "used_modules": 13,
+   "used_lines": 6861
+  },
+  "policy": {
+   "modules": 22,
+   "lines": 16687,
+   "used_modules": 2,
+   "used_lines": 1219
+  },
+  "cli": {
+   "modules": 9,
+   "lines": 16619,
+   "used_modules": 9,
+   "used_lines": 16619
+  },
+  "trend": {
+   "modules": 24,
+   "lines": 16403,
+   "used_modules": 10,
+   "used_lines": 7209
+  },
+  "store": {
+   "modules": 61,
+   "lines": 16349,
+   "used_modules": 43,
+   "used_lines": 11002
+  },
+  "matrix": {
+   "modules": 16,
+   "lines": 16030,
+   "used_modules": 0,
+   "used_lines": 0
+  },
+  "history": {
+   "modules": 27,
+   "lines": 15470,
+   "used_modules": 16,
+   "used_lines": 9523
+  },
+  "queue": {
+   "modules": 18,
+   "lines": 14096,
+   "used_modules": 5,
+   "used_lines": 2608
+  },
+  "summary": {
+   "modules": 18,
+   "lines": 13520,
+   "used_modules": 2,
+   "used_lines": 747
+  },
+  "scorecard": {
+   "modules": 11,
+   "lines": 12855,
+   "used_modules": 0,
+   "used_lines": 0
+  },
+  "psycopg": {
+   "modules": 56,
+   "lines": 11033,
+   "used_modules": 33,
+   "used_lines": 6979
+  },
+  "plan": {
+   "modules": 12,
+   "lines": 10917,
+   "used_modules": 0,
+   "used_lines": 0
+  },
+  "dashboard": {
+   "modules": 7,
+   "lines": 9103,
+   "used_modules": 0,
+   "used_lines": 0
+  },
+  "packet": {
+   "modules": 10,
+   "lines": 8874,
+   "used_modules": 2,
+   "used_lines": 966
+  },
+  "health": {
+   "modules": 10,
+   "lines": 7827,
+   "used_modules": 3,
+   "used_lines": 2284
+  },
+  "config": {
+   "modules": 57,
+   "lines": 7788,
+   "used_modules": 39,
+   "used_lines": 5299
+  },
+  "monitor": {
+   "modules": 9,
+   "lines": 7120,
+   "used_modules": 0,
+   "used_lines": 0
+  },
+  "router": {
+   "modules": 8,
+   "lines": 6071,
+   "used_modules": 1,
+   "used_lines": 351
+  },
+  "priority": {
+   "modules": 5,
+   "lines": 4316,
+   "used_modules": 1,
+   "used_lines": 572
+  },
+  "adapter": {
+   "modules": 8,
+   "lines": 4094,
+   "used_modules": 5,
+   "used_lines": 3068
+  },
+  "snapshot": {
+   "modules": 6,
+   "lines": 4019,
+   "used_modules": 2,
+   "used_lines": 519
+  },
+  "backlog": {
+   "modules": 4,
+   "lines": 3900,
+   "used_modules": 0,
+   "used_lines": 0
+  },
+  "audit": {
+   "modules": 6,
+   "lines": 3711,
+   "used_modules": 3,
+   "used_lines": 1137
+  },
+  "team": {
+   "modules": 10,
+   "lines": 3417,
+   "used_modules": 0,
+   "used_lines": 0
+  },
+  "classifier": {
+   "modules": 3,
+   "lines": 3135,
+   "used_modules": 0,
+   "used_lines": 0
+  }
+ },
+ "functions_all": {
+  "functions": 119729,
+  "median_lines": 8,
+  "p95_lines": 53,
+  "over_100_lines": 339,
+  "over_300_lines": 2,
+  "median_cc": 3,
+  "p95_cc": 12,
+  "cc_over_20": 1148,
+  "cc_over_50": 10
+ },
+ "functions_used": {
+  "functions": 7204,
+  "median_lines": 9,
+  "p95_lines": 54,
+  "over_100_lines": 50,
+  "over_300_lines": 2,
+  "median_cc": 3,
+  "p95_cc": 12,
+  "cc_over_20": 94,
+  "cc_over_50": 3
+ },
+ "functions_not_used": {
+  "functions": 112525,
+  "median_lines": 8,
+  "p95_lines": 53,
+  "over_100_lines": 289,
+  "over_300_lines": 0,
+  "median_cc": 3,
+  "p95_cc": 12,
+  "cc_over_20": 1054,
+  "cc_over_50": 7
+ },
+ "worst_cc": [
+  "polymarket_alpha_lab.cli.main cc=584 lines=5425 used=True",
+  "polymarket_alpha_lab.paper_autonomous_investment_ledger_db_history_health_trend.build_paper_autonomous_investment_ledger_db_history_health_trend_report cc=63 lines=186 used=True",
+  "polymarket_alpha_lab.proposal_review_coverage._validate_packet_rows_match_report cc=60 lines=83 used=False",
+  "polymarket_alpha_lab.research_source_real_time_event_update_pressure_report.validate_research_source_real_time_event_update_pressure_public_payload cc=59 lines=177 used=False",
+  "polymarket_alpha_lab.team_evidence_aggregation_witness._validate_witness_inputs cc=59 lines=152 used=False",
+  "polymarket_alpha_lab.team_evidence_aggregation._materialize_team_evidence_aggregation_result cc=58 lines=268 used=False",
+  "polymarket_alpha_lab.team_research_cross_source.__post_init__ cc=58 lines=77 used=True",
+  "polymarket_alpha_lab.edge_cost_summary_trend._validate_report_consistency cc=57 lines=242 used=False",
+  "polymarket_alpha_lab.paper_project_screening_rank_stability_db_history_health_trend.build_paper_project_screening_rank_stability_db_history_health_trend_report cc=55 lines=167 used=False",
+  "polymarket_alpha_lab.market_research_policy_regulator_enforcement_window_digest._validate_report cc=54 lines=105 used=False",
+  "polymarket_alpha_lab.paper_nav_liquidity_risk._validate_report_consistency cc=50 lines=112 used=False",
+  "polymarket_alpha_lab.papersim.espn_nba._validate_snapshot cc=50 lines=108 used=True",
+  "polymarket_alpha_lab.paper_probability_selection_summary_history_trend._validate_trend_report cc=49 lines=114 used=True",
+  "polymarket_alpha_lab.research_decision_packet_completeness_report._validate_report cc=49 lines=107 used=False",
+  "polymarket_alpha_lab.research_event_catalyst_timing_memory_report._validate_report cc=49 lines=72 used=False",
+  "polymarket_alpha_lab.runner._validate_loop_params cc=49 lines=101 used=True",
+  "polymarket_alpha_lab.market_research_soccer_var_check_delay_digest._validate_report cc=48 lines=117 used=False",
+  "polymarket_alpha_lab.research_codex_exec._decode cc=48 lines=102 used=False",
+  "polymarket_alpha_lab.team_evidence_aggregation_types._validated_input_indexes cc=48 lines=102 used=False",
+  "polymarket_alpha_lab.market_research_policy_agency_enforcement_deadline_digest._validate_report cc=47 lines=99 used=False"
+ ],
+ "longest": [
+  "polymarket_alpha_lab.cli.main lines=5425 cc=584 used=True",
+  "polymarket_alpha_lab.strategy_cycle.run_strategy_cycle lines=316 cc=45 used=True",
+  "polymarket_alpha_lab.cli._run_team_research_assignment lines=288 cc=19 used=True",
+  "polymarket_alpha_lab.team_evidence_aggregation._materialize_team_evidence_aggregation_result lines=268 cc=58 used=False",
+  "polymarket_alpha_lab.edge_cost_summary_trend._validate_report_consistency lines=242 cc=57 used=False",
+  "polymarket_alpha_lab.research_domain_signal_taxonomy._base_rows lines=223 cc=1 used=False",
+  "polymarket_alpha_lab.runner.run_strategy_loop lines=204 cc=17 used=True",
+  "polymarket_alpha_lab.proposal_review_diagnostics.__post_init__ lines=199 cc=46 used=False",
+  "polymarket_alpha_lab.proposal_review_coverage.__post_init__ lines=191 cc=46 used=False",
+  "polymarket_alpha_lab.research_strategy_event_cluster_signal_memory_score_report._payload_from_mapping lines=187 cc=10 used=False",
+  "polymarket_alpha_lab.paper_autonomous_investment_ledger_db_history_health_trend.build_paper_autonomous_investment_ledger_db_history_health_trend_report lines=186 cc=63 used=True",
+  "polymarket_alpha_lab.research_strategy_event_resolution_evidence_gap_report.build_research_strategy_event_resolution_evidence_gap_report lines=185 cc=21 used=False",
+  "polymarket_alpha_lab.proposal_review_quality.__post_init__ lines=184 cc=44 used=False",
+  "polymarket_alpha_lab.papersim.espn_nba.build_snapshot lines=179 cc=43 used=True",
+  "polymarket_alpha_lab.strategy_recommendation_uncertainty_band_v2.build_strategy_recommendation_uncertainty_band_v2_report lines=178 cc=7 used=False",
+  "polymarket_alpha_lab.research_source_real_time_event_update_pressure_report.validate_research_source_real_time_event_update_pressure_public_payload lines=177 cc=59 used=False",
+  "polymarket_alpha_lab.candidate_decision_falsifiability_score.score_candidate_decision_falsifiability lines=174 cc=1 used=False",
+  "polymarket_alpha_lab.cli._run_paper_autonomous_readiness_digest lines=173 cc=15 used=True",
+  "polymarket_alpha_lab.journal.from_packet_and_fill lines=173 cc=23 used=True",
+  "polymarket_alpha_lab.strategy_recommendation_portfolio_impact_v2.build_strategy_recommendation_portfolio_impact_v2_report lines=173 cc=16 used=False"
+ ],
+ "exact_dups": {
+  "candidate_functions": 80688,
+  "dup_groups": 3905,
+  "functions_in_dup_groups": 19220,
+  "lines_in_dup_groups": 188934,
+  "redundant_lines_if_deduped": 145446,
+  "cross_module_groups": 3864,
+  "functions_in_cross_module_groups": 19126,
+  "groups_touching_used": 286,
+  "used_functions_in_dup_groups": 992,
+  "used_lines_in_dup_groups": 9932,
+  "largest": [
+   {
+    "size": 989,
+    "lines_each": 6,
+    "modules": 989,
+    "names": [
+     [
+      "_as_utc",
+      984
+     ],
+     [
+      "_as_utc_datetime",
+      2
+     ],
+     [
+      "_utc",
+      2
+     ]
+    ],
+    "example": "polymarket_alpha_lab.candidate_decision_base_rate_anchor_score._as_utc"
+   },
+   {
+    "size": 324,
+    "lines_each": 6,
+    "modules": 324,
+    "names": [
+     [
+      "_require_decimal",
+      186
+     ],
+     [
+      "_normalize_decimal",
+      104
+     ],
+     [
+      "_require_finite_decimal",
+      21
+     ]
+    ],
+    "example": "polymarket_alpha_lab.candidate_decision_cost_liquidity_adapter._normalize_decimal"
+   },
+   {
+    "size": 192,
+    "lines_each": 6,
+    "modules": 192,
+    "names": [
+     [
+      "_require_decimal",
+      179
+     ],
+     [
+      "_normalize_decimal",
+      4
+     ],
+     [
+      "_require_finite_decimal",
+      3
+     ]
+    ],
+    "example": "polymarket_alpha_lab.action_gated_strategy_recommendation_queue_history._require_decimal"
+   },
+   {
+    "size": 184,
+    "lines_each": 7,
+    "modules": 184,
+    "names": [
+     [
+      "_require_hard_flags",
+      178
+     ],
+     [
+      "_require_flags",
+      3
+     ],
+     [
+      "_validate_hard_flags",
+      1
+     ]
+    ],
+    "example": "polymarket_alpha_lab.action_gated_strategy_recommendation_queue_db_row._require_hard_flags"
+   },
+   {
+    "size": 170,
+    "lines_each": 6,
+    "modules": 170,
+    "names": [
+     [
+      "_report_status",
+      161
+     ],
+     [
+      "_summary_status",
+      4
+     ],
+     [
+      "_summary_status_from_rows",
+      1
+     ]
+    ],
+    "example": "polymarket_alpha_lab.candidate_decision_event_dependency_score._report_status"
+   },
+   {
+    "size": 170,
+    "lines_each": 8,
+    "modules": 170,
+    "names": [
+     [
+      "_report_status",
+      149
+     ],
+     [
+      "_summary_status",
+      15
+     ],
+     [
+      "_rollup_status",
+      6
+     ]
+    ],
+    "example": "polymarket_alpha_lab.post_settlement_calibration_experience_feedback_report._report_status"
+   },
+   {
+    "size": 159,
+    "lines_each": 6,
+    "modules": 159,
+    "names": [
+     [
+      "_as_utc",
+      159
+     ]
+    ],
+    "example": "polymarket_alpha_lab.candidate_decision_historical_resolution_pattern_score._as_utc"
+   },
+   {
+    "size": 147,
+    "lines_each": 8,
+    "modules": 147,
+    "names": [
+     [
+      "__init_subclass__",
+      147
+     ]
+    ],
+    "example": "polymarket_alpha_lab.candidate_portfolio_exposure_throttle.__init_subclass__"
+   },
+   {
+    "size": 137,
+    "lines_each": 6,
+    "modules": 137,
+    "names": [
+     [
+      "_as_utc",
+      137
+     ]
+    ],
+    "example": "polymarket_alpha_lab.candidate_decision_outcome_source_reliability_score._as_utc"
+   },
+   {
+    "size": 126,
+    "lines_each": 6,
+    "modules": 126,
+    "names": [
+     [
+      "_report_values_without_digest",
+      126
+     ]
+    ],
+    "example": "polymarket_alpha_lab.candidate_decision_consensus_reversal_score._report_values_without_digest"
+   },
+   {
+    "size": 125,
+    "lines_each": 6,
+    "modules": 125,
+    "names": [
+     [
+      "_as_utc",
+      123
+     ],
+     [
+      "_as_utc_datetime",
+      2
+     ]
+    ],
+    "example": "polymarket_alpha_lab.action_gated_strategy_recommendation_queue_db_row._as_utc"
+   },
+   {
+    "size": 112,
+    "lines_each": 7,
+    "modules": 112,
+    "names": [
+     [
+      "_require_hard_flags",
+      98
+     ],
+     [
+      "_require_flags",
+      14
+     ]
+    ],
+    "example": "polymarket_alpha_lab.calibration_gate._require_hard_flags"
+   },
+   {
+    "size": 102,
+    "lines_each": 7,
+    "modules": 101,
+    "names": [
+     [
+      "_max_row_decimal",
+      68
+     ],
+     [
+      "_maximum_row_value",
+      28
+     ],
+     [
+      "_maximum",
+      1
+     ]
+    ],
+    "example": "polymarket_alpha_lab.domain_specialist_signal_blend_report._maximum_row_value"
+   },
+   {
+    "size": 97,
+    "lines_each": 9,
+    "modules": 97,
+    "names": [
+     [
+      "_require_decimal",
+      96
+     ],
+     [
+      "_normalize_decimal",
+      1
+     ]
+    ],
+    "example": "polymarket_alpha_lab.market_evidence_recency_weight_digest._require_decimal"
+   },
+   {
+    "size": 93,
+    "lines_each": 6,
+    "modules": 93,
+    "names": [
+     [
+      "_require_decimal",
+      47
+     ],
+     [
+      "_normalize_decimal",
+      46
+     ]
+    ],
+    "example": "polymarket_alpha_lab.candidate_decision_base_rate_anchor_score._require_decimal"
+   }
+  ]
+ },
+ "struct_dups": {
+  "candidate_functions": 80688,
+  "dup_groups": 7013,
+  "functions_in_dup_groups": 44245,
+  "lines_in_dup_groups": 542993,
+  "redundant_lines_if_deduped": 423895,
+  "cross_module_groups": 6696,
+  "functions_in_cross_module_groups": 43546,
+  "groups_touching_used": 660,
+  "used_functions_in_dup_groups": 2206,
+  "used_lines_in_dup_groups": 29759,
+  "largest": [
+   {
+    "size": 2599,
+    "lines_each": 7,
+    "modules": 616,
+    "names": [
+     [
+      "__init_subclass__",
+      2599
+     ]
+    ],
+    "example": "polymarket_alpha_lab.candidate_decision_consensus_reversal_score.__init_subclass__"
+   },
+   {
+    "size": 1388,
+    "lines_each": 6,
+    "modules": 1387,
+    "names": [
+     [
+      "_as_utc",
+      1378
+     ],
+     [
+      "_utc",
+      5
+     ],
+     [
+      "_as_utc_datetime",
+      2
+     ]
+    ],
+    "example": "polymarket_alpha_lab.candidate_decision_base_rate_anchor_score._as_utc"
+   },
+   {
+    "size": 594,
+    "lines_each": 6,
+    "modules": 594,
+    "names": [
+     [
+      "_require_decimal",
+      323
+     ],
+     [
+      "_normalize_decimal",
+      207
+     ],
+     [
+      "_require_finite_decimal",
+      36
+     ]
+    ],
+    "example": "polymarket_alpha_lab.candidate_decision_base_rate_anchor_score._require_decimal"
+   },
+   {
+    "size": 471,
+    "lines_each": 7,
+    "modules": 471,
+    "names": [
+     [
+      "_require_hard_flags",
+      403
+     ],
+     [
+      "_require_flags",
+      33
+     ],
+     [
+      "_validate_hard_flags",
+      26
+     ]
+    ],
+    "example": "polymarket_alpha_lab.action_gated_strategy_recommendation_queue_db_row._require_hard_flags"
+   },
+   {
+    "size": 462,
+    "lines_each": 8,
+    "modules": 462,
+    "names": [
+     [
+      "_report_status",
+      349
+     ],
+     [
+      "_digest_status",
+      46
+     ],
+     [
+      "_summary_status",
+      29
+     ]
+    ],
+    "example": "polymarket_alpha_lab.analytics._portfolio_mark_status"
+   },
+   {
+    "size": 335,
+    "lines_each": 6,
+    "modules": 333,
+    "names": [
+     [
+      "_require_decimal",
+      283
+     ],
+     [
+      "_normalize_decimal",
+      23
+     ],
+     [
+      "_require_raw_decimal",
+      5
+     ]
+    ],
+    "example": "polymarket_alpha_lab.action_gated_strategy_recommendation_queue_history._require_decimal"
+   },
+   {
+    "size": 310,
+    "lines_each": 6,
+    "modules": 107,
+    "names": [
+     [
+      "__init_subclass__",
+      310
+     ]
+    ],
+    "example": "polymarket_alpha_lab.autonomous_market_scorer_history.__init_subclass__"
+   },
+   {
+    "size": 295,
+    "lines_each": 6,
+    "modules": 295,
+    "names": [
+     [
+      "_report_status",
+      248
+     ],
+     [
+      "_digest_status",
+      12
+     ],
+     [
+      "_summary_status",
+      6
+     ]
+    ],
+    "example": "polymarket_alpha_lab.candidate_decision_event_dependency_score._report_status"
+   },
+   {
+    "size": 252,
+    "lines_each": 7,
+    "modules": 223,
+    "names": [
+     [
+      "_require_optional_nonnegative_decimal",
+      62
+     ],
+     [
+      "_require_optional_probability_decimal",
+      56
+     ],
+     [
+      "_normalize_optional_nonnegative_decimal",
+      47
+     ]
+    ],
+    "example": "polymarket_alpha_lab.action_gated_strategy_recommendation_queue_risk._quantize_optional_utilization"
+   },
+   {
+    "size": 243,
+    "lines_each": 8,
+    "modules": 243,
+    "names": [
+     [
+      "_report_status",
+      194
+     ],
+     [
+      "_digest_status",
+      33
+     ],
+     [
+      "_status_rollup",
+      7
+     ]
+    ],
+    "example": "polymarket_alpha_lab.candidate_decision_base_rate_anchor_score._report_status"
+   },
+   {
+    "size": 223,
+    "lines_each": 8,
+    "modules": 223,
+    "names": [
+     [
+      "__init_subclass__",
+      223
+     ]
+    ],
+    "example": "polymarket_alpha_lab.candidate_portfolio_exposure_throttle.__init_subclass__"
+   },
+   {
+    "size": 195,
+    "lines_each": 6,
+    "modules": 195,
+    "names": [
+     [
+      "_as_utc",
+      195
+     ]
+    ],
+    "example": "polymarket_alpha_lab.candidate_decision_historical_resolution_pattern_score._as_utc"
+   },
+   {
+    "size": 183,
+    "lines_each": 9,
+    "modules": 162,
+    "names": [
+     [
+      "_row_status",
+      48
+     ],
+     [
+      "_status_for_score",
+      9
+     ],
+     [
+      "_status_from_score",
+      5
+     ]
+    ],
+    "example": "polymarket_alpha_lab.candidate_decision_contradiction_cluster_score._risk_threshold_reason_code"
+   },
+   {
+    "size": 175,
+    "lines_each": 20,
+    "modules": 164,
+    "names": [
+     [
+      "_normalize_inputs",
+      83
+     ],
+     [
+      "_normalize_candidates",
+      22
+     ],
+     [
+      "_normalize_signals",
+      12
+     ]
+    ],
+    "example": "polymarket_alpha_lab.candidate_decision_conflict_resolution_score._normalize_facts"
+   },
+   {
+    "size": 168,
+    "lines_each": 7,
+    "modules": 117,
+    "names": [
+     [
+      "_max_row_decimal",
+      74
+     ],
+     [
+      "_maximum_row_value",
+      29
+     ],
+     [
+      "_minimum_row_value",
+      24
+     ]
+    ],
+    "example": "polymarket_alpha_lab.candidate_decision_liquidity_regime_shift_score._max_decimal"
+   }
+  ]
+ },
+ "hygiene_all": {
+  "todo": 0,
+  "broad_except": 971,
+  "raise_from_none": 270,
+  "broad_except_pass": 217,
+  "broad_except_no_reraise": 406,
+  "print": 274
+ },
+ "hygiene_used": {
+  "todo": 0,
+  "broad_except": 597,
+  "raise_from_none": 207,
+  "broad_except_pass": 148,
+  "broad_except_no_reraise": 306,
+  "print": 274
+ },
+ "hygiene_not_used": {
+  "todo": 0,
+  "broad_except": 374,
+  "raise_from_none": 63,
+  "broad_except_pass": 69,
+  "broad_except_no_reraise": 100
+ },
+ "classes": {
+  "all": 11948,
+  "dataclasses": 11287,
+  "used": 720
+ },
+ "tests": {
+  "files": 3276,
+  "lines": 1437073,
+  "touching_used": {
+   "files": 800,
+   "lines": 355791
+  },
+  "only_unused": {
+   "files": 2337,
+   "lines": 1055362
+  },
+  "no_pkg_import": {
+   "files": 139,
+   "lines": 25920
+  }
+ },
+ "by_creation_month": {
+  "2026-06": {
+   "modules": 440,
+   "lines": 189547,
+   "reachable_modules": 280,
+   "reachable_lines": 119879
+  },
+  "2026-07": {
+   "modules": 2304,
+   "lines": 2252162,
+   "reachable_modules": 50,
+   "reachable_lines": 18668
+  },
+  "2026-09": {
+   "modules": 98,
+   "lines": 21948,
+   "reachable_modules": 75,
+   "reachable_lines": 11829
+  },
+  "2026-10": {
+   "modules": 1,
+   "lines": 2017,
+   "reachable_modules": 0,
+   "reachable_lines": 0
+  },
+  "2026-11": {
+   "modules": 14,
+   "lines": 8283,
+   "reachable_modules": 14,
+   "reachable_lines": 8283
+  }
+ },
+ "unreachable_created_2026_07_03_to_07_16": {
+  "modules": 2223,
+  "lines": 2221012
+ },
+ "method": {
+  "baseline_commit": "e8c8a95cd9fea90db02518879e7d30931b5f6926",
+  "tool": "evidence/audit_static.py (AST only; no repository code is imported or executed)",
+  "entry_points": "console script polymarket_alpha_lab.cli, polymarket_alpha_lab.__main__, every src module with an if __name__ == \"__main__\" guard, every package module imported by scripts/*.py and tools/**/*.py",
+  "edges": "import / from-import (absolute and relative) plus string literals equal to a package module name",
+  "root_init": "edges out of polymarket_alpha_lab/__init__.py are excluded for the reachable set (used_excl_init); loaded_incl_init includes them",
+  "creation_dates": "git log --diff-filter=A (first commit that added each file), full history of main (2584 commits)"
+ }
+}

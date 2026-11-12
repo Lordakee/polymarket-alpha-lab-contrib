@@ -1,0 +1,88 @@
+GitHub Actions run 42966642867 (workflow: Offline verification, event: push, head e8c8a95c, job 130345277821 'offline', conclusion success)
+Fetched 2026-11-12 via: gh api repos/wmqfl861/polymarket-alpha-lab/actions/jobs/130345277821/logs
+
+41262 passed, 121 skipped, 21 warnings in 591.25s (0:09:51)
+
+SKIPPED [4] tests/test_claude_probe_environment.py:155: PowerShell 5.1 synthetic host query proof
+SKIPPED [1] tests/test_claude_probe_linux_execution.py:1269: explicit native probe-runner qualification is opt-in
+SKIPPED [1] tests/test_claude_probe_linux_execution.py:1280: explicit native probe-runner qualification is opt-in
+SKIPPED [1] tests/test_claude_probe_linux_execution.py:1309: explicit native probe-runner qualification is opt-in
+SKIPPED [1] tests/test_claude_probe_linux_execution.py:1325: explicit native probe-runner qualification is opt-in
+SKIPPED [1] tests/test_claude_probe_linux_execution.py:1348: explicit native probe-runner qualification is opt-in
+SKIPPED [1] tests/test_claude_probe_linux_execution.py:1397: explicit native probe-runner qualification is opt-in
+SKIPPED [1] tests/test_claude_probe_linux_execution.py:1413: explicit native probe-runner qualification is opt-in
+SKIPPED [1] tests/test_claude_probe_linux_execution.py:1426: explicit native probe-runner qualification is opt-in
+SKIPPED [1] tests/test_claude_probe_linux_execution.py:1455: explicit native probe-runner qualification is opt-in
+SKIPPED [1] tests/test_claude_probe_linux_execution.py:1481: explicit native probe-runner qualification is opt-in
+SKIPPED [1] tests/test_claude_probe_linux_execution.py:1528: explicit native probe-runner qualification is opt-in
+SKIPPED [16] tests/test_handoff_download.py:36: real Windows PowerShell 5.1 / PowerShell 7 integration
+SKIPPED [2] tests/test_handoff_download.py:122: real Windows PowerShell 5.1 / PowerShell 7 integration
+SKIPPED [1] tests/test_handoff_process_probe_windows.py:12: real PS5 timeout evidence requires Windows
+SKIPPED [1] tests/test_paper_recommendation_cycle_snapshot_supabase_smoke.py:82: set POLYMARKET_ALPHA_LAB_RUN_SUPABASE_SMOKE=1 to run local Supabase smoke
+SKIPPED [1] tests/test_papersim_ledger.py:431: papersim-ledger-integration: set PAPERSIM_PG_DSN (validated loopback paper_sim DSN) to enable; default runs never open any database connection
+SKIPPED [1] tests/test_papersim_perf_view_fix.py:70: WP_P4_READONLY_PG=1 enables SELECT-only PostgreSQL fixture checks
+SKIPPED [1] tests/test_papersim_perf_view_fix.py:86: WP_P4_READONLY_PG=1 enables SELECT-only PostgreSQL fixture checks
+SKIPPED [1] tests/test_papersim_perf_view_fix.py:99: WP_P4_READONLY_PG=1 enables SELECT-only PostgreSQL fixture checks
+SKIPPED [4] tests/test_papersim_perf_view_fix.py:107: WP_P4_READONLY_PG=1 enables SELECT-only PostgreSQL fixture checks
+SKIPPED [1] tests/test_papersim_perf_view_fix.py:116: WP_P4_READONLY_PG=1 enables SELECT-only PostgreSQL fixture checks
+SKIPPED [1] tests/test_project_postgres_backup_native.py:29: explicit private native backup proof is opt-in
+SKIPPED [1] tests/test_project_postgres_backup_native.py:130: explicit private native backup proof is opt-in
+SKIPPED [1] tests/test_project_postgres_budget_native.py:61: explicit native budget reservation proof is opt-in
+SKIPPED [1] tests/test_project_postgres_confirmation_native.py:45: explicit native original-forecast confirmation proof is opt-in
+SKIPPED [1] tests/test_project_postgres_crypto_launch_native.py:33: explicit native crypto launch proof is opt-in
+SKIPPED [1] tests/test_project_postgres_dispatch_cli_native.py:131: explicit native operator CLI proof is opt-in
+SKIPPED [1] tests/test_project_postgres_dispatch_native.py:62: explicit native durable dispatch proof is opt-in
+SKIPPED [1] tests/test_project_postgres_distribution_native.py:200: explicit native Linux distribution acceptance is opt-in
+SKIPPED [1] tests/test_project_postgres_inventory_native.py:30: explicit native execution inventory proof is opt-in
+SKIPPED [1] tests/test_project_postgres_native.py:68: explicit native PostgreSQL runtime proof is opt-in
+SKIPPED [1] tests/test_project_postgres_paper_capture_native.py:39: explicit native prospective paper capture proof is opt-in
+SKIPPED [1] tests/test_project_postgres_paper_native.py:37: explicit native research-to-paper proof is opt-in
+SKIPPED [1] tests/test_project_postgres_paper_operator_native.py:27: explicit native paper operator proof is opt-in
+SKIPPED [1] tests/test_project_postgres_paper_settlement_native.py:44: explicit native settled-paper proof is opt-in
+SKIPPED [2] tests/test_project_postgres_publication_native.py:39: explicit Windows native publication proof is opt-in
+SKIPPED [1] tests/test_project_postgres_resolution_native.py:31: explicit native PostgreSQL resolution proof is opt-in
+SKIPPED [1] tests/test_project_postgres_resolution_queue_native.py:30: explicit native resolution worklist proof is opt-in
+SKIPPED [1] tests/test_project_postgres_rotation_native.py:47: explicit native durable rotation proof is opt-in
+SKIPPED [1] tests/test_project_postgres_uncapped_audit_native.py:55: explicit native uncapped audit proof is opt-in
+SKIPPED [1] tests/test_project_postgres_uncapped_audit_native.py:346: explicit native uncapped audit proof is opt-in
+SKIPPED [1] tests/test_project_postgres_uncapped_audit_native.py:992: explicit native contained operator proof is opt-in
+SKIPPED [1] tests/test_project_postgres_uncapped_audit_native.py:1205: explicit native contained operator proof is opt-in
+SKIPPED [1] tests/test_project_postgres_uncapped_audit_native.py:1395: explicit native contained operator proof is opt-in
+SKIPPED [1] tests/test_project_postgres_uncapped_native.py:77: explicit native uncapped execution proof is opt-in
+SKIPPED [1] tests/test_project_postgres_version_switch_native.py:1244: explicit disposable native version-switch proof is opt-in
+SKIPPED [1] tests/test_research_capture_disposable.py:34: set POLYMARKET_ALPHA_LAB_RUN_RESEARCH_CAPTURE_DISPOSABLE_DB=1 for the dedicated local Postgres proof
+SKIPPED [1] tests/test_research_claude_contained_reply.py:123: retained L7 terminal fixture not present: /home/runner/work/polymarket-alpha-lab/.agent-artifacts/polymarket-alpha-lab/l7-final-ruling/retained-success-predecode.json
+SKIPPED [1] tests/test_research_claude_contained_reply.py:139: retained L7 terminal fixture not present: /home/runner/work/polymarket-alpha-lab/.agent-artifacts/polymarket-alpha-lab/l7-final-ruling/retained-success-predecode.json
+SKIPPED [1] tests/test_research_claude_contained_reply.py:199: retained L7 terminal fixture not present: /home/runner/work/polymarket-alpha-lab/.agent-artifacts/polymarket-alpha-lab/l7-final-ruling/retained-success-predecode.json
+SKIPPED [1] tests/test_research_claude_contained_reply.py:362: retained L7 terminal fixture not present: /home/runner/work/polymarket-alpha-lab/.agent-artifacts/polymarket-alpha-lab/l7-final-ruling/retained-success-predecode.json
+SKIPPED [1] tests/test_research_claude_contained_reply.py:391: retained L7 terminal fixture not present: /home/runner/work/polymarket-alpha-lab/.agent-artifacts/polymarket-alpha-lab/l7-final-ruling/retained-success-predecode.json
+SKIPPED [6] tests/test_research_claude_contained_reply.py:438: retained L7 terminal fixture not present: /home/runner/work/polymarket-alpha-lab/.agent-artifacts/polymarket-alpha-lab/l7-final-ruling/retained-success-predecode.json
+SKIPPED [1] tests/test_research_claude_contained_reply.py:548: explicit native containment proof is opt-in
+SKIPPED [1] tests/test_research_claude_contained_reply.py:578: explicit native containment proof is opt-in
+SKIPPED [1] tests/test_research_claude_contained_reply.py:607: explicit native containment proof is opt-in
+SKIPPED [6] tests/test_research_claude_profile_native.py:25: explicit reviewed Claude image and disposable isolated-host opt-in required
+SKIPPED [1] tests/test_research_claude_relay_native.py:750: explicit relay qualification is opt-in
+SKIPPED [5] tests/test_research_codex_profile_native.py:44: explicit pinned Linux Codex package and synthetic loopback opt-in required
+SKIPPED [1] tests/test_research_execution_disposable.py:27: set POLYMARKET_ALPHA_LAB_RUN_RESEARCH_EXECUTION_DISPOSABLE_DB=1 for isolated execution proof
+SKIPPED [1] tests/test_research_linux_relay_helper_gates.py:1158: explicit relay-crossing fd-survival proof is opt-in
+SKIPPED [1] tests/test_research_linux_relay_helper_gates.py:1199: explicit relay-crossing fd-survival proof is opt-in
+SKIPPED [1] tests/test_research_linux_relay_helper_gates.py:1444: explicit relay-crossing fd-survival proof is opt-in
+SKIPPED [1] tests/test_research_process.py:223: actual Windows Job Object structures
+SKIPPED [1] tests/test_research_process_linux.py:786: non-linux platform refusal
+SKIPPED [1] tests/test_research_process_linux.py:1144: explicit native containment proof is opt-in
+SKIPPED [1] tests/test_research_process_linux.py:1168: explicit native containment proof is opt-in
+SKIPPED [1] tests/test_research_process_linux.py:1201: explicit native containment proof is opt-in
+SKIPPED [1] tests/test_research_process_linux.py:1212: explicit native containment proof is opt-in
+SKIPPED [1] tests/test_research_process_linux.py:2600: explicit native containment proof is opt-in
+SKIPPED [1] tests/test_research_process_linux.py:2661: explicit native containment proof is opt-in
+SKIPPED [2] tests/test_research_process_review.py:102: actual Windows suspended-job failure path
+SKIPPED [1] tests/test_research_process_review.py:155: actual Windows parent-loss Job Object proof
+SKIPPED [1] tests/test_research_process_review.py:471: explicit native containment proof is opt-in
+SKIPPED [1] tests/test_research_process_review.py:483: explicit native containment proof is opt-in
+SKIPPED [1] tests/test_research_process_review.py:498: explicit native containment proof is opt-in
+SKIPPED [1] tests/test_research_process_review.py:518: explicit native containment proof is opt-in
+SKIPPED [1] tests/test_research_process_review.py:530: explicit native containment proof is opt-in
+SKIPPED [1] tests/test_research_process_review.py:541: explicit native containment proof is opt-in
+SKIPPED [1] tests/test_research_process_review.py:570: explicit native containment proof is opt-in
+SKIPPED [1] tests/test_research_process_review.py:612: explicit native containment proof is opt-in
+SKIPPED [1] tests/test_team_evidence_aggregation_attempt_disposable.py:62: set POLYMARKET_ALPHA_LAB_RUN_TEAM_EVIDENCE_AGGREGATION_DISPOSABLE_DB=1 to run the authorized disposable proof
