@@ -78,6 +78,16 @@ WP-P1 ledger DSN, settlement arithmetic and DDL (W4):
   predicate so it matches ``forecast_hits`` (codex-review F5; the LIVE
   paper_sim cluster view still needs the same one-line fix applied
   operationally - this module never touches the live cluster).
+
+Historical clarification (snapshot dated 2026-11-12): the archived
+forecast_calibration_viewdef.sql under
+docs/paper-sim/ledger-snapshots/2026-11-12/ already contains all three
+hit branches in both forecast_hits and avg_prob_of_realized, including
+NO-basket. The earlier "still needs" wording above and the operational
+note in the 2026-11-01 migration and its verbatim DDL mirror are historical
+statements from that migration's capture date, not a current action item.
+Their reviewed bytes remain unchanged. This clarification uses archived
+evidence only; it neither verifies nor changes the live database.
 """
 
 from __future__ import annotations
@@ -92,7 +102,7 @@ from polymarket_alpha_lab.papersim.fees import (
 from polymarket_alpha_lab.papersim.fees import (
     entry_fee as _entry_fee,
     exit_fee as _exit_fee,
-    scan_fee_category as _scan_fee_category,
+    legacy_scan_fee_category as _legacy_scan_fee_category,
     taker_fee_rate as _taker_fee_rate,
 )
 from polymarket_alpha_lab.supabase_papersim_config import (
@@ -524,7 +534,7 @@ def queue_performance(
     refunded) are excluded and counted; natural ``YES`` / ``NO`` /
     ``YES-basket``, the post-audit ``win`` / ``loss`` labels and
     ``EXITED`` rows are counted. Fees use the scan classification
-    (:func:`polymarket_alpha_lab.papersim.fees.scan_fee_category`) and
+    (:func:`polymarket_alpha_lab.papersim.fees.legacy_scan_fee_category`) and
     the category table — entry fee per row, plus the sell fee on
     ``EXITED`` rows at the exit price reconstructed from the recorded
     PnL (``(pnl + stake) / shares``).
@@ -566,7 +576,7 @@ def queue_performance(
         stake = float(row["stake"])
         price = float(row["price"])
         _require_stake_and_price(stake, price)
-        category = _scan_fee_category(team, market_type)
+        category = _legacy_scan_fee_category(team, market_type)
         rate = _taker_fee_rate(category)
         team_rates.setdefault(team, (category, rate))
         gross, is_exit = _queue_row_pnl(row, outcome, stake, price, pnl_source)

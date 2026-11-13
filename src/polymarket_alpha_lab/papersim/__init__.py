@@ -71,7 +71,7 @@ from polymarket_alpha_lab.papersim.fees import (
     exit_fee,
     fee_per_share,
     resolve_taker_fee_rate,
-    scan_fee_category,
+    legacy_scan_fee_category,
     taker_fee_rate,
 )
 from polymarket_alpha_lab.papersim.crypto_model import (
@@ -323,7 +323,7 @@ __all__ = [
     "fee_per_share",
     "queue_performance",
     "resolve_taker_fee_rate",
-    "scan_fee_category",
+    "legacy_scan_fee_category",
     "taker_fee_rate",
     "terminal_yes_probability",
     "FEE_RATE_SPORTS",

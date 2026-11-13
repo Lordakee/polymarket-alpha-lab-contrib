@@ -21,6 +21,7 @@ from types import MappingProxyType
 
 import pytest
 
+from polymarket_alpha_lab import papersim
 from polymarket_alpha_lab.papersim import fees, gates
 
 
@@ -183,16 +184,16 @@ def test_exit_fee_rejects_bad_inputs(shares, exit_price, rate):
 def test_scan_classification_mirrors_the_scan_team_rule(
     team, market_type, expected_category, expected_rate
 ):
-    category = fees.scan_fee_category(team, market_type)
+    category = fees.legacy_scan_fee_category(team, market_type)
     assert category == expected_category
     assert fees.taker_fee_rate(category) == expected_rate
 
 
 def test_scan_classification_requires_a_team():
     with pytest.raises(ValueError, match="team"):
-        fees.scan_fee_category("", "crypto_touch")
+        fees.legacy_scan_fee_category("", "crypto_touch")
     with pytest.raises(ValueError, match="team"):
-        fees.scan_fee_category(None, "crypto_touch")
+        fees.legacy_scan_fee_category(None, "crypto_touch")
 
 
 def test_gates_frozen_fee_constants_equal_table_rows():
@@ -224,3 +225,9 @@ def test_market_metadata_rate_must_be_finite_non_negative():
     for bad in (-0.01, float("nan"), float("inf")):
         with pytest.raises(ValueError):
             fees.resolve_taker_fee_rate("sports", market_rate=bad)
+
+
+def test_legacy_scan_category_export_preserves_public_surface():
+    assert len(papersim.__all__) == len(set(papersim.__all__)) == 194
+    assert papersim.__all__.count("legacy_scan_fee_category") == 1
+    assert papersim.legacy_scan_fee_category is fees.legacy_scan_fee_category

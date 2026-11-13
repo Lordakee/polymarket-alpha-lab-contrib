@@ -24,8 +24,9 @@ whose metadata disagrees with the table is refused loudly
 (:func:`resolve_taker_fee_rate`) instead of being silently charged a
 stale rate.
 
-Scan-lineage classification (:func:`scan_fee_category`): the
-book-of-record scans charged exactly two rates -- 0.07 for
+Historical scan-lineage classification (:func:`legacy_scan_fee_category`)
+is for historical ledger analysis only and must not be used for new entry
+decisions. The book-of-record scans charged exactly two rates -- 0.07 for
 ``crypto_%`` teams (crypto_btc / crypto_eth) and 0.05 for every other
 team. That team rule is mirrored verbatim here so historical ledger
 rows classify the way the scans actually charged them; in particular
@@ -194,16 +195,18 @@ def exit_fee(shares: float, exit_price: float, rate: float) -> float:
     return shares * fee_per_share(exit_price, rate)
 
 
-def scan_fee_category(team: str, market_type: str | None = None) -> str:
-    """Classify one ledger/scanner row into a fee-schedule category.
+def legacy_scan_fee_category(team: str, market_type: str | None = None) -> str:
+    """Classify one historical ledger row into its scan fee category.
+
+    Historical ledger analysis only; must not be used for new entry decisions.
 
     Mirrors the classification the scans used (book-of-record team
     rule, re-verified by the V-6 evidence run 2026-11-12): a team named
     ``crypto_*`` (crypto_btc / crypto_eth) is the crypto book; every
     other team -- soccer, politics, macro, gold, equity indices, tech --
     was charged the sports 5% rate by the scans, so it classifies as
-    ``sports``. ``market_type`` is accepted for call-site clarity and
-    future refinement but does NOT override the team rule: the
+    ``sports``. ``market_type`` is retained for historical call-site
+    compatibility but does NOT override the team rule: the
     audit-period gold (``commodities_gold``) and equity-index
     (``equity_indices``) rows recorded under ``market_type=
     'crypto_touch'`` are sports-rate under the scan rule (the
