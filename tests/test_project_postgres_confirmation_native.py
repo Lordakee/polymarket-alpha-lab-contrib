@@ -176,7 +176,7 @@ finally:
                 assert session.inspect(record_id=instruction.record_id).record==record
             assert db._psql(identity,'SELECT count(*) FROM research_capture.resolution_reviews;')=='4'
             assert db._psql(identity,'SELECT count(*) FROM research_capture.outcomes;')=='2'
-            assert db._psql(identity,'SELECT count(*) FROM project_private.migrations;')==​'70'
+            assert db._psql(identity,'SELECT count(*) FROM project_private.migrations;')=='70'
         # Recovery lookups use real isolated storage; inject ONLY a short stdout
         # sink in actual command processes after all prospective captures finish.
         probe = r"""
