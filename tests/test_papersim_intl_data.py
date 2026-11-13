@@ -600,11 +600,34 @@ class _Response:
         return False
 
 
-def _install_urlopen(monkeypatch: pytest.MonkeyPatch, responses: list[bytes]):
+class _ControlledClock:
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.sleeps: list[float] = []
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+    def time(self) -> float:
+        return time.time()
+
+
+def _install_urlopen(
+    monkeypatch: pytest.MonkeyPatch,
+    responses: list[bytes],
+    *,
+    request_times: list[float] | None = None,
+):
     calls: list[str] = []
 
     def _fake_urlopen(request, timeout):  # noqa: ANN001, ANN202
         calls.append(request.full_url)
+        if request_times is not None:
+            request_times.append(intl_data.time.monotonic())
         if not responses:
             raise AssertionError("unexpected extra network call")
         body = responses.pop(0)
@@ -679,25 +702,50 @@ def test_fetch_eloratings_current_caches_both(tmp_path: Path, monkeypatch: pytes
         intl_data.fetch_eloratings_current(cache_dir=tmp_path / "bad")
 
 
-def test_fetch_politeness_and_retry(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_fetch_eloratings_current_politeness(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    clock = _ControlledClock()
+    monkeypatch.setattr(intl_data, "time", clock)
     monkeypatch.setattr(intl_data, "_last_fetch_monotonic", None)
-    sleeps: list[float] = []
-    monkeypatch.setattr(intl_data.time, "sleep", sleeps.append)
+    request_times: list[float] = []
+    calls = _install_urlopen(
+        monkeypatch, [WORLD_TSV_BYTES, LATEST_TSV_BYTES],
+        request_times=request_times,
+    )
+    paths = intl_data.fetch_eloratings_current(cache_dir=tmp_path)
+    assert paths["world"] == tmp_path / "world.tsv"
+    assert paths["world"].read_bytes() == WORLD_TSV_BYTES
+    assert paths["latest"] == tmp_path / "latest.tsv"
+    assert paths["latest"].read_bytes() == LATEST_TSV_BYTES
+    assert calls == [intl_data.WORLD_URL, intl_data.LATEST_URL]
+    assert len(request_times) == 2
+    assert request_times[1] - request_times[0] == intl_data.SLEEP_S
+    assert clock.sleeps == [intl_data.SLEEP_S]
+
+
+def test_fetch_politeness_and_retry(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    clock = _ControlledClock()
+    monkeypatch.setattr(intl_data, "time", clock)
+    monkeypatch.setattr(intl_data, "_last_fetch_monotonic", None)
+    request_times: list[float] = []
     responses: list[object] = [
         urllib.error.URLError("boom"),  # attempt 1 fails
         RESULTS_CSV_BYTES,              # attempt 2 succeeds
     ]
-    calls = _install_urlopen(monkeypatch, responses)
+    calls = _install_urlopen(monkeypatch, responses, request_times=request_times)
     path = intl_data.fetch_intl_results(cache_dir=tmp_path)
     assert calls == [intl_data.RESULTS_URL, intl_data.RESULTS_URL]
     assert path.read_bytes() == RESULTS_CSV_BYTES
-    # polite spacing was enforced before BOTH attempts (>= 2.0 s gaps)
-    assert sleeps and all(gap >= intl_data.SLEEP_S for gap in sleeps)
+    # The retry backoff already provides the minimum request spacing.
+    assert len(request_times) == 2
+    assert request_times[1] - request_times[0] >= intl_data.SLEEP_S
+    assert request_times[1] - request_times[0] == 5.0
+    assert clock.sleeps == [5.0]
     # transport gives up after FETCH_ATTEMPTS
-    _no_spacing(monkeypatch)
-    _install_urlopen(
+    monkeypatch.setattr(intl_data, "_last_fetch_monotonic", None)
+    failed_calls = _install_urlopen(
         monkeypatch,
         [urllib.error.URLError("down")] * intl_data.FETCH_ATTEMPTS,
     )
     with pytest.raises(intl_data.IntlDataError, match="giving up"):
         intl_data.fetch_intl_results(cache_dir=tmp_path / "dead")
+    assert failed_calls == [intl_data.RESULTS_URL] * intl_data.FETCH_ATTEMPTS
