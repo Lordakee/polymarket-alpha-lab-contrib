@@ -1,0 +1,27 @@
+# scan_mirror_tree.py on commit b5ab6108d9e72ee37ce43f8247221f4f674d1224 (run 2026-11-13)
+[manifest] entries=415 header/comment lines=7 files in tree=421 (top-level docs=6, scripts=415)
+[manifest] hash mismatch=0 size mismatch=4 listed but absent=0 scripts not listed=0
+   size column differs from the committed file: intl/wp_intl3/polymarket_alpha_lab/papersim/league_strength.py
+   size column differs from the committed file: round29/raw/write_scan.py
+   size column differs from the committed file: round39/eredivisie_validate.py
+   size column differs from the committed file: tools/fotmob_validate.py
+[manifest] sum of listed sizes=3663662 largest committed script=99503 bytes
+[redactions] rows=9 rows whose 'redacted sha256' equals the committed file=9
+[scan] files scanned=430 hit counts={'ipv4_public': 4, 'ipv4_documentation-range': 3}
+    IPv4-like (public, regex-escaped, value masked): docs/handoffs/2026-11-12-m0-execution-review.md:125
+    IPv4-like (documentation-range, plain, value masked): docs/paper-sim/server-mirror/tools/tests/test_understat_refresh.py:71
+    IPv4-like (documentation-range, plain, value masked): docs/paper-sim/server-mirror/tools/tests/test_understat_refresh.py:78
+    IPv4-like (documentation-range, plain, value masked): docs/paper-sim/server-mirror/tools/tests/test_understat_refresh.py:133
+    IPv4-like (public, plain, value masked): docs/paper-sim/server-mirror/tools/tests/test_understat_refresh.py:204
+    IPv4-like (public, plain, value masked): docs/paper-sim/server-mirror/tools/tests/test_understat_refresh.py:210
+    IPv4-like (public, plain, value masked): docs/paper-sim/server-mirror/tools/tests/test_understat_refresh.py:213
+[placeholder] files containing SERVER_HOST_REDACTED=9 occurrences=10
+    1 docs/paper-sim/ledger-snapshots/2026-11-12/VIEW-DIFF.md
+    1 docs/paper-sim/server-mirror/FX-04-wiring-proof.md
+    1 docs/paper-sim/server-mirror/MANIFEST-NOT-MIRRORED.md
+    1 docs/paper-sim/server-mirror/MANIFEST.sha256
+    2 docs/paper-sim/server-mirror/VERSION-CHECKIN.md
+    1 docs/paper-sim/server-mirror/intl/wp_intl3/polymarket_alpha_lab/papersim/league_strength.py
+    1 docs/paper-sim/server-mirror/round29/raw/write_scan.py
+    1 docs/paper-sim/server-mirror/round39/eredivisie_validate.py
+    1 docs/paper-sim/server-mirror/tools/fotmob_validate.py

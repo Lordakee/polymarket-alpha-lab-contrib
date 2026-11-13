@@ -1,0 +1,56 @@
+=== A. current ledger (2026-11-12 snapshot), per-entry first principles ===
+decisions=71 resolved_markets=65 voided_entries=4 unresolved_entries=5
+[team-rule fees] entries=62 stake=16204.36 gross=3768.62 entry_fees=413.89 exit_fees=27.09 net=3327.64
+    gross_roi=23.26%  net_roi(entry fees only)=20.70%  net_roi(entry+exit fees)=20.54%
+    bootstrap over entries (20000 resamples, entry+exit net ROI) 95% interval: -5.4 .. 46.4
+    top market 3866000 net=1260.67 share_of_net=37.9%  net ROI without it: 13.82%
+[official-category guess (sensitivity)] entries=62 stake=16204.36 gross=3768.62 entry_fees=406.22 exit_fees=25.91 net=3336.50
+    gross_roi=23.26%  net_roi(entry fees only)=20.75%  net_roi(entry+exit fees)=20.59%
+recorded market-level pnl total (all resolutions): 3768.33
+per queue: type entries stake gross fees net gross_roi% net_roi%
+   basket             1    150.00      2.28    0.11      2.17     1.5     1.4
+   btts               6   1499.76   -454.67   30.36   -485.03   -30.3   -32.3
+   commodity_touch    1    250.00   -135.73   17.16   -152.89   -54.3   -61.2
+   crypto_daily       1    200.00   -200.00    7.00   -207.00  -100.0  -103.5
+   crypto_touch       4   1749.30   1489.81   54.07   1435.74    85.2    82.1
+   election           2    400.00    609.62   10.07    599.54   152.4   149.9
+   geopolitics        1    250.00     72.58    2.81     69.77    29.0    27.9
+   macro              1    400.00    -60.70   13.24    -73.94   -15.2   -18.5
+   market_cap         1    200.00   -113.06   10.52   -123.58   -56.5   -61.8
+   match_winner       9   2049.64    137.26   62.83     74.42     6.7     3.6
+   other              1    399.70    171.30    6.00    165.30    42.9    41.4
+   ou_over           21   5506.11    688.22  135.50    552.71    12.5    10.0
+   ou_under           2    500.00    340.13   10.06    330.07    68.0    66.0
+   season_winner      1    249.85    -46.17   18.73    -64.90   -18.5   -26.0
+   spread             1    250.00    836.96    9.62    827.33   334.8   330.9
+   team_total         9   2150.00    430.80   52.90    377.90    20.0    17.6
+
+=== B. view logic over the exported base tables vs exported live view rows ===
+   basket           live=     2.28 fix=     2.28 prefix=     2.28 counts_ok=True
+   btts             live=  -454.68 fix=  -454.68 prefix=  -454.68 counts_ok=True
+   commodity_touch  live=  -135.73 fix=  -135.73 prefix=  -135.73 counts_ok=True
+   crypto_daily     live=  -200.00 fix=  -200.00 prefix=  -200.00 counts_ok=True
+   crypto_touch     live=  1489.80 fix=  1489.80 prefix=  2795.00 counts_ok=True   <-- discriminating row
+   election         live=   609.62 fix=   609.62 prefix=   609.62 counts_ok=True
+   geopolitics      live=    72.58 fix=    72.58 prefix=    72.58 counts_ok=True
+   macro            live=   -60.70 fix=   -60.70 prefix=   -60.70 counts_ok=True
+   market_cap       live=  -113.06 fix=  -113.06 prefix=  -113.06 counts_ok=True
+   match_winner     live=   137.26 fix=   137.26 prefix=   137.26 counts_ok=True
+   other            live=   171.30 fix=   171.30 prefix=   171.30 counts_ok=True
+   ou_over          live=   687.87 fix=   687.87 prefix=   687.87 counts_ok=True
+   ou_under         live=   340.13 fix=   340.13 prefix=   340.13 counts_ok=True
+   season_winner    live=   -46.17 fix=   -46.17 prefix=   -46.17 counts_ok=True
+   spread           live=   837.00 fix=   837.00 prefix=   837.00 counts_ok=True
+   team_total       live=   430.83 fix=   430.83 prefix=   430.83 counts_ok=True
+rows=16 match_fix=16 match_prefix=15 counts_ok=16 types_only_in_recompute=[]
+totals: live=3768.33 fix=3768.33 prefix=5073.53
+
+=== C. the 2026-10-30 review snapshot (40 rows) ===
+[as published, recorded pnl] rows=40 stake=10954.36 pnl=2552.43 entry_fees=294.25 exit_fees=27.09
+    gross_roi=23.30%  net_roi(entry fees only)=20.61%  net_roi(entry+exit fees)=20.37%
+   row id=1 recorded pnl=1305.2 first-principles=706.31 (stake 750.0, price 0.515)
+current-ledger entries with resolution ts < 2026-10-30 04:17Z (non-voided): 41; in old snapshot but not in that set: []; in that set but not in old snapshot: [14]
+[40 snapshot ids, per-entry first principles] entries=40 stake=10954.36 gross=1953.70 entry_fees=294.25 exit_fees=27.09 net=1632.37
+    gross_roi=17.83%  net_roi(entry fees only)=15.15%  net_roi(entry+exit fees)=14.90%
+[all entries settled by the snapshot time (incl. missing ones)] entries=41 stake=11454.36 gross=2552.60 entry_fees=313.32 exit_fees=27.09 net=2212.19
+    gross_roi=22.29%  net_roi(entry fees only)=19.55%  net_roi(entry+exit fees)=19.31%

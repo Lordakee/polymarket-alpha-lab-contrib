@@ -1,0 +1,9 @@
+# address_occurrence_diff.py base=e8c8a95cd9fea90db02518879e7d30931b5f6926 head=b5ab6108d9e72ee37ce43f8247221f4f674d1224 (run 2026-11-13)
+base=e8c8a95cd9fea90db02518879e7d30931b5f6926 head=b5ab6108d9e72ee37ce43f8247221f4f674d1224 distinct public IPv4-like values: 6
+address #1: base occurrences=23 in 11 files; head occurrences=23 in 11 files; files newly containing it=0
+address #2: base occurrences=15 in 6 files; head occurrences=16 in 7 files; files newly containing it=1
+    new: docs/handoffs/2026-11-12-m0-execution-review.md:125 (regex-escaped form, value masked)
+address #6: base occurrences=0 in 0 files; head occurrences=3 in 1 files; files newly containing it=1
+    new: docs/paper-sim/server-mirror/tools/tests/test_understat_refresh.py:204 (plain form, value masked)
+    new: docs/paper-sim/server-mirror/tools/tests/test_understat_refresh.py:210 (plain form, value masked)
+    new: docs/paper-sim/server-mirror/tools/tests/test_understat_refresh.py:213 (plain form, value masked)
