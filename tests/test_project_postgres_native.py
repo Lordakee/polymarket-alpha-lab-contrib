@@ -185,6 +185,8 @@ def test_native_project_lifecycle_all_migrations_and_real_research(tmp_path,monk
         db.down()
         print('native proof: occupied port never triggers adoption or reset')
         with socket.socket() as s:
+            if os.name == 'posix':
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             s.bind(('127.0.0.1',port));s.listen()
             with pytest.raises(ProjectDatabaseError,match='port_in_use'):db.up()
         conf=db.layout.cluster/'postgresql.conf';original=conf.read_bytes()

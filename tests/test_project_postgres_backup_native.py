@@ -87,6 +87,8 @@ def test_native_cold_backup_recovery_preserves_prospective_history(tmp_path, mon
             restore_cold_backup(root, **bad)
         assert not db.layout.home.exists()
         with socket.socket() as sock:
+            if os.name == 'posix':
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock.bind(('127.0.0.1', port)); sock.listen()
             with pytest.raises(ProjectDatabaseError, match='port_in_use'):
                 restore_cold_backup(root, **args)
