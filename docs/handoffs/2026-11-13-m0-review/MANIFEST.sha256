@@ -1,0 +1,12 @@
+771a8833bf587c18938a7ec148940fa72619deda1abd447f8899043a6763dfb0  docs/handoffs/2026-11-13-m0-review/01-review-report.md
+cb0d2ae99e044e68bf6d5202c64170839403334856369031659f5aa206329be8  docs/handoffs/2026-11-13-m0-review/02-remediation-guide.md
+631bb6a266a9c8248a7cb0a3dbfd4de6f3f24f4698759c0fcfc92f21b6491666  docs/handoffs/2026-11-13-m0-review/MANIFEST.json
+f258b4e42cd7118f6d553e5185755ea43227866b7a90dd9a4d1d3cf37abbe98e  docs/handoffs/2026-11-13-m0-review/README.md
+1561d5518cd7f36864fe67356ca8a235b98b2190fdf5630917962e0c0e384f3e  docs/handoffs/2026-11-13-m0-review/evidence/address_occurrence_diff.py
+466b3ea45b947d9905386bec2107fa45e91aeef7c6e4e2a8406894f465732284  docs/handoffs/2026-11-13-m0-review/evidence/address_occurrence_output.txt
+91792b8760f2e518a5f80fad7057bc890dacda641a3d50e36c65537c5c9168f8  docs/handoffs/2026-11-13-m0-review/evidence/ci_runs.txt
+b0d53051f87830f8c8f04ab2a360ceaa1c4093f2114252a8f0129a7962aa8352  docs/handoffs/2026-11-13-m0-review/evidence/pin_inventory.txt
+c0537b89b264f74a9de0f531e0adb3a7e4415c1323c11dceb47e983197f732cf  docs/handoffs/2026-11-13-m0-review/evidence/recompute_ledger_and_views.py
+5a9621f8454cb43a070fd9d0a6315e8279a90bea1cbf20e0d96883902fe4013f  docs/handoffs/2026-11-13-m0-review/evidence/recompute_output.txt
+d46c59e458833fdd95614ccce16525b8ef42c43719aad2875272786f24f1203b  docs/handoffs/2026-11-13-m0-review/evidence/scan_mirror_tree.py
+bc2ee10084721a48007edf3833a35d74f8e657fa6a3a1f94fc52bc85db71f2d0  docs/handoffs/2026-11-13-m0-review/evidence/scan_output.txt

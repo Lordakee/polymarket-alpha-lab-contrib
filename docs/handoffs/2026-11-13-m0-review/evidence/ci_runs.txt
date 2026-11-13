@@ -1,0 +1,108 @@
+# GitHub Actions evidence for the 2026-11-13 M0 review
+# Repository: wmqfl861/polymarket-alpha-lab. Read through the GitHub API between about 23:30Z on 2026-11-12 and 00:45Z on 2026-11-13.
+# Columns: run id | workflow | event | head commit | created (UTC) | conclusion
+
+## Runs on main from the audit baseline to the reviewed commit
+42964993496 | Offline verification | push | f7aece92 | 2026-11-11T05:19:20Z | success
+42966642867 | Offline verification | push | e8c8a95c | 2026-11-11T05:34:27Z | success
+43189133019 | Offline verification | push | 0d6cbc03 | 2026-11-12T09:10:36Z | failure
+43219367378 | Offline verification | push | 9e761317 | 2026-11-12T12:35:56Z | failure
+43245367343 | Native project PostgreSQL | push | e45c3142 | 2026-11-12T15:12:59Z | cancelled
+43245367334 | Offline verification | push | e45c3142 | 2026-11-12T15:12:59Z | failure
+43245420705 | Native project PostgreSQL | workflow_dispatch | e45c3142 | 2026-11-12T15:13:17Z | failure
+43250132444 | Offline verification | push | a93f5fab | 2026-11-12T15:39:18Z | cancelled
+43250132456 | Native project PostgreSQL | push | a93f5fab | 2026-11-12T15:39:18Z | cancelled
+43250257520 | Offline verification | push | 15c35a62 | 2026-11-12T15:40:02Z | cancelled
+43250257695 | Native project PostgreSQL | push | 15c35a62 | 2026-11-12T15:40:02Z | failure
+43250580628 | Offline verification | push | b5ab6108 | 2026-11-12T15:41:50Z | failure
+
+## Jobs of the failing runs
+run 43189133019:
+  job 131083696228 | offline | failure | failed step: Run sanitized full offline verification
+run 43219367378:
+  job 131186646304 | offline | failure | failed step: Run sanitized full offline verification
+run 43245367334:
+  job 131276459700 | offline | failure | failed step: Run sanitized full offline verification
+run 43250580628:
+  job 131295125651 | offline | failure | failed step: Run sanitized full offline verification
+run 43245420705:
+  job 131276935953 | linux-native-papersim | success | -
+  job 131276936734 | linux-native-dispatch | failure | failed step: Prove isolated native partition
+  job 131276936740 | linux-native-research | success | -
+  job 131276937106 | linux-native-storage | failure | failed step: Prove isolated native partition
+  job 131276939418 | windows-native | skipped | -
+  job 131276939790 | windows-native-${{ matrix.partition }} | skipped | -
+  job 131279107269 | linux-native | failure | failed step: Require every native partition
+run 43250257695:
+  job 131294087268 | linux-native-dispatch | failure | failed step: Prove isolated native partition
+  job 131294087397 | linux-native-storage | failure | failed step: Prove isolated native partition
+  job 131294087667 | linux-native-papersim | success | -
+  job 131294087798 | linux-native-research | success | -
+  job 131294089755 | windows-native | skipped | -
+  job 131294089891 | windows-native-${{ matrix.partition }} | skipped | -
+  job 131297614512 | linux-native | failure | failed step: Require every native partition
+
+## Test summaries and failing tests (from the job logs)
+job 131083696228 (offline @0d6cbc03):
+  FAILED tests/test_papersim_intl_data.py::test_fetch_politeness_and_retry - assert ([5.0, 1.9999743330000115] and False)
+  summary: 1 failed, 41307 passed, 122 skipped, 21 warnings in 402.88s (0:06:42)
+  at tests/test_papersim_intl_data.py:695: AssertionError
+job 131186646304 (offline @9e761317):
+  FAILED tests/test_papersim_intl_data.py::test_fetch_politeness_and_retry - assert ([5.0, 1.9999836160000086] and False)
+  summary: 1 failed, 41307 passed, 122 skipped, 21 warnings in 437.34s (0:07:17)
+  at tests/test_papersim_intl_data.py:695: AssertionError
+job 131276459700 (offline @e45c3142):
+  FAILED tests/test_papersim_intl_data.py::test_fetch_politeness_and_retry - assert ([5.0, 1.999981923000007] and False)
+  summary: 1 failed, 41407 passed, 122 skipped, 20 warnings in 464.75s (0:07:44)
+  at tests/test_papersim_intl_data.py:695: AssertionError
+job 131295125651 (offline @b5ab6108):
+  FAILED tests/test_papersim_intl_data.py::test_fetch_politeness_and_retry - assert ([5.0, 1.9999816629999714] and False)
+  summary: 1 failed, 41407 passed, 122 skipped, 20 warnings in 462.00s (0:07:42)
+  at tests/test_papersim_intl_data.py:695: AssertionError
+job 131276936734 (native dispatch @e45c3142 (manual run 43245420705)):
+  FAILED tests/test_project_postgres_dispatch_cli_native.py::test_operator_rounds_stop_restart_failures_and_process_loss - assert 70 == 68
+  FAILED tests/test_project_postgres_confirmation_native.py::test_original_forecasts_manual_confirmation_replay_restart_and_preservation - assert 70 == 68
+  FAILED tests/test_project_postgres_uncapped_native.py::test_uncapped_claims_codex_protocol_stop_restart_and_process_loss - assert 70 == 68
+  FAILED tests/test_project_postgres_uncapped_audit_native.py::test_audited_uncapped_upgrade_calls_uncertainty_and_process_loss - AssertionError: assert (70 == 68)
+  FAILED tests/test_project_postgres_uncapped_audit_native.py::test_operator_assembly_native_two_team_stop_restart_replay_and_audit - AssertionError: assert 70 == 68
+  summary: 5 failed, 1928 passed, 15 skipped in 118.35s (0:01:58)
+  at tests/test_project_postgres_confirmation_native.py:61: AssertionError
+  at tests/test_project_postgres_dispatch_cli_native.py:148: AssertionError
+  at tests/test_project_postgres_uncapped_audit_native.py:429: AssertionError
+  at tests/test_project_postgres_uncapped_audit_native.py:70: AssertionError
+  at tests/test_project_postgres_uncapped_native.py:98: AssertionError
+job 131276937106 (native storage @e45c3142 (manual run 43245420705)):
+  FAILED tests/test_project_postgres_native.py::test_native_project_lifecycle_all_migrations_and_real_research - AssertionError: assert {'status': 'i..._applied': 70} == {'status': 'i..._applied': 68}
+  FAILED tests/test_project_postgres_backup_native.py::test_native_cold_backup_recovery_preserves_prospective_history - OSError: [Errno 98] Address already in use
+  summary: 2 failed, 299 passed, 2 skipped in 68.35s (0:01:08)
+  at tests/test_project_postgres_backup_native.py:90: OSError
+  at tests/test_project_postgres_native.py:108: AssertionError
+job 131276935953 (native papersim @e45c3142 (manual run 43245420705)):
+  summary: 92 passed in 2.65s
+job 131294087268 (native dispatch @15c35a62 (push run 43250257695)):
+  FAILED tests/test_project_postgres_dispatch_cli_native.py::test_operator_rounds_stop_restart_failures_and_process_loss - AssertionError: assert '70' == '68'
+  FAILED tests/test_project_postgres_confirmation_native.py::test_original_forecasts_manual_confirmation_replay_restart_and_preservation - AssertionError: assert '70' == '68'
+  FAILED tests/test_project_postgres_uncapped_native.py::test_uncapped_claims_codex_protocol_stop_restart_and_process_loss - AssertionError: assert '70' == '68'
+  FAILED tests/test_project_postgres_uncapped_audit_native.py::test_audited_uncapped_upgrade_calls_uncertainty_and_process_loss - assert 69 == 67
+  FAILED tests/test_project_postgres_uncapped_audit_native.py::test_operator_assembly_native_two_team_stop_restart_replay_and_audit - AssertionError: assert '70' == '68'
+  summary: 5 failed, 1928 passed, 15 skipped in 300.61s (0:05:00)
+  at tests/test_project_postgres_confirmation_native.py:179: AssertionError
+  at tests/test_project_postgres_dispatch_cli_native.py:435: AssertionError
+  at tests/test_project_postgres_uncapped_audit_native.py:692: AssertionError
+  at tests/test_project_postgres_uncapped_audit_native.py:83: AssertionError
+  at tests/test_project_postgres_uncapped_native.py:187: AssertionError
+job 131294087397 (native storage @15c35a62 (push run 43250257695)):
+  FAILED tests/test_project_postgres_native.py::test_native_project_lifecycle_all_migrations_and_real_research - OSError: [Errno 98] Address already in use
+  FAILED tests/test_project_postgres_backup_native.py::test_native_cold_backup_recovery_preserves_prospective_history - OSError: [Errno 98] Address already in use
+  summary: 2 failed, 299 passed, 2 skipped in 52.40s
+  at tests/test_project_postgres_backup_native.py:90: OSError
+  at tests/test_project_postgres_native.py:188: OSError
+job 131294087667 (native papersim @15c35a62 (push run 43250257695)):
+  summary: 92 passed in 2.79s
+job 131294087798 (native research @15c35a62 (push run 43250257695)):
+  summary: 1227 passed, 18 skipped in 170.71s (0:02:50)
+
+## SyntaxWarning occurrences in the offline job logs
+  @9e761317 (before the M0 batch): 2
+  @e45c3142 (M0 batch):            0
+  @b5ab6108 (reviewed commit):     0

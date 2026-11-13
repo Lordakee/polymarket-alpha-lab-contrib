@@ -1,0 +1,115 @@
+# Migration-count literals in the native PostgreSQL tests at commit b5ab6108d9e72ee37ce43f8247221f4f674d1224
+# Produced with: git grep -nE <pattern> <commit> -- 'tests/test_project_postgres*.py' tests/test_research_dispatch.py
+# database/migrations.lock.json has 70 entries at this commit.
+# The classification is the reviewer's; confirm each line against the test's own construction before editing.
+#   KEEP  = correct as written
+#   STALE = full-manifest count read back from the database as text, still at the old value; should be '70'
+#   P1-3  = first test of the uncapped-audit file, see finding P1-3 in the review report
+#   VS    = version-switch test, see the separate section at the end
+
+KEEP  tests/test_project_postgres.py:82: assert len(rows) == 70
+      -> full-manifest pin already at 70
+KEEP  tests/test_project_postgres_backup_native.py:160: for later in manifest['migrations'][67:]:
+      -> historical 66->67 proof (manifest truncated to 67 at :160-162)
+KEEP  tests/test_project_postgres_backup_native.py:162: manifest = dict(manifest, migrations=manifest['migrations'][:67])
+      -> historical 66->67 proof (manifest truncated to 67 at :160-162)
+KEEP  tests/test_project_postgres_backup_native.py:165: assert len(manifest['migrations']) == 67 and manifest['migrations'][-1]['name'] == tail
+      -> historical 66->67 proof (manifest truncated to 67 at :160-162)
+KEEP  tests/test_project_postgres_backup_native.py:172: assert db.initialize(port=port)['migrations_applied'] == 66
+      -> historical 66->67 proof (manifest truncated to 67 at :160-162)
+KEEP  tests/test_project_postgres_backup_native.py:208: assert verified['migration_catalog']['backup_entries'] == 66
+      -> historical 66->67 proof (manifest truncated to 67 at :160-162)
+KEEP  tests/test_project_postgres_backup_native.py:209: assert verified['migration_catalog']['current_entries'] == 67
+      -> historical 66->67 proof (manifest truncated to 67 at :160-162)
+KEEP  tests/test_project_postgres_backup_native.py:232: assert db._psql(identity, 'SELECT count(*) FROM project_private.migrations;') == '66'
+      -> historical 66->67 proof (manifest truncated to 67 at :160-162)
+KEEP  tests/test_project_postgres_backup_native.py:244: assert db._psql(identity, 'SELECT count(*) FROM project_private.migrations;') == '67'
+      -> historical 66->67 proof (manifest truncated to 67 at :160-162)
+KEEP  tests/test_project_postgres_budget_native.py:77: for later in manifest['migrations'][66:]:
+      -> historical proof (manifest truncated to 66 at :77-79)
+KEEP  tests/test_project_postgres_budget_native.py:79: manifest=dict(manifest,migrations=manifest['migrations'][:66])
+      -> historical proof (manifest truncated to 66 at :77-79)
+KEEP  tests/test_project_postgres_budget_native.py:80: assert len(manifest['migrations'])==66 and manifest['migrations'][-1]['name']==TAIL
+      -> historical proof (manifest truncated to 66 at :77-79)
+KEEP  tests/test_project_postgres_budget_native.py:291: assert db._psql(identity,'SELECT count(*) FROM project_private.migrations;')=='66'
+      -> historical proof (manifest truncated to 66 at :77-79)
+KEEP  tests/test_project_postgres_confirmation_native.py:61: assert db.initialize(port=port)['migrations_applied']==70
+      -> full-manifest pin already at 70
+STALE tests/test_project_postgres_confirmation_native.py:179: assert db._psql(identity,'SELECT count(*) FROM project_private.migrations;')=='68'
+      -> failed in run 43250257695 (dispatch partition)
+KEEP  tests/test_project_postgres_dispatch_cli_native.py:148: assert db.initialize(port=port)['migrations_applied'] == 70
+      -> full-manifest pin already at 70
+STALE tests/test_project_postgres_dispatch_cli_native.py:435: assert db._psql(identity, 'SELECT count(*) FROM project_private.migrations;') == '68'
+      -> failed in run 43250257695 (dispatch partition)
+STALE tests/test_project_postgres_native.py:207: assert db._psql(info,'SELECT count(*) FROM project_private.migrations;')=='68'
+      -> storage partition; not reached yet because the same test fails earlier at :188
+KEEP  tests/test_project_postgres_paper_capture_native.py:54: for later in manifest['migrations'][67:]:
+      -> historical 66->67 proof (manifest truncated to 67 at :54-56)
+KEEP  tests/test_project_postgres_paper_capture_native.py:56: manifest=dict(manifest,migrations=manifest['migrations'][:67])
+      -> historical 66->67 proof (manifest truncated to 67 at :54-56)
+KEEP  tests/test_project_postgres_paper_capture_native.py:57: assert len(manifest['migrations'])==67 and manifest['migrations'][-1]['name']==TAIL
+      -> historical 66->67 proof (manifest truncated to 67 at :54-56)
+KEEP  tests/test_project_postgres_paper_capture_native.py:63: assert db.initialize(port=port)['migrations_applied']==66
+      -> historical 66->67 proof (manifest truncated to 67 at :54-56)
+KEEP  tests/test_project_postgres_paper_capture_native.py:193: assert db._psql(identity,'SELECT count(*) FROM project_private.migrations;')=='67'
+      -> historical 66->67 proof (manifest truncated to 67 at :54-56)
+KEEP  tests/test_project_postgres_paper_native.py:53: assert db.initialize(port=port)['migrations_applied']==70
+      -> full-manifest pin already at 70
+STALE tests/test_project_postgres_paper_native.py:90: assert db._psql(identity,'SELECT count(*) FROM project_private.migrations;')=='68'
+      -> only run by research-paper.yml (Windows runner, pull_request trigger only)
+KEEP  tests/test_project_postgres_paper_operator_native.py:98: assert db.initialize(port=port)['migrations_applied'] == 70
+      -> full-manifest pin already at 70
+STALE tests/test_project_postgres_paper_operator_native.py:138: assert db._psql(identity, 'SELECT count(*) FROM project_private.migrations;') == '68'
+      -> only run by research-paper.yml (Windows runner, pull_request trigger only)
+KEEP  tests/test_project_postgres_paper_settlement_native.py:60: assert db.initialize(port=port)['migrations_applied']==70
+      -> full-manifest pin already at 70
+STALE tests/test_project_postgres_paper_settlement_native.py:196: assert db._psql(identity,'SELECT count(*) FROM project_private.migrations;')=='68'
+      -> only run by research-paper.yml (Windows runner, pull_request trigger only)
+P1-3  tests/test_project_postgres_uncapped_audit_native.py:70: assert len(manifest['migrations']) == 70 and manifest['migrations'][-1]['name'] == TAIL
+      -> should be 68 again once TAIL is restored and the manifest is truncated to its first 68 entries
+P1-3  tests/test_project_postgres_uncapped_audit_native.py:83: assert db.initialize(port=port)['migrations_applied'] == 67
+      -> 67 is right for the historical 67->68 proof; it fails today (69) only because TAIL was re-pointed
+P1-3  tests/test_project_postgres_uncapped_audit_native.py:212: assert db._psql(identity,'SELECT count(*) FROM project_private.migrations;') == '68'
+      -> '68' is right for the historical 67->68 proof (67 initial + the one upgrade)
+KEEP  tests/test_project_postgres_uncapped_audit_native.py:429: assert len(json.loads((root/'database/migrations.lock.json').read_text())['migrations']) == 70
+      -> full-manifest pin already at 70
+KEEP  tests/test_project_postgres_uncapped_audit_native.py:436: assert db.initialize(port=port)['migrations_applied'] == 70
+      -> full-manifest pin already at 70
+STALE tests/test_project_postgres_uncapped_audit_native.py:688: ('SELECT count(*) FROM project_private.migrations;','68')):
+      -> failed in run 43250257695 at :692 (dispatch partition)
+KEEP  tests/test_project_postgres_uncapped_audit_native.py:1034: assert db.initialize(port=port)['migrations_applied'] == 70
+      -> full-manifest pin already at 70
+KEEP  tests/test_project_postgres_uncapped_audit_native.py:1240: assert db.initialize(port=port)['migrations_applied'] == 70
+      -> full-manifest pin already at 70
+KEEP  tests/test_project_postgres_uncapped_audit_native.py:1442: assert db.initialize(port=port)['migrations_applied'] == 70
+      -> full-manifest pin already at 70
+STALE tests/test_project_postgres_uncapped_audit_native.py:1778: ('SELECT count(*) FROM project_private.migrations;','68')):
+      -> its test is opt-in (containment proof) and is skipped in CI
+KEEP  tests/test_project_postgres_uncapped_native.py:98: assert db.initialize(port=port)['migrations_applied'] == 70
+      -> full-manifest pin already at 70
+STALE tests/test_project_postgres_uncapped_native.py:187: assert db._psql(identity, 'SELECT count(*) FROM project_private.migrations;') == '68'
+      -> failed in run 43250257695 (dispatch partition)
+VS    tests/test_project_postgres_version_switch_native.py:1205: assert counts['ledger'] == '68' and set(counts['tables'].values()) == {'t'}
+      -> see the version-switch section below
+VS    tests/test_project_postgres_version_switch_native.py:1211: assert len(snapshot['snapshot']['ledger']) == 70
+      -> see the version-switch section below
+KEEP  tests/test_research_dispatch.py:351: assert len(entries)==70
+      -> full-manifest pin already at 70
+
+totals: {'KEEP': 30, 'STALE': 9, 'P1-3': 3, 'VS': 2}
+
+## Version-switch test (tests/test_project_postgres_version_switch_native.py)
+# Its candidate version is the HEAD checked out at run time (:755-759), so every catalog-size constant must
+# follow the current manifest. All of them are still at the 68-entry catalog except :1211, which a93f5fab
+# changed to 70. The file is therefore inconsistent and fails first at :772. It runs as the separate step
+# 'Prove native version switch' of the storage partition, which was skipped in run 43250257695 because the
+# previous step failed.
+      tests/test_project_postgres_version_switch_native.py:91: CANDIDATE_CATALOG_ENTRIES = 68
+      tests/test_project_postgres_version_switch_native.py:93: NEW_MIGRATIONS = ('20260914000000_research_dispatch_batches.sql',
+      tests/test_project_postgres_version_switch_native.py:772: assert candidate_entries == CANDIDATE_CATALOG_ENTRIES
+      tests/test_project_postgres_version_switch_native.py:1101: assert state['status'] == 'migrations_pending' and state['pending_migrations'] == 5
+      tests/test_project_postgres_version_switch_native.py:1171: assert state['status'] == 'migrations_pending' and state['pending_migrations'] == 5
+      tests/test_project_postgres_version_switch_native.py:1188: assert _json_stdout(migrated)['migrations_applied'] == 5
+      tests/test_project_postgres_version_switch_native.py:1205: assert counts['ledger'] == '68' and set(counts['tables'].values()) == {'t'}
+      tests/test_project_postgres_version_switch_native.py:1211: assert len(snapshot['snapshot']['ledger']) == 70
+# Also check by construction: NEW_MIGRATIONS (:93-97, five names today) and FEATURE_TABLES (:98, used at :663).
