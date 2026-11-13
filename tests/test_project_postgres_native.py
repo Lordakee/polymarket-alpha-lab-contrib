@@ -103,7 +103,7 @@ def test_native_project_lifecycle_all_migrations_and_real_research(tmp_path,monk
     print('native proof: copy binaries only, never reuse installed data')
     version=import_runtime_directory(root,prefix)
     db=ProjectPostgres(root)
-    print('native proof: initialize private cluster and all 68 migrations')
+    print('native proof: initialize private cluster and all 70 migrations')
     result=db.initialize(port=port)
     assert result==dict(status='initialized',version=version,migrations_applied=70)
     assert db.status()['status']=='stopped'

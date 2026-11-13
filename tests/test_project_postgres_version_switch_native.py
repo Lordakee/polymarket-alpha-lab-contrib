@@ -88,16 +88,19 @@ OLD_TREE = 'd6f6750b1068a3c75ab6249d5ca4f1ef7e010ee4'
 LINUX_RUNTIME_MAJOR = '18'
 OLD_CATALOG_ENTRIES = 63
 OLD_CATALOG_FINGERPRINT = '3e8c813dcb7ce2389f11aa7aebba03819392f014e1208910c75d70bf709ccee5'
-CANDIDATE_CATALOG_ENTRIES = 68
+CANDIDATE_CATALOG_ENTRIES = 70
 INSIDE_OLD_MIGRATION = '20260701000000_team_forecast_tables.sql'
 NEW_MIGRATIONS = ('20260914000000_research_dispatch_batches.sql',
                   '20260915000000_research_dispatch_turns.sql',
                   '20260915010000_research_model_budgets.sql',
                   '20260915020000_research_paper_simulations.sql',
-                  '20260919000000_research_uncapped_audit.sql')
+                  '20260919000000_research_uncapped_audit.sql',
+                  '20261101000000_papersim_ledger.sql',
+                  '20261107000000_papersim_perf_view_fix.sql')
 FEATURE_TABLES = ('research_capture.dispatch_batches', 'research_capture.dispatch_turns',
                   'research_capture.model_budgets', 'research_capture.paper_simulations',
-                  'research_capture.uncapped_authorizations')
+                  'research_capture.uncapped_authorizations',
+                  'public.decisions', 'public.resolutions', 'public.bankroll')
 RECORD_IDS = ('vs-record-1', 'vs-record-2', 'vs-record-3')
 CONDITION_IDS = ('vs-condition-1', 'vs-condition-2', 'vs-condition-3')
 WORKFLOW = ROOT / '.github/workflows/native-postgres.yml'
@@ -774,7 +777,7 @@ def prepare_verified_archives_and_private_root(tmp_path, monkeypatch) -> _Rig:
     assert {name for name, _ in candidate_pairs[OLD_CATALOG_ENTRIES:]} == set(NEW_MIGRATIONS)
     assert (original / 'supabase/migrations' / INSIDE_OLD_MIGRATION).is_file()
     print('version-switch fixture: candidate', candidate_commit, candidate_tree,
-          'old-catalog-63', original_pairs[1][:16], 'candidate-catalog-68',
+          'old-catalog-63', original_pairs[1][:16], 'candidate-catalog-70',
           candidate_fingerprint[:16])
     port = pick_port()
     return _Rig(base=parent, neutral=neutral, foreign=foreign.parent, payloads=payloads,
@@ -1098,7 +1101,7 @@ def prove_pending_catalog_and_backup_prefix_paths(rig) -> None:
                                          'status_after': 'stopped'}
         state, info, counts = _running_physical_state(original)
         assert info == rig['identity']
-        assert state['status'] == 'migrations_pending' and state['pending_migrations'] == 5
+        assert state['status'] == 'migrations_pending' and state['pending_migrations'] == 7
         assert state['started_here'] is True
         assert counts['ledger'] == '63' and counts['attempts'] == '2'
         assert counts['claims'] == '3' and counts['outcomes'] == '0'
@@ -1116,8 +1119,8 @@ def prove_pending_catalog_and_backup_prefix_paths(rig) -> None:
         receipt = _json_stdout(extended)
         assert receipt['status'] == 'backup_verified' and receipt['database_started'] is False
         assert receipt['migration_catalog'] == dict(
-            match='append_only_extension', backup_entries=63, current_entries=68,
-            current_sha256=rig['candidate_fingerprint'], additional_entries=5,
+            match='append_only_extension', backup_entries=63, current_entries=70,
+            current_sha256=rig['candidate_fingerprint'], additional_entries=7,
             database_ledger_checked=False, migrations_applied=0)
         restore = _current_cli(rig, 'project_database.py', '--root', str(original), 'restore',
                                '--archive', str(backup['archive']), '--sha256', backup['sha256'],
@@ -1168,27 +1171,27 @@ def prove_pending_catalog_and_backup_prefix_paths(rig) -> None:
             _stop_engine(rig)
         state, info, counts = _running_physical_state(original)
         assert info == rig['identity']
-        assert state['status'] == 'migrations_pending' and state['pending_migrations'] == 5
+        assert state['status'] == 'migrations_pending' and state['pending_migrations'] == 7
         assert counts['ledger'] == '63' and counts['attempts'] == '2'
         assert counts['claims'] == '3' and counts['outcomes'] == '0'
         assert set(counts['tables'].values()) == {'f'}
         assert ProjectPostgres(original).status()['status'] == 'stopped'
     finally:
-        # The staged valid 68-entry catalog stays for the explicit migration
+        # The staged valid 70-entry catalog stays for the explicit migration
         # phase; only ensure the engine is stopped for the next fixture edit.
         _stop_engine(rig)
     assert lock_file.read_bytes() == (rig['candidate'] / 'database/migrations.lock.json').read_bytes()
-    print('version-switch pending/refusals: 68/63 refused; prefix extension exact')
+    print('version-switch pending/refusals: 70/63 refused; prefix extension exact')
 
 
 def prove_explicit_migration_and_old_catalog_refusal(rig) -> None:
     original = rig['original']
     migrated = _current_cli(rig, 'project_database.py', '--root', str(original), 'migrate')
     assert migrated.returncode == 0, migrated.stdout.decode('utf-8', 'replace')
-    assert _json_stdout(migrated)['migrations_applied'] == 5
+    assert _json_stdout(migrated)['migrations_applied'] == 7
     again = _current_cli(rig, 'project_database.py', '--root', str(original), 'migrate')
     assert _json_stdout(again)['migrations_applied'] == 0
-    readback = _current_payload(rig, 'readback-68.py', _READBACK_PAYLOAD, str(original), *RECORD_IDS)
+    readback = _current_payload(rig, 'readback-70.py', _READBACK_PAYLOAD, str(original), *RECORD_IDS)
     view = _json_stdout(readback)
     assert view['admitted'] is True and view['records'] == rig['records']
     assert 'research_execution_history_incomplete' in view['evaluation']
@@ -1216,7 +1219,7 @@ def prove_explicit_migration_and_old_catalog_refusal(rig) -> None:
         lock_file.write_bytes((rig['old_source'] / 'database/migrations.lock.json').read_bytes())
         for name in NEW_MIGRATIONS:
             (original / 'supabase/migrations' / name).unlink()
-        conflict = _current_payload(rig, 'conflict-63-68.py', _BUNDLE_PROBE_PAYLOAD, str(original))
+        conflict = _current_payload(rig, 'conflict-63-70.py', _BUNDLE_PROBE_PAYLOAD, str(original))
         assert _json_stdout(conflict) == {
             'code': 'project_postgres_migration_history_conflict', 'status_after': 'stopped'}
     finally:
@@ -1225,7 +1228,7 @@ def prove_explicit_migration_and_old_catalog_refusal(rig) -> None:
             shutil.copyfile(rig['candidate'] / 'supabase/migrations' / name,
                             original / 'supabase/migrations' / name)
     assert ProjectPostgres(original).status()['status'] == 'stopped'
-    print('version-switch migration: five appended; 68/68 admitted; 63 receipts preserved')
+    print('version-switch migration: seven appended; 70/70 admitted; 63 receipts preserved')
 
 
 def stop_owned_disposable_instance_preserving_failures(rig) -> None:
