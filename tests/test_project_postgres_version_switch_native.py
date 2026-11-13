@@ -1202,7 +1202,7 @@ def prove_explicit_migration_and_old_catalog_refusal(rig) -> None:
     state, info, counts = _running_physical_state(original)
     assert info == rig['identity']
     assert state['status'] == 'running' and state['pending_migrations'] == 0
-    assert counts['ledger'] == '68' and set(counts['tables'].values()) == {'t'}
+    assert counts['ledger'] == '70' and set(counts['tables'].values()) == {'t'}
     assert counts['attempts'] == '2' and counts['claims'] == '3' and counts['outcomes'] == '0'
     snapshot = _snapshot_current(original)
     for section in ('markets', 'attempts', 'claims', 'outcomes'):

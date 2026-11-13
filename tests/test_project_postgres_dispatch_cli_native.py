@@ -432,7 +432,7 @@ def test_operator_rounds_stop_restart_failures_and_process_loss(tmp_path, monkey
             assert session.inspect(record_id=crashed[0].record_id).status == 'incomplete'
             assert session.inspect(record_id=requests[0].record_id).record == old_record
             with pytest.raises(ResearchCaptureConflict, match='history_incomplete'): session.evaluate()
-            assert db._psql(identity, 'SELECT count(*) FROM project_private.migrations;') == '68'
+            assert db._psql(identity, 'SELECT count(*) FROM project_private.migrations;') == '70'
         assert db.status()['instance_id'] == identity['instance_id']
         print('native operator CLI: PASS; two-team rounds, stop/restart, failed result, replay, crash remains incomplete')
     finally:

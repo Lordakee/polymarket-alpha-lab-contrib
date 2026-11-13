@@ -135,7 +135,7 @@ def test_paper_operator_capture_replay_inspect_and_rejection(tmp_path, monkeypat
                 assert session.inspect_paper_research(record_id=spec.record_id).scenario == spec
             assert db._psql(identity, 'SELECT count(*) FROM research_capture.paper_simulations;') == '2'
             assert db._psql(identity, 'SELECT count(*) FROM research_capture.attempts;') == '2'
-            assert db._psql(identity, 'SELECT count(*) FROM project_private.migrations;') == '68'
+            assert db._psql(identity, 'SELECT count(*) FROM project_private.migrations;') == '70'
         assert db.status()['instance_id'] == identity['instance_id']
         print('native paper operator: PASS; explicit capture, replay/conflict, rejection, restart/readback, unchanged originals')
     finally:

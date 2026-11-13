@@ -184,7 +184,7 @@ def test_uncapped_claims_codex_protocol_stop_restart_and_process_loss(tmp_path, 
             assert repeated == incomplete
             assert research.inspect(record_id=prior.request.record_id).record == prior.record
             assert research.inspect(record_id=original.request.record_id).record == original.record
-            assert db._psql(identity, 'SELECT count(*) FROM project_private.migrations;') == '68'
+            assert db._psql(identity, 'SELECT count(*) FROM project_private.migrations;') == '70'
             assert db._psql(identity, 'SELECT count(*) FROM research_capture.model_call_reservations;', owner=False) == '0'
         assert db.status()['instance_id'] == identity['instance_id'] and db.status()['status'] == 'stopped'
         print('native uncapped: PASS; BTC/ETH protocol, two turns, restart, one claim, zero fake permits, incomplete retained')

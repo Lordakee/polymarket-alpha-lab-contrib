@@ -193,7 +193,7 @@ def test_paper_settlement_snapshot_outcomes_denominators_restart_and_no_writes(t
                 s.evaluate_settled_paper_research()
             # A historical view predating that claim remains its original scope.
             assert s.evaluate_settled_paper_research(generated_at=before_at)==before
-            assert db._psql(identity,'SELECT count(*) FROM project_private.migrations;')=='68'
+            assert db._psql(identity,'SELECT count(*) FROM project_private.migrations;')==​'70'
         failure=console(expected_code=1)
         assert failure['reason_code']=='research_execution_history_incomplete' and failure['evaluation'] is None
         assert console('--as-of',before_at.isoformat(),'--include-decisions')['evaluation']==dict(before,decisions_included=True)

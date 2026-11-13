@@ -209,7 +209,7 @@ def test_audited_uncapped_upgrade_calls_uncertainty_and_process_loss(tmp_path, m
             first_start = s.inspect_uncapped_calls(record_id=requests[0].record_id).calls[0]
             with pytest.raises(Exception):
                 s._call(store._finish_call,start=first_start,status='returned',reply=None)
-            assert db._psql(identity,'SELECT count(*) FROM project_private.migrations;') == '68'
+            assert db._psql(identity,'SELECT count(*) FROM project_private.migrations;') == '70'
             crash = prepared(6120); cp = authorization((crash,),authorization_id='audit-crash-policy')
             s.create_uncapped_authorization(authorization=cp,allow_authorization_write=True)
             s.enqueue_research_batch(batch=ResearchBatch('audit-crash',(crash,)),allow_queue_write=True)
@@ -685,7 +685,7 @@ def test_operator_assembly_native_two_team_stop_restart_replay_and_audit(tmp_pat
                     ('SELECT count(*) FROM research_capture.uncapped_call_outcomes;','6'),
                     ('SELECT count(*) FROM research_capture.model_budgets;','0'),
                     ('SELECT count(*) FROM research_capture.model_call_reservations;','0'),
-                    ('SELECT count(*) FROM project_private.migrations;','68')):
+                    ('SELECT count(*) FROM project_private.migrations;','70')):
                 # Business rows are counted as the application role;
                 # project_private is owner-only (an app-role read fails).
                 owner = not statement.startswith('SELECT count(*) FROM research_capture.')
@@ -1775,7 +1775,7 @@ def test_contained_driver_loss_useful_recovery_fresh_parent_rounds(tmp_path, mon
                 ('SELECT count(*) FROM research_capture.uncapped_call_outcomes;','7'),
                 ('SELECT count(*) FROM research_capture.model_budgets;','0'),
                 ('SELECT count(*) FROM research_capture.model_call_reservations;','0'),
-                ('SELECT count(*) FROM project_private.migrations;','68')):
+                ('SELECT count(*) FROM project_private.migrations;','70')):
             # Business rows are counted as the application role;
             # project_private is owner-only (an app-role read fails).
             owner = not statement.startswith('SELECT count(*) FROM research_capture.')

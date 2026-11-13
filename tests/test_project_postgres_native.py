@@ -204,7 +204,7 @@ def test_native_project_lifecycle_all_migrations_and_real_research(tmp_path,monk
             assert db.up()['status']=='migrations_pending'
             with pytest.raises(ProjectDatabaseError):db.migrate()
             assert db._psql(info,"SELECT to_regclass('public.must_rollback') IS NULL;")=='t'
-            assert db._psql(info,'SELECT count(*) FROM project_private.migrations;')=='68'
+            assert db._psql(info,'SELECT count(*) FROM project_private.migrations;')==​'70'
         finally:path.unlink();manifest.write_bytes(old)
         with db.session() as session:assert len(session.evaluate().records)==5
     finally:db.down()
