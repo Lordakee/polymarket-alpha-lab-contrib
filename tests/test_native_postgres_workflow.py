@@ -20,6 +20,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
 
 import pytest
@@ -244,6 +245,95 @@ def test_linux_partitions_and_pg18_prefix_are_explicit():
     assert '    timeout-minutes: 2\n' in gate
     assert gate.count('run: |') == 1
     assert 'test "$NATIVE_RESULT" = success' in gate
+
+
+def linux_key_download_script():
+    worker = jobs(WORKFLOW.read_text())['linux-native-part']
+    step = worker.split('      - name: Assemble the qualified PG18 portable prefix\n', 1)[1]
+    step = step.split('\n      - name:', 1)[0]
+    body = step.split('        run: |\n', 1)[1]
+    script = '\n'.join(line[10:] for line in body.splitlines())
+    download, separator, _ = script.partition('\nPREFIX=')
+    assert separator
+    return download
+
+
+KEY_DOWNLOAD_ARGS = [
+    '--fail', '--show-error', '--no-progress-meter',
+    '--retry', '3', '--retry-all-errors', '--connect-timeout', '15',
+    '--max-time', '60', '--retry-max-time', '180',
+    '-o', '/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc',
+    'https://www.postgresql.org/media/keys/ACCC4CF8.asc',
+]
+
+
+def test_linux_signing_key_download_is_bounded_and_preserves_trust_order():
+    # curl owns the retries (at most the first attempt plus three retries).
+    # retry-max-time bounds retry starts, not the total wall-clock duration.
+    lines = linux_key_download_script().replace('\\\n', '').splitlines()
+    assert lines[:2] == [
+        'set -euo pipefail',
+        'sudo install -d /usr/share/postgresql-common/pgdg',
+    ]
+    assert shlex.split(lines[2]) == ['sudo', 'curl', *KEY_DOWNLOAD_ARGS]
+    assert lines[3:] == [
+        'echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] '
+        'https://apt.postgresql.org/pub/repos/apt noble-pgdg main" '
+        '| sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null',
+        'sudo apt-get update -qq',
+        'sudo apt-get install -y -qq postgresql-18',
+    ]
+
+
+@pytest.mark.parametrize('curl_exit', [0, 56, 22, 60])
+def test_linux_signing_key_download_shell_preserves_curl_result(tmp_path, curl_exit):
+    # Exercise the actual download/APT segment, never curl, sudo, or APT itself.
+    # The stub emits a completed curl result, NOT a simulation of retry logic.
+    # This proves argv, diagnostics and fail-closed shell wiring, not networking.
+    stubs = r"""
+curl() {
+    printf '%s\0' "$@" > "$CURL_ARGV"
+    printf 'curl: (%s) injected initial failure\n' "$FIRST_ERROR" >&2
+    printf 'Warning: injected retry diagnostic\n' >&2
+    return "$CURL_EXIT"
+}
+sudo() {
+    local command="$1"
+    shift
+    case "$command" in
+        install) ;;
+        curl) curl "$@" ;;
+        tee)
+            while IFS= read -r line; do :; done
+            printf 'KEY_SOURCE_REGISTERED\n' >&2
+            ;;
+        apt-get) printf 'apt-get %s\n' "$*" ;;
+        *) printf 'Unexpected privileged command\n' >&2; return 99 ;;
+    esac
+}
+"""
+    argv_file = tmp_path / 'curl.argv'
+    done = subprocess.run(
+        ['/bin/bash', '--noprofile', '--norc', '-c',
+         stubs + linux_key_download_script() + '\nprintf "ASSEMBLY_CONTINUES\n"'],
+        # No executable search path or inherited shell/auth environment. All
+        # permitted operations above are builtins; the real key path is unused.
+        env={'PATH': str(tmp_path), 'CURL_ARGV': str(argv_file),
+             'CURL_EXIT': str(curl_exit), 'FIRST_ERROR': str(curl_exit or 56)},
+        stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=5,
+    )
+    assert argv_file.read_bytes().decode().split('\0') == [*KEY_DOWNLOAD_ARGS, '']
+    assert done.returncode == curl_exit
+    diagnostics = (f'curl: ({curl_exit or 56}) injected initial failure\n'
+                   'Warning: injected retry diagnostic\n')
+    if curl_exit:
+        assert done.stdout == ''  # No APT call or continuation sentinel.
+        assert done.stderr == diagnostics  # No key registration either.
+    else:
+        assert done.stdout == ('apt-get update -qq\n'
+                               'apt-get install -y -qq postgresql-18\n'
+                               'ASSEMBLY_CONTINUES\n')
+        assert done.stderr == diagnostics + 'KEY_SOURCE_REGISTERED\n'
 
 
 def test_triggers_cover_manual_pr_weekly_push_and_papersim_paths():
