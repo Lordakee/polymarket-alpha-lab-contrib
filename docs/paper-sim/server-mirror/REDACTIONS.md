@@ -5,10 +5,10 @@ original bytes remain on the server. Pre-redaction sha256 below.
 
 | file | original sha256 | redacted sha256 |
 |---|---|---|
-| ledger-snapshots/2026-11-12/VIEW-DIFF.md | a7f5cc36bf12737c305ca68250c498127f4f92d4337eaabc94b4c88f451fee1d | b1ed227f18a7ad4acc766ca3ad03cedec69b1a01af8942951608652648818697 |
+| ledger-snapshots/2026-11-12/VIEW-DIFF.md | a7f5cc36bf12737c305ca68250c498127f4f92d4337eaabc94b4c88f451fee1d | a1b8e595e00d21a9b68f994b299ea929bc677f9badb3a3dff9f756643c677f76 |
 | server-mirror/FX-04-wiring-proof.md | dce4f44a643b8c05dc34ea9241aff0a9237cf2f4fe30d7014a2707e91025f051 | 7e94943467676dc24d49d141e0253299719035163ea2fb98466350c1e211bc2c |
 | server-mirror/MANIFEST-NOT-MIRRORED.md | d635c6fb374ac39875cc798c16e89c14d2d6a34a5a66808d03423df68b72f4a6 | 935db2c9c0c912eb315025962d9d792e19fdeb1660d3540e4693e59d4b40d9ef |
-| server-mirror/MANIFEST.sha256 | edited-in-place-post-redaction (see note) | 1678ca089f2ebd6de724368d876ec58f5a22f5cf0aebe0b72aa41aab3efd85de |
+| server-mirror/MANIFEST.sha256 | edited-in-place-post-redaction (see note) | 37fac2e0416deaf314acd0547d32157d3f62e3652d9c44e0fd611c8471a1862b |
 | server-mirror/VERSION-CHECKIN.md | 93efb8a78d9a5db405a740117bb0b48d77ded27ec2ae0000b5685e7d9615d9a5 | 1a6caa94c89733fb9f2283927a7e9b39634ddc3003b21d8183575509f2780d34 |
 | server-mirror/intl/wp_intl3/polymarket_alpha_lab/papersim/league_strength.py | d76b25e84b0b7f5a25f9b6a3af7fabde7efe66b5dd3a4f3b411dbd10bd2817a0 | 1733bbd90f6833c14d81d6223d408124c23a871c93065657a1a9a2786df30cd8 |
 | server-mirror/round29/raw/write_scan.py | 93ed8a73524809356e0bdc2804aa3133b5bcf2bd62ab44cfd29e12183e2be9ff | 9d078a8cdcd753c5066c480aa2b35e491c90f0cb1cf1752780ab604d50517ab7 |
@@ -21,3 +21,13 @@ MANIFEST.sha256 was edited after its post-redaction hash was first recorded
 (redacted file-row hashes were updated in a second pass), so its redacted
 sha256 above is the CURRENT final value recomputed at commit time; the
 original-hash column entry is marked accordingly.
+
+## Current-value refresh (R05, 2026-11-13)
+
+VIEW-DIFF.md was corrected for the snapshot date, unknown fix provenance,
+OD-H, fee scope and the forecast CSV hash. MANIFEST.sha256 now distinguishes
+411 source-identical rows at the 2026-11-12 inventory from four redacted rows,
+and records the four committed byte sizes. Their current hashes above were
+computed only after those edits. All original-hash entries, including the
+manifest's existing explanatory marker, are preserved. This table does not
+hash itself or assert a new server-side comparison.
