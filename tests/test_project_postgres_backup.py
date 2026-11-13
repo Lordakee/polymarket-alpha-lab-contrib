@@ -1,4 +1,4 @@
-"""Physical snapshot contracts, with no real database, SQL or network."""
+"""Physical snapshot contracts with synthetic files and local socket probes."""
 from copy import deepcopy
 from contextlib import nullcontext
 from hashlib import sha256
@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import socket
 import stat
 from types import SimpleNamespace
 import zipfile
@@ -15,6 +16,7 @@ import pytest
 
 from polymarket_alpha_lab.project_postgres import backup as b, backup_format as f, files
 from polymarket_alpha_lab.project_postgres.cli import main
+from tests.native_port_selection import pick_port
 
 
 def manifest():
@@ -114,6 +116,7 @@ def state(tmp_path, monkeypatch):
     (root/'database').mkdir();(root/'database/migrations.lock.json').write_text('{}')
     db=b.ProjectPostgres(root);db.layout.prepare_private();files.private_directory(db.layout.home,create=True)
     data=manifest();data['instance']['root_sha256']=db.layout.root_hash
+    data['instance']['port']=pick_port()
     for name,item in sorted(data['entries'].items()):
         path=db.layout.home/name
         if item['kind']=='directory':path.mkdir(mode=0o777 if os.name=='nt' else 0o700)
@@ -145,6 +148,26 @@ def test_full_physical_copy_preserves_every_byte_and_empty_directory(state):
     saved=layout.private/'original-kept';layout.home.rename(saved)
     assert b.restore_cold_backup(root,**kwargs)['status']=='restored_stopped'
     assert f.inventory(layout.home)==before==f.inventory(saved)
+    assert not (layout.private/'postgres.restoring').exists()
+
+
+def test_restore_refuses_occupied_port_then_restores_same_archive(state):
+    root,layout,data,dest=state
+    before=f.inventory(layout.home)
+    with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as listener:
+        listener.bind(('127.0.0.1',0));listener.listen()
+        data['instance']['port']=listener.getsockname()[1]
+        path,digest=make(state)
+        kwargs=dict(archive=path,expected_sha256=digest,trusted_backup=True)
+        saved=layout.private/'original-kept';layout.home.rename(saved)
+        with pytest.raises(files.ProjectDatabaseError,match='port_in_use'):
+            b.restore_cold_backup(root,**kwargs)
+        assert not layout.home.exists() and not (layout.private/'postgres.restoring').exists()
+        assert f.inventory(saved)==before
+        assert sha256(path.read_bytes()).hexdigest()==digest
+    assert b.restore_cold_backup(root,**kwargs)['status']=='restored_stopped'
+    assert f.inventory(layout.home)==before==f.inventory(saved)
+    assert sha256(path.read_bytes()).hexdigest()==digest
     assert not (layout.private/'postgres.restoring').exists()
 
 
@@ -201,7 +224,9 @@ def test_capture_source_change_never_publishes(state,monkeypatch):
 def test_failed_staged_identity_does_not_publish_or_reset(state,monkeypatch):
     root,layout,data,dest=state;path,digest=make(state)
     layout.home.rename(layout.private/'original-kept')
-    monkeypatch.setattr(b.ProjectPostgres,'_state',lambda _:dict(data['instance'],port=55433))
+    port=data['instance']['port']
+    different_port=port+1 if port<65535 else port-1
+    monkeypatch.setattr(b.ProjectPostgres,'_state',lambda _:dict(data['instance'],port=different_port))
     with pytest.raises(files.ProjectDatabaseError):b.restore_cold_backup(root,archive=path,expected_sha256=digest,trusted_backup=True)
     assert not layout.home.exists() and (layout.private/'postgres.restoring').exists()
     assert (layout.private/'original-kept').exists()
