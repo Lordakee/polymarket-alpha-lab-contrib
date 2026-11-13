@@ -26,7 +26,7 @@ from tests.test_project_postgres_uncapped_native import authorization
 from tests.test_team_research_cross_source import Model
 
 ROOT = Path(__file__).resolve().parents[1]
-TAIL = '20261107000000_papersim_perf_view_fix.sql'  # manifest tail as of 2026-11-12 (migrations #69/#70 added papersim)
+TAIL = '20260919000000_research_uncapped_audit.sql'
 ENABLED = os.environ.get('POLYMARKET_ALPHA_LAB_RUN_NATIVE_PROJECT_POSTGRES') == '1'
 _CRASH = r'''
 import os,sys
@@ -67,7 +67,12 @@ def test_audited_uncapped_upgrade_calls_uncertainty_and_process_loss(tmp_path, m
     shutil.copytree(ROOT/'supabase/migrations', root/'supabase/migrations')
     manifest_file = root/'database/migrations.lock.json'
     full = manifest_file.read_bytes(); manifest = json.loads(full)
-    assert len(manifest['migrations']) == 70 and manifest['migrations'][-1]['name'] == TAIL
+    # Preserve the historical 67->68 uncapped audit proof, excluding newer tails.
+    for later in manifest['migrations'][68:]:
+        (root/'supabase/migrations'/later['name']).unlink()
+    manifest = dict(manifest, migrations=manifest['migrations'][:68])
+    full = json.dumps(manifest).encode()
+    assert len(manifest['migrations']) == 68 and manifest['migrations'][-1]['name'] == TAIL
     (root/'supabase/migrations'/TAIL).unlink()
     manifest_file.write_text(json.dumps(dict(manifest, migrations=manifest['migrations'][:-1])))
     with socket.socket() as sock:
@@ -86,6 +91,9 @@ def test_audited_uncapped_upgrade_calls_uncertainty_and_process_loss(tmp_path, m
             assert old.record.run.research.status == 'completed'
         shutil.copyfile(ROOT/'supabase/migrations'/TAIL,root/'supabase/migrations'/TAIL)
         manifest_file.write_bytes(full)
+        pending = db.up()
+        assert pending['status'] == 'migrations_pending' and pending['pending_migrations'] == 1
+        db.down()
         assert db.migrate()['migrations_applied'] == 1
         assert db.migrate()['migrations_applied'] == 0
         identity = db._state()
@@ -209,7 +217,7 @@ def test_audited_uncapped_upgrade_calls_uncertainty_and_process_loss(tmp_path, m
             first_start = s.inspect_uncapped_calls(record_id=requests[0].record_id).calls[0]
             with pytest.raises(Exception):
                 s._call(store._finish_call,start=first_start,status='returned',reply=None)
-            assert db._psql(identity,'SELECT count(*) FROM project_private.migrations;') == '70'
+            assert db._psql(identity,'SELECT count(*) FROM project_private.migrations;') == '68'
             crash = prepared(6120); cp = authorization((crash,),authorization_id='audit-crash-policy')
             s.create_uncapped_authorization(authorization=cp,allow_authorization_write=True)
             s.enqueue_research_batch(batch=ResearchBatch('audit-crash',(crash,)),allow_queue_write=True)
@@ -431,7 +439,7 @@ def test_operator_assembly_native_two_team_stop_restart_replay_and_audit(tmp_pat
         sock.bind(('127.0.0.1',0)); port = sock.getsockname()[1]
     import_runtime_directory(root,prefix); db = ProjectPostgres(root); restarted = None
     try:
-        # (a) Real fixture: full 68-migration init and the first explicit up,
+        # (a) Real fixture: full 70-migration init and the first explicit up,
         # then the time-sensitive typed inputs (freshness starts at prepared()).
         assert db.initialize(port=port)['migrations_applied'] == 70
         assert db.up()['status'] == 'running'
