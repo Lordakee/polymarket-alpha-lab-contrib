@@ -87,7 +87,7 @@ def test_paper_assembly_replays_reads_preserves_failures_and_blocks_incomplete(t
             assert s.inspect(record_id=incomplete.record_id).status=='incomplete'
             assert db._psql(identity,'SELECT count(*) FROM research_capture.attempts;')=='3'
             assert db._psql(identity,'SELECT count(*) FROM research_capture.execution_claims;')=='4'
-            assert db._psql(identity,'SELECT count(*) FROM project_private.migrations;')==​'70'
+            assert db._psql(identity,'SELECT count(*) FROM project_private.migrations;')=='70'
         assert db.status()['instance_id']==identity['instance_id']
         print('native research paper: PASS; BTC/ETH read-only scenarios, failures/denominator, replay/restart, incomplete blocked')
     finally:
