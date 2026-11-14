@@ -247,8 +247,8 @@ def test_linux_partitions_and_pg18_prefix_are_explicit():
     assert 'test "$NATIVE_RESULT" = success' in gate
 
 
-def linux_key_download_script():
-    worker = jobs(WORKFLOW.read_text())['linux-native-part']
+def linux_key_download_script(workflow, job_id):
+    worker = jobs(workflow.read_text())[job_id]
     step = worker.split('      - name: Assemble the qualified PG18 portable prefix\n', 1)[1]
     step = step.split('\n      - name:', 1)[0]
     body = step.split('        run: |\n', 1)[1]
@@ -267,10 +267,17 @@ KEY_DOWNLOAD_ARGS = [
 ]
 
 
-def test_linux_signing_key_download_is_bounded_and_preserves_trust_order():
+KEY_DOWNLOAD_WORKFLOWS = (
+    (WORKFLOW, 'linux-native-part'),
+    (ROOT / '.github/workflows/native-distribution.yml', 'linux-kit'),
+)
+
+
+@pytest.mark.parametrize('workflow,job_id', KEY_DOWNLOAD_WORKFLOWS, ids=('postgres', 'distribution'))
+def test_linux_signing_key_download_is_bounded_and_preserves_trust_order(workflow, job_id):
     # curl owns the retries (at most the first attempt plus three retries).
     # retry-max-time bounds retry starts, not the total wall-clock duration.
-    lines = linux_key_download_script().replace('\\\n', '').splitlines()
+    lines = linux_key_download_script(workflow, job_id).replace('\\\n', '').splitlines()
     assert lines[:2] == [
         'set -euo pipefail',
         'sudo install -d /usr/share/postgresql-common/pgdg',
@@ -285,8 +292,10 @@ def test_linux_signing_key_download_is_bounded_and_preserves_trust_order():
     ]
 
 
+@pytest.mark.parametrize('workflow,job_id', KEY_DOWNLOAD_WORKFLOWS, ids=('postgres', 'distribution'))
 @pytest.mark.parametrize('curl_exit', [0, 56, 22, 60])
-def test_linux_signing_key_download_shell_preserves_curl_result(tmp_path, curl_exit):
+def test_linux_signing_key_download_shell_preserves_curl_result(
+        tmp_path, workflow, job_id, curl_exit):
     # Exercise the actual download/APT segment, never curl, sudo, or APT itself.
     # The stub emits a completed curl result, NOT a simulation of retry logic.
     # This proves argv, diagnostics and fail-closed shell wiring, not networking.
@@ -315,7 +324,7 @@ sudo() {
     argv_file = tmp_path / 'curl.argv'
     done = subprocess.run(
         ['/bin/bash', '--noprofile', '--norc', '-c',
-         stubs + linux_key_download_script() + '\nprintf "ASSEMBLY_CONTINUES\n"'],
+         stubs + linux_key_download_script(workflow, job_id) + '\nprintf "ASSEMBLY_CONTINUES\n"'],
         # No executable search path or inherited shell/auth environment. All
         # permitted operations above are builtins; the real key path is unused.
         env={'PATH': str(tmp_path), 'CURL_ARGV': str(argv_file),
@@ -425,13 +434,15 @@ def run_download_segment(tmp_path, script, scenario_code, failures):
     return done, argv_file, attempts_file
 
 
-def test_linux_signing_key_download_recovers_transient_56_the_original_command_could_not(tmp_path):
+@pytest.mark.parametrize('workflow,job_id', KEY_DOWNLOAD_WORKFLOWS, ids=('postgres', 'distribution'))
+def test_linux_signing_key_download_recovers_transient_56_the_original_command_could_not(
+        tmp_path, workflow, job_id):
     # A single mid-transfer CURLE_RECV_ERROR (56) followed by a good
     # transfer: the remediated argv recovers inside curl and the step
     # proceeds, while the pinned pre-remediation argv fails at the first
     # attempt -- the original pattern would NOT recover.
     done, argv_file, attempts_file = run_download_segment(
-        tmp_path, linux_key_download_script(), scenario_code=56, failures=1)
+        tmp_path, linux_key_download_script(workflow, job_id), scenario_code=56, failures=1)
     assert done.returncode == 0
     assert attempts_file.read_text().splitlines() == ['1', '2']
     assert argv_file.read_bytes().decode().split('\0') == [*KEY_DOWNLOAD_ARGS, '']
@@ -451,14 +462,15 @@ def test_linux_signing_key_download_recovers_transient_56_the_original_command_c
     assert before.stderr == 'curl: (56) error not retryable with this argv\n'
 
 
+@pytest.mark.parametrize('workflow,job_id', KEY_DOWNLOAD_WORKFLOWS, ids=('postgres', 'distribution'))
 @pytest.mark.parametrize('curl_exit', [56, 22, 60])
 def test_linux_signing_key_download_persistent_errors_exhaust_bounded_retries_and_fail_closed(
-        tmp_path, curl_exit):
+        tmp_path, workflow, job_id, curl_exit):
     # Persistent 56/22/60 stay fatal after the bounded retry budget (the
     # first attempt plus the three retries the argv allows): APT and the
     # continuation sentinel are never reached and diagnostics survive.
     done, argv_file, attempts_file = run_download_segment(
-        tmp_path, linux_key_download_script(), scenario_code=curl_exit, failures=99)
+        tmp_path, linux_key_download_script(workflow, job_id), scenario_code=curl_exit, failures=99)
     assert done.returncode == curl_exit
     assert attempts_file.read_text().splitlines() == ['1', '2', '3', '4']
     assert argv_file.read_bytes().decode().split('\0') == [*KEY_DOWNLOAD_ARGS, '']
