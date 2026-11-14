@@ -414,11 +414,163 @@ out["status_after"] = db.status()["status"]
 print(json.dumps(out, ensure_ascii=True, allow_nan=False))
 '''
 
-_SEED_PAYLOAD = r'''
+# R03-diag2: failure-moment diagnostics executed inside the OLD seed child.
+# Pure stdlib, prepended to the seed payload source; it activates only on
+# the payload's failure path.  One stderr line with whitelisted fields
+# only: no addresses (raw or encoded), inodes, PIDs, foreign ports,
+# credentials, DSNs or locals; incomplete /proc input is UNAVAILABLE and
+# never zero; the emit itself can never mask or replace the business
+# exception.
+_SEED_FAILURE_DIAGNOSTICS = r'''
+import json as _json
+from pathlib import Path as _Path
+import re as _re
+import sys as _sys
+
+_SEED_STATES = {'01': 'ESTABLISHED', '02': 'SYN_SENT', '03': 'SYN_RECV',
+                '04': 'FIN_WAIT1', '05': 'FIN_WAIT2', '06': 'TIME_WAIT',
+                '07': 'CLOSE', '08': 'CLOSE_WAIT', '09': 'LAST_ACK',
+                '0A': 'LISTEN', '0B': 'CLOSING', '0C': 'NEW_SYN_RECV',
+                '0D': 'BOUND_INACTIVE'}
+
+
+def _seed_diag_root():
+    """sys.path[0] is the OLD src directory injected by the runner."""
+    try:
+        return _Path(_sys.path[0]).resolve()
+    except Exception:
+        return None
+
+
+def _seed_diag_file(filename, root):
+    try:
+        if filename.startswith('<') and filename.endswith('>'):
+            return filename
+        path = _Path(filename)
+        if not path.is_absolute():
+            return filename
+        if root is not None:
+            try:
+                return path.relative_to(root).as_posix()
+            except ValueError:
+                return '<outside>'
+        return '<outside>'
+    except Exception:
+        return '<outside>'
+
+
+def _seed_diag_frames(tb, root):
+    """Innermost first and bounded: the decisive bind frame is innermost."""
+    frames = []
+    while tb is not None and len(frames) < 8:
+        code = tb.tb_frame.f_code
+        frames.append([_seed_diag_file(code.co_filename, root),
+                       code.co_name, tb.tb_lineno])
+        tb = tb.tb_next
+    return frames
+
+
+def _seed_diag_chain(exc):
+    """Bounded breadth-first walk of __cause__ and __context__ (<= 4)."""
+    chain = []
+    seen = set()
+    queue = [(exc, 'raised')]
+    while queue and len(chain) < 4:
+        current, via = queue.pop(0)
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        errno = getattr(current, 'errno', None)
+        chain.append({'via': via, 'type': type(current).__name__,
+                      'errno': errno if type(errno) is int else None,
+                      'suppress_context': bool(current.__suppress_context__),
+                      'frames': _seed_diag_frames(current.__traceback__,
+                                                  _seed_diag_root())})
+        if current.__cause__ is not None:
+            queue.append((current.__cause__, 'cause'))
+        if current.__context__ is not None:
+            queue.append((current.__context__, 'context'))
+    return chain
+
+
+def _seed_diag_tcp(name, port):
+    """Bounded /proc/net/tcp{,6} counts for the task port only.
+
+    Mirrors _old_seed_tcp_counts semantics: read at most 65537 bytes; a
+    longer (truncated) read, a missing trailing newline or any malformed
+    row yields 'UNAVAILABLE', never a zero count.
+    """
+    try:
+        with open('/proc/net/' + name, 'rb') as stream:
+            raw = stream.read(65537)
+    except Exception:
+        return 'UNAVAILABLE'
+    if len(raw) > 65536 or not raw.endswith(b'\n'):
+        return 'UNAVAILABLE'
+    try:
+        lines = raw.decode('ascii').splitlines()
+    except UnicodeDecodeError:
+        return 'UNAVAILABLE'
+    if not lines or lines[0].split()[:4] not in (
+            ['sl', 'local_address', 'rem_address', 'st'],
+            ['sl', 'local_address', 'remote_address', 'st']):
+        return 'UNAVAILABLE'
+    width = 8 if name == 'tcp' else 32
+    pattern = '[0-9A-Fa-f]{' + str(width) + '}:[0-9A-Fa-f]{4}'
+    counts = {'local': {}, 'peer': {}}
+    for line in lines[1:]:
+        fields = line.split()
+        if len(fields) < 4 or fields[3] not in _SEED_STATES:
+            return 'UNAVAILABLE'
+        ports = []
+        for endpoint in fields[1:3]:
+            if not _re.fullmatch(pattern, endpoint):
+                return 'UNAVAILABLE'
+            ports.append(int(endpoint.rsplit(':', 1)[1], 16))
+        for side, actual in zip(('local', 'peer'), ports):
+            if actual == port:
+                state = _SEED_STATES[fields[3]]
+                counts[side][state] = counts[side].get(state, 0) + 1
+    return counts
+
+
+def _seed_diag_field(value):
+    if isinstance(value, (dict, list)):
+        return _json.dumps(value, sort_keys=True, separators=(',', ':'))
+    return str(value)
+
+
+def _seed_failure_emit(error, port, stream=None):
+    """One stderr line at the failure moment; can never raise."""
+    try:
+        if stream is None:
+            stream = _sys.stderr
+        code = str(error)
+        if not _re.fullmatch('[a-z0-9_]+', code):
+            code = '<noncode>'
+        errno = getattr(error, 'errno', None)
+        chain = _seed_diag_chain(error)
+        if type(port) is int and 1 <= port <= 65535 and port != 55432:
+            tcp = _seed_diag_tcp('tcp', port)
+            tcp6 = _seed_diag_tcp('tcp6', port)
+        else:
+            tcp = tcp6 = 'PORT_UNAVAILABLE'
+        print('OLD_SEED_FAILURE_MOMENT code=' + code
+              + ' errno=' + (str(errno) if type(errno) is int else 'null')
+              + ' chain=' + _seed_diag_field(chain)
+              + ' tcp=' + _seed_diag_field(tcp)
+              + ' tcp6=' + _seed_diag_field(tcp6), file=stream)
+    except BaseException:
+        pass
+'''
+
+
+_SEED_PAYLOAD = _SEED_FAILURE_DIAGNOSTICS + r'''
 import json, sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from polymarket_alpha_lab import research_execution_psycopg as execution
+from polymarket_alpha_lab.project_postgres.files import ProjectDatabaseError
 from polymarket_alpha_lab.project_postgres.server import ProjectPostgres
 from polymarket_alpha_lab.research_execution import CapturedResearchRequest
 from polymarket_alpha_lab.team_research_agent_types import (
@@ -466,32 +618,42 @@ def request(index, team):
 
 
 root = Path(sys.argv[1])
+try:
+    _port = int(sys.argv[2]) if len(sys.argv) > 2 else 0
+except ValueError:
+    _port = 0
+if not 1 <= _port <= 65535 or _port == 55432:
+    _port = None
 out = {}
-db = ProjectPostgres(root)
-with db.session() as session:
-    btc = request(1, "crypto_btc")
-    completed = session.run_research(
-        request=btc, model_factory=lambda _: Model("vs-source-1"))
-    out["completed"] = completed.to_dict()
-    eth = request(2, "crypto_eth")
+try:
+    db = ProjectPostgres(root)
+    with db.session() as session:
+        btc = request(1, "crypto_btc")
+        completed = session.run_research(
+            request=btc, model_factory=lambda _: Model("vs-source-1"))
+        out["completed"] = completed.to_dict()
+        eth = request(2, "crypto_eth")
 
-    def broken(_):
-        raise RuntimeError("synthetic model factory failure")
+        def broken(_):
+            raise RuntimeError("synthetic model factory failure")
 
-    failed = session.run_research(request=eth, model_factory=broken)
-    out["failed"] = failed.to_dict()
-    outstanding = request(3, "crypto_btc")
-    owned, state = session._call(execution._claim, request=outstanding)
-    out["outstanding_owned"] = owned
-    out["outstanding"] = state.to_dict()
-    out["inspections"] = {record_id: session.inspect(record_id=record_id).to_dict()
-                          for record_id in ("vs-record-1", "vs-record-2", "vs-record-3")}
-    try:
-        session.evaluate()
-        out["evaluation_refusal"] = "none"
-    except Exception as error:
-        out["evaluation_refusal"] = type(error).__name__ + ":" + str(error)
-out["status_after"] = db.status()["status"]
+        failed = session.run_research(request=eth, model_factory=broken)
+        out["failed"] = failed.to_dict()
+        outstanding = request(3, "crypto_btc")
+        owned, state = session._call(execution._claim, request=outstanding)
+        out["outstanding_owned"] = owned
+        out["outstanding"] = state.to_dict()
+        out["inspections"] = {record_id: session.inspect(record_id=record_id).to_dict()
+                              for record_id in ("vs-record-1", "vs-record-2", "vs-record-3")}
+        try:
+            session.evaluate()
+            out["evaluation_refusal"] = "none"
+        except Exception as error:
+            out["evaluation_refusal"] = type(error).__name__ + ":" + str(error)
+    out["status_after"] = db.status()["status"]
+except (OSError, ProjectDatabaseError) as error:
+    _seed_failure_emit(error, _port)
+    raise
 print(json.dumps(out, ensure_ascii=True, allow_nan=False))
 '''
 
@@ -925,7 +1087,7 @@ def initialize_and_seed_with_old_source(rig) -> None:
     assert _blocked_reason(refused) == 'project_postgres_existing_data_not_reinitialized'
     status = _old_cli(rig, '--root', str(original), 'status')
     assert _json_stdout(status)['status'] == 'stopped'
-    seeded = _old_payload(rig, 'seed.py', _SEED_PAYLOAD, str(original))
+    seeded = _old_payload(rig, 'seed.py', _SEED_PAYLOAD, str(original), str(rig['port']))
     assert seeded.returncode == 0, _stderr_text(seeded)
     records = _json_stdout(seeded)
     completed, failed, outstanding = (records['completed'], records['failed'],
@@ -1644,3 +1806,376 @@ def test_old_seed_proc_observer_refuses_root_outside_fixture(monkeypatch, tmp_pa
         rig['original'] = tmp_path.parent / 'another-root'
         _observe_old_seed_exit(rig)
     assert reads == [] and 'tcp=UNAVAILABLE tcp6=UNAVAILABLE' in capsys.readouterr().out
+
+
+# ----------------------------------------------------------------------------
+# R03-diag2: failure-moment diagnostics for the OLD seed payload (offline).
+#
+# The probes below exercise only the diagnostics constant and the payload's
+# failure wrapper with synthetic inputs: no native bind, no SQL, no PG.
+# They mirror the observer suites above (fake modules, fake /proc rows and
+# PRIVATE_SENTINEL leakage checks) and never weaken the native proof.
+# ----------------------------------------------------------------------------
+
+
+def _seed_diag_exec():
+    namespace = {}
+    exec(compile(_SEED_FAILURE_DIAGNOSTICS, '<seed-diagnostics>', 'exec'),
+         namespace)
+    return namespace
+
+
+def _seed_diag_raiser(filename, source, error_name):
+    namespace = {}
+    exec(compile(source, filename, 'exec'), namespace)
+    try:
+        namespace['_seed_raise_target']()
+    except BaseException as error:
+        assert type(error).__name__ == error_name
+        return error
+    raise AssertionError('synthetic source did not raise')
+
+
+def _seed_diag_oserror(filename):
+    return _seed_diag_raiser(filename,
+                             'def _seed_raise_target():\n'
+                             '    raise OSError(98, "PRIVATE_SENTINEL")\n',
+                             'OSError')
+
+
+def _seed_diag_blocked(filename, code):
+    """_FakeProjectDatabaseError(code) raised from None over a caught
+    OSError whose decisive frames are attributed to `filename`."""
+    context = _seed_diag_oserror(filename)
+    try:
+        raise context
+    except OSError:
+        try:
+            raise _FakeProjectDatabaseError(code) from None
+        except _FakeProjectDatabaseError as error:
+            return error
+
+
+def _seed_diag_marker(stderr):
+    lines = [line for line in stderr.splitlines()
+             if line.startswith('OLD_SEED_FAILURE_MOMENT')]
+    assert len(lines) == 1, stderr
+    return lines[0]
+
+
+def test_seed_diag_emits_chain_with_from_none_semantics(monkeypatch, tmp_path):
+    import io
+    monkeypatch.syspath_prepend(str(tmp_path))
+    server = str(tmp_path / 'src/polymarket_alpha_lab'
+                 '/project_postgres/server.py')
+    failure = _seed_diag_blocked(server, 'project_postgres_port_in_use')
+    assert failure.__suppress_context__ is True
+    namespace = _seed_diag_exec()
+    err = io.StringIO()
+    namespace['_seed_failure_emit'](failure, 40000, stream=err)
+    line = _seed_diag_marker(err.getvalue())
+    assert line.startswith('OLD_SEED_FAILURE_MOMENT '
+                           'code=project_postgres_port_in_use errno=null')
+    chain = json.loads(line.split(' chain=', 1)[1].split(' tcp=', 1)[0])
+    assert chain[0]['via'] == 'raised'
+    assert chain[0]['suppress_context'] is True
+    assert chain[0]['errno'] is None
+    assert chain[0]['frames'][0][0] == '<outside>'
+    assert chain[1]['via'] == 'context'
+    assert chain[1]['errno'] == 98
+    assert ['src/polymarket_alpha_lab/project_postgres/server.py',
+            '_seed_raise_target'] in [frame[:2]
+                                      for frame in chain[1]['frames']]
+    assert 'PRIVATE_SENTINEL' not in line and '0100007F' not in line
+
+
+@pytest.mark.parametrize('value', [None, '98', True, 98.0])
+def test_seed_diag_rejects_non_integer_errno(monkeypatch, tmp_path, value):
+    import io
+    monkeypatch.syspath_prepend(str(tmp_path))
+    error = OSError()
+    error.errno = value
+    namespace = _seed_diag_exec()
+    err = io.StringIO()
+    namespace['_seed_failure_emit'](error, 40000, stream=err)
+    line = _seed_diag_marker(err.getvalue())
+    assert ' errno=null' in line and 'errno=98' not in line
+    assert 'PRIVATE_SENTINEL' not in line
+
+
+def _seed_diag_proc_open(monkeypatch, tcp, tcp6):
+    import builtins
+    import io
+    real_open = builtins.open
+
+    def opened(file, mode='r', *args, **kwargs):
+        if file == '/proc/net/tcp':
+            return io.BytesIO(tcp)
+        if file == '/proc/net/tcp6':
+            return io.BytesIO(tcp6)
+        return real_open(file, mode, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, 'open', opened)
+
+
+@pytest.mark.parametrize('content', [
+    b'x' * 65537,
+    b'sl local_address rem_address st\n0: 0100007F:9C40',
+    b'',
+    b'wrong header\n',
+    b'sl local_address rem_address st\n'
+    b'0: 0100007F:9C40 0100007F:9C41 FF PRIVATE_SENTINEL\n',
+    b'sl local_address rem_address st\n'
+    b'0: PRIVATE_SENTINEL 0100007F:9C40 06\n',
+], ids=['over-limit', 'partial-row', 'empty', 'header', 'unknown-state',
+        'malformed-endpoint'])
+def test_seed_diag_tcp_unavailable_is_never_zero(monkeypatch, content):
+    namespace = _seed_diag_exec()
+    _seed_diag_proc_open(monkeypatch, content,
+                         b'sl local_address remote_address st\n')
+    assert namespace['_seed_diag_tcp']('tcp', 40000) == 'UNAVAILABLE'
+    assert namespace['_seed_diag_tcp']('tcp6', 40000) == {'local': {},
+                                                          'peer': {}}
+
+
+def test_seed_diag_tcp_open_error_is_unavailable(monkeypatch):
+    import builtins
+    namespace = _seed_diag_exec()
+    real_open = builtins.open
+
+    def opened(file, *args, **kwargs):
+        if str(file).startswith('/proc/net/'):
+            raise PermissionError('PRIVATE_SENTINEL')
+        return real_open(file, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, 'open', opened)
+    assert namespace['_seed_diag_tcp']('tcp', 40000) == 'UNAVAILABLE'
+
+
+def test_seed_diag_tcp_counts_only_task_port(monkeypatch):
+    namespace = _seed_diag_exec()
+    tcp = (b'sl local_address rem_address st\n'
+           b'0: 0100007F:9C40 00000000:0000 0A PRIVATE_SENTINEL\n'
+           b'1: 0100007F:9C40 0100007F:9C41 06 PRIVATE_SENTINEL\n'
+           b'2: 0100007F:9C42 0100007F:9C40 01 PRIVATE_SENTINEL\n')
+    _seed_diag_proc_open(monkeypatch, tcp,
+                         b'sl local_address remote_address st\n')
+    assert namespace['_seed_diag_tcp']('tcp', 40000) == {
+        'local': {'LISTEN': 1, 'TIME_WAIT': 1},
+        'peer': {'ESTABLISHED': 1}}
+    assert namespace['_seed_diag_tcp']('tcp', 40003) == {'local': {},
+                                                         'peer': {}}
+
+
+def test_seed_diag_chain_terminates_on_cycles():
+    namespace = _seed_diag_exec()
+    first = OSError(98, 'PRIVATE_SENTINEL')
+    second = OSError(99, 'PRIVATE_SENTINEL')
+    first.__context__ = second
+    second.__context__ = first
+    chain = namespace['_seed_diag_chain'](first)
+    assert len(chain) == 2
+    assert chain[0]['via'] == 'raised' and chain[1]['via'] == 'context'
+
+
+def test_seed_diag_emit_failure_cannot_replace_seed_error(
+        monkeypatch, tmp_path):
+    import io
+    monkeypatch.syspath_prepend(str(tmp_path))
+    namespace = _seed_diag_exec()
+
+    def broken(*args, **kwargs):
+        raise RuntimeError('PRIVATE_SENTINEL')
+
+    namespace['_seed_diag_chain'] = broken
+    error = OSError(98, 'PRIVATE_SENTINEL')
+    err = io.StringIO()
+    assert namespace['_seed_failure_emit'](error, 40000, stream=err) is None
+    assert err.getvalue() == ''
+
+
+class _SeedValue:
+    def __init__(self, value):
+        self._value = value
+
+    def to_dict(self):
+        return self._value
+
+
+class _FakeProjectDatabaseError(RuntimeError):
+    pass
+
+
+class _FakeSeedSession:
+    def __init__(self, enter_error):
+        self._enter_error = enter_error
+
+    def __enter__(self):
+        if self._enter_error is not None:
+            raise self._enter_error
+        return self
+
+    def __exit__(self, *exc_info):
+        return False
+
+    def run_research(self, *, request, model_factory):
+        return _SeedValue({'status': 'captured',
+                           'research_status': 'completed'})
+
+    def _call(self, operation, **kwargs):
+        return operation(**kwargs)
+
+    def inspect(self, *, record_id):
+        return _SeedValue({'status': 'inspection'})
+
+    def evaluate(self):
+        return None
+
+
+class _FakeProjectPostgres:
+    enter_error = None
+
+    def __init__(self, root):
+        self._root = root
+
+    def session(self):
+        return _FakeSeedSession(_FakeProjectPostgres.enter_error)
+
+    def status(self):
+        return {'status': 'stopped'}
+
+
+def _seed_claim(*, request):
+    return True, _SeedValue({'status': 'incomplete'})
+
+
+def _seed_fake_module(name):
+    import types
+    return types.ModuleType(name)
+
+
+def _synthetic_seed_payload(monkeypatch, tmp_path, *, enter_error=None,
+                            tcp=b'sl local_address rem_address st\n',
+                            tcp6=b'sl local_address remote_address st\n',
+                            port='40000'):
+    """Exec the REAL _SEED_PAYLOAD against fake package modules and fake
+    /proc rows; returns (stdout, stderr, propagated failure or None)."""
+    import contextlib
+    import io
+    root = tmp_path / 'Original Project'
+    package = _seed_fake_module('polymarket_alpha_lab')
+    execution = _seed_fake_module(
+        'polymarket_alpha_lab.research_execution_psycopg')
+    execution._claim = _seed_claim
+    project_postgres = _seed_fake_module(
+        'polymarket_alpha_lab.project_postgres')
+    server = _seed_fake_module(
+        'polymarket_alpha_lab.project_postgres.server')
+    files = _seed_fake_module('polymarket_alpha_lab.project_postgres.files')
+    files.ProjectDatabaseError = _FakeProjectDatabaseError
+    server.ProjectPostgres = _FakeProjectPostgres
+    execution_root = _seed_fake_module(
+        'polymarket_alpha_lab.research_execution')
+    execution_root.CapturedResearchRequest = type(
+        'CapturedResearchRequest', (),
+        {'__init__': lambda self, *args, **kwargs: None})
+    agent_types = _seed_fake_module(
+        'polymarket_alpha_lab.team_research_agent_types')
+    for name in ('ResearchEvidence', 'ResearchModelReply',
+                 'ResearchToolCall'):
+        setattr(agent_types, name, type(name, (),
+            {'__init__': lambda self, *args, **kwargs: None}))
+    intake = _seed_fake_module('polymarket_alpha_lab.team_research_intake')
+    intake.GammaMarketSnapshot = type('GammaMarketSnapshot', (),
+        {'__init__': lambda self, *args, **kwargs: None})
+    intake.prepare_team_research_from_gamma = lambda *args, **kwargs: object()
+    package.research_execution_psycopg = execution
+    package.research_execution = execution_root
+    package.project_postgres = project_postgres
+    package.team_research_agent_types = agent_types
+    package.team_research_intake = intake
+    for name, module in (
+        ('polymarket_alpha_lab', package),
+        ('polymarket_alpha_lab.research_execution_psycopg', execution),
+        ('polymarket_alpha_lab.research_execution', execution_root),
+        ('polymarket_alpha_lab.project_postgres', project_postgres),
+        ('polymarket_alpha_lab.project_postgres.server', server),
+        ('polymarket_alpha_lab.project_postgres.files', files),
+        ('polymarket_alpha_lab.team_research_agent_types', agent_types),
+        ('polymarket_alpha_lab.team_research_intake', intake),
+    ):
+        monkeypatch.setitem(sys.modules, name, module)
+    _FakeProjectPostgres.enter_error = enter_error
+    _seed_diag_proc_open(monkeypatch, tcp, tcp6)
+    out, err = io.StringIO(), io.StringIO()
+    failure = None
+    previous = sys.argv
+    sys.argv = ['seed.py', str(root), port]
+    try:
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            exec(compile(_SEED_PAYLOAD, '<seed-payload>', 'exec'), {})
+    except BaseException as error:  # noqa: BLE001 (preserve as raised)
+        failure = error
+    finally:
+        sys.argv = previous
+        _FakeProjectPostgres.enter_error = None
+    return out.getvalue(), err.getvalue(), failure
+
+
+def test_seed_payload_failure_moment_line_and_reraise(monkeypatch, tmp_path):
+    source = tmp_path / 'old-source'
+    monkeypatch.syspath_prepend(str(source))
+    server = str(source / 'src/polymarket_alpha_lab'
+                 '/project_postgres/server.py')
+    enter_error = _seed_diag_blocked(server, 'project_postgres_port_in_use')
+    tcp = (b'sl local_address rem_address st\n'
+           b'0: 0100007F:9C40 0100007F:9C41 06 PRIVATE_SENTINEL\n')
+    out, err, failure = _synthetic_seed_payload(
+        monkeypatch, tmp_path, enter_error=enter_error, tcp=tcp,
+        port='40000')
+    assert isinstance(failure, _FakeProjectDatabaseError)
+    assert str(failure) == 'project_postgres_port_in_use'
+    assert out == ''
+    line = _seed_diag_marker(err)
+    assert 'code=project_postgres_port_in_use' in line
+    assert 'tcp={"local":{"TIME_WAIT":1},"peer":{}}' in line
+    assert 'tcp6={"local":{},"peer":{}}' in line
+    chain = json.loads(line.split(' chain=', 1)[1].split(' tcp=', 1)[0])
+    assert chain[1]['via'] == 'context' and chain[1]['errno'] == 98
+    assert 'src/polymarket_alpha_lab/project_postgres/server.py' in [
+        frame[0] for frame in chain[1]['frames']]
+    assert '<seed-payload>' in [frame[0] for frame in chain[0]['frames']]
+    frames = []
+    traceback = failure.__traceback__
+    while traceback is not None:
+        frames.append(traceback.tb_frame.f_code.co_filename)
+        traceback = traceback.tb_next
+    assert frames.count('<seed-payload>') == 1  # bare raise kept it intact
+    assert 'PRIVATE_SENTINEL' not in line and '0100007F' not in line
+
+
+def test_seed_payload_success_has_no_failure_output(monkeypatch, tmp_path):
+    out, err, failure = _synthetic_seed_payload(monkeypatch, tmp_path)
+    assert failure is None
+    assert 'OLD_SEED_FAILURE_MOMENT' not in err
+    payload = json.loads(out)
+    assert payload['status_after'] == 'stopped'
+    assert payload['outstanding_owned'] is True
+    assert payload['evaluation_refusal'] == 'none'
+    assert set(payload['inspections']) == {'vs-record-1', 'vs-record-2',
+                                           'vs-record-3'}
+
+
+@pytest.mark.parametrize('port', ['55432', 'abc', '70000', '0', ''])
+def test_seed_payload_invalid_port_marks_port_unavailable(
+        monkeypatch, tmp_path, port):
+    source = tmp_path / 'old-source'
+    monkeypatch.syspath_prepend(str(source))
+    server = str(source / 'src/polymarket_alpha_lab'
+                 '/project_postgres/server.py')
+    enter_error = _seed_diag_blocked(server, 'project_postgres_port_in_use')
+    _, err, failure = _synthetic_seed_payload(
+        monkeypatch, tmp_path, enter_error=enter_error, port=port)
+    assert isinstance(failure, _FakeProjectDatabaseError)
+    line = _seed_diag_marker(err)
+    assert 'tcp=PORT_UNAVAILABLE' in line and 'tcp6=PORT_UNAVAILABLE' in line
