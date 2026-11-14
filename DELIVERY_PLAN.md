@@ -1,6 +1,6 @@
 # V1 交付总计划：BTC／ETH 研究与模拟验证版
 
-<!-- STATUS BOARD (R05, 2026-11-13) — 业务快照与 CI 观察时点分别列明 -->
+<!-- STATUS BOARD (R05, 2026-11-13; Q 终态回填 2026-11-14) — 业务快照与 CI 观察时点分别列明 -->
 ## 状态板（2026-11-13 文档整改；M0 FAIL）
 
 | 线 | 状态 | 下一步／等谁 |
@@ -10,9 +10,9 @@
 | NBA／国际赛 | 影子（§74／§76），不宣称已达入场标准 | 待既有影子验证；下一轮未运行不能填通过 |
 | V1 六包 | **未激活（OD-A ①）**；不启动真实模型调用 | 仅允许为 Linux CI 维护原生测试；六包门槛不因本轮文档修正关闭 |
 | 仓库正本 | **wmqfl861/polymarket-alpha-lab（OD-C ①）** | Lordakee 的 `5bdae2e3` 是历史观察，当前 tip 待本地复核 |
-| Linux 离线 CI | 截至 `2026-11-13T01:50:36.939219+00:00` 证据快照，`37b288956187de404ee0047bc0a5beeccbe9dbf6`：运行 **43342221407，failure**（编译阶段） | R09 提供最终同 SHA 运行；不把旧失败或未运行写为通过 |
-| Linux 真实数据库 CI | 同一证据快照／同一 `37b2889…`：运行 **43342221238，failure**；三个分区 collection errors，papersim 92 passed，版本切换 skipped | 四个 Linux 分区及 storage 版本切换必须在同一最终 SHA 成功；R04 纸面桥缺 Linux／直推 CI 通道另列 |
-| 审计整改 | **M0 审核不通过（2026-11-13），整改中，待增量复审**；本轮文档 source 为 `fc23fa77b8ec242d3d27f9e0a787d0f63c24cd20` | R05 文档已修；R07 已执行 20 条只读 SQL，精确 DDL 时间 unknown；R09 未提供本轮双绿，不能宣称 M0 出口关闭 |
+| Linux 离线 CI | 截至 `2026-11-13T01:50:36.939219+00:00` 证据快照，`37b288956187de404ee0047bc0a5beeccbe9dbf6`：运行 **43342221407，failure**（编译阶段）。**Q 终态（2026-11-14）**：最终 SHA `f5ca185a50ad6349275cd79dabd5b701b65a2548`（B）上 Offline run **43608957166，success**（41,501 passed／122 skipped；full verifier 与 tracked cleanliness 实际执行） | 已达成；历史失败全部保留于 §77.5／§77.9，不作废 |
+| Linux 真实数据库 CI | 同一证据快照／同一 `37b2889…`：运行 **43342221238，failure**；三个分区 collection errors，papersim 92 passed，版本切换 skipped。**Q 终态（2026-11-14）**：同一 B 上 Native run **43608957129，success**（research 1227／18、dispatch 1933／15、papersim 92／0、storage 分区 320／2＋`Prove native version switch` 75 passed in 161.86s＋cleanliness 实际执行；aggregate 通过；Windows jobs 设计性 skip） | 出口⑧按 §77.9 关闭；R04 纸面桥缺 Linux／直推 CI 通道仍另列 |
+| 审计整改 | **M0 审核不通过（2026-11-13）原始结论保留；整改实现链 R01–R10 已收尾（Q 回填 2026-11-14）**，最终 SHA B 双 CI 绿（Offline 43608957166／Native 43608957129）。根因＝冻结 OLD 无 reuse 端口预检对 CI 环境 TIME_WAIT 误拒（机制实验 A＋diag2 现场 local TIME_WAIT 证据＋决定性运行闭环）；处置＝owner 委托 codex 裁定的 harness 就绪等待（DECISION 1/3/4，决策记录已入库）。本轮文档 source 为 `fc23fa77b8ec242d3d27f9e0a787d0f63c24cd20`（历史行保留） | 待外部审计方增量复审（OD-B 归档门）；九出口逐项终态见 §77.9，证据入库 `docs/remediation-evidence/2026-11-14/`；M1 启动门已解锁、待 owner 派发 |
 | 已登记欠项 | P2-9：win/loss 结算标签未纳入两视图；R04：纸面桥缺自动直推和 Linux 通道；tools 连接守卫／读取上限欠项见 §77.7 | 分别由 FX-09、M3、FX-09、FX-15 后续处理，本轮不写线上库 |
 | Owner 决策 | OD-A ①未激活；B ①双绿且增量复审后归档；C ①正本；D ①受管账本 v2；E ①草稿先给 owner；F ①已接线附两条件；G ①按原数字；H 不执行 | 两条原话、八项原表及边界完整见 §77.3，不再等待已答复决定 |
 
@@ -3838,3 +3838,62 @@ R07 已完成本轮真实只读调查，精确 DDL 时间仍 unknown；定义相
 ### WP-06／FX-07 关联维护：distribution 官方签名 key 下载（2026-11-14）
 
 完整 source 固定 C3 `6add9b041754600109e17e6aa05b0cb99aaface6`（tree `22d2a7b79d4ae1d44c41abb5fccbd23afae53fe9`）；native-postgres 已交付的 key 下载重试修复（argv 提交 `213e87fc`、fakecurl 测试提交 `a9decad6`，均已含于 C3）不重做，native-postgres workflow 与其矩阵/触发/聚合合同不变。本节点仅改三文件：`.github/workflows/native-distribution.yml` 把 PG18 装配步骤中的官方签名 key 下载 curl 换成与 native-postgres 相同的有限重试参数（`--retry 3 --retry-all-errors --connect-timeout 15 --max-time 60 --retry-max-time 180`，`--silent` 改 `--no-progress-meter`），`set -euo pipefail`、官方 URL、原 `-o` 路径、APT `signed-by` 登记→update→install 顺序与 portable prefix 装配不动；`tests/test_native_postgres_workflow.py` 仅参数化既有 `linux_key_download_script` 与四个既有下载测试（postgres/distribution 两参数；`WORKFLOW`、`KEY_DOWNLOAD_ARGS`、`ORIGINAL_KEY_DOWNLOAD_COMMAND`、fakecurl 及全部原断言保留，不新建测试文件或框架）；本文件仅追加本段。红绿证据（节点 branch `audit/distribution-20261114-bdb39b51`，独立 worktree `.venv` Python 3.12.3／pytest 9.1.1；红灯 2026-11-14T09:18:47Z，绿灯 2026-11-14T09:21:28Z）：参数化后、改 yml 前，`-k signing_key_download` 18 项中 postgres 9 项通过、distribution 9 项全部因 argv／恢复／尝试计数 AssertionError 真实失败（exit 1，无收集或环境错误）；改为上述命令后整个测试文件 42 项全部通过（exit 0）。`--retry-max-time 180` 只约束重试启动窗口，不是整条命令或装配步骤的总墙钟上限；fake 用例只证明 argv、fail-closed shell 接线与退出码，不证明真实网络恢复或 libcurl 退避／时序。本段冻结时点，最终 full、compile、selfcheck、secret 扫描、`git diff --check`、fresh 独立代码复审与同 SHA 真实 distribution CI 均尚未发生、待证据，不预写结果；本段亦不预写本提交未来 SHA。R03 storage 根因、R09 最终双绿与九项 M0 出口仍由原任务收尾；WP-06/G6、FX-07 总验收与 V1 状态不据此转 DONE。
+
+### 77.9 Q 回填：最终版本链、B 双绿与九出口终态（2026-11-14，UTC）
+
+本段是 R05 单写者的 Q 文档回填节点：把 R09 在最终 SHA 上取得的真实双 CI 结果写入状态板与本节。**所有证据适用于下述最终 SHA B**；§77.5 的既有历史表与"R09 尚未提供最终双绿"表述保留为历史，由本段更新为终态。本节点不含产品、测试或 workflow 变更（B 的代码内容=已独立复审的 R03-fix 受审提交重放＋已独立复审的 distribution 修复合并）。
+
+**最终版本链（全部完整 SHA）**：
+
+```text
+37b288956187de404ee0047bc0a5beeccbe9dbf6  整改前 main（U+200B 编译失败，历史）
+→ C  0eb2a096398c585b8d67a6afcc700420341348e7  首轮候选（Offline success／Native failure，历史）
+→ C2 9286eefbd8864a3bf7c5afe146e5e8bd91ceb079  R03 窄修候选（双失败，历史）
+→ C3 6add9b041754600109e17e6aa05b0cb99aaface6  merge(观察者 156ba4ef + PG 密钥重试 a9decad6←213e87fcc2d730a78aa03c28b5b1a51a17c5b9f5)
+                                              2026-11-14T03:24:39Z 发布为 canonical main（回读 exact）
+→ ad001c77a530c156b6ce42ff21b01b8711fd3e2b  diag2 失败当刻取证（独立复审 PASS）
+→ 7d993df58574c0cb713d360334fe352ed591c4a9  distribution 签名密钥重试（分支 audit/distribution-20261114-bdb39b51；
+                                              计划复审 PASS／实施全门禁／代码复审 PASS／分支 CI 43583373068 success）
+→ M  29a86f642adb6df83c81a2bfff4f18ddd906ef62  merge --no-ff（双亲 ad001c77 + 7d993df5）
+→ A  8c01798cedf60b7f04346f5d12f6471953db8b28  R03-fix 受审提交（parent=ad001c77；fresh 代码复审 PASS，0 P1/P2）
+→ B  f5ca185a50ad6349275cd79dabd5b701b65a2548  受审 A 重放于 M 之上（tree b9c40393a2e2b9f3ad217b9f01545c7788a89b14）
+```
+
+A≠B 已在 `r03-fix-evidence/final-registration.md` 登记：tree 校验为 version-switch 测试 blob 与 A 一致、三个 distribution 文件 blob 与 7d993df5 一致；diff A..B 恰为三个 distribution 文件，diff M..B 恰为 version-switch 测试文件，diff ad001c77..B 恰为四个文件。B 经 thin bundle 桥普通 fast-forward 推送（ad001c77..f5ca185a，无 force），API 回读 main=B、tree 与双亲一致；本段落笔时点再次 `gh api branches/main` 复核 canonical main 仍为 B。
+
+**B 上同 SHA 双 CI（均 attempt 1、event push、无 dispatch／rerun／cancel，created 2026-11-14T15:12:50Z）**：
+
+| Workflow | run id | 结论 | 关键计数（jobs/steps） |
+| --- | ---: | --- | --- |
+| Offline verification | **43608957166** | **success** | 41,501 passed／122 skipped／20 warnings in 372.70s；`PASS: full pytest`、`PASS: full local verification`（含 selfcheck 门）等八条 PASS 行；tracked cleanliness 实际执行成功 |
+| Native project PostgreSQL | **43608957129** | **success** | research 1227／18；dispatch 1933／15；papersim 92／0；storage 分区 320 passed／2 skipped＋`Prove native version switch` **75 passed in 161.86s**＋cleanliness 实际执行＋artifact 上传成功；聚合 `Require every native partition` 通过；Windows jobs 为 `if:false` 设计性 skip |
+
+运行 URL 按 `https://github.com/wmqfl861/polymarket-alpha-lab/actions/runs/<run id>`。全部 11 个 artifact 成员（四分区 proof log/xml、storage version-switch proof log/xml、offline log）已核对在档（回执登记逐成员 bytes/SHA256，见 `docs/remediation-evidence/2026-11-14/ci-receipts/r09-final-dual-ci-20261114.json`）。
+
+**决定性等待路径日志**（storage version-switch proof，artifact 成员 2503B，SHA256 `6d02d989…`，已入库）：端口 29040 `OLD_SEED_WAIT_BEFORE local TIME_WAIT=1／peer TIME_WAIT=72` → 就绪等待 59.099s 清零（`OLD_SEED_WAIT_AFTER local 空`）→ seed bind 成功 → 七阶段 native 证明全 PASS（old-initialize 74.4s／lifecycle-backup 12.9s／current-selection 11.2s／old-rollback 5.3s／bundle-refusals 16.2s／pending-backup-refusals 20.3s／explicit-migration 14.4s）；端口 40000 同样走等待路径（local TW=1→清空）。与裁定根因闭环一致：**根因＝冻结 OLD（2b20002c）无 reuse 端口预检在 CI 环境对自身 init 阶段残留的 local TIME_WAIT 误拒（errno 98）；处置＝owner 委托 codex 裁定的 harness 就绪等待（DECISION 1＝A+C、DECISION 3、DECISION 4：间隔 1s、单调上限 90s、UNKNOWN 不当零、超时 FAIL 保留首错）**。证据链：机制实验 A（CONTROL_EXPECTED_MATCH）＋diag2 现场 local TIME_WAIT 证据＋本决定性运行，均已入库 `docs/remediation-evidence/2026-11-14/`。
+
+**历史失败保留声明**：四次 version-switch 阶段 CI 失败——C2 自动 43431642963、C2 手动 43453970876、C3 43551531643（Offline 侧 43551531524 为 success，分开记录）、ad001c77 43590617533（Offline 侧 43590617596 为 success，分开记录）——全部保留为历史，不重跑、不改判、不拼接；更早的 C Native 43404798264（storage 2 failed）与 §77.5 全表（截至 37b28895）及收尾阶段各 run 共同构成完整失败史，逐条清单见 D 交付书 §3。
+
+**九项 M0 出口逐项终态**（基准映射＝`docs/handoffs/2026-11-13-m0-review` 配套整改计划 §8）：
+
+| 项 | 终态（2026-11-14） | 证据／剩余边界 |
+| --- | --- | --- |
+| ① V-1~V-9 书面答案 | 维持已核答案与 §77.1 更正；V-8（四 PR 内容级核对）并入 FX-23、未关闭 | 延期事实保留，不勾成完成 |
+| ② 净口径报告及毛口径对账 | 已核（40／41／62 三对象分开；41 笔补 500 美元本金更正） | 原 20–21% 导出复现验收带不动；数字不改写 |
+| ③ 视图现状／库外复算 | 已核（R07 20 条只读 SQL；11-12 快照 16/16 复算）；精确 DDL 时间与操作者 **unknown** 维持；11-07—11-12 区间 unverified 维持 | OD-H 不执行；FX-09 受管流程后重新登记 |
+| ④ 镜像／清单／替换表 | **关闭**：本地 415 manifest／411+4／四 size／九 redaction 行已核；2026-11-14 服务器现行树来源复核 414/415 逐字节一致，唯一差异＝已记录的 2026-11-14 分页 limit 100→50 修复（`.bak-20261114` 保留清单时点字节） | 历史 tarball `papersim_mirror.tgz` 未找到，UNKNOWN 如实保留；现行一致性结论不依赖 tarball |
+| ⑤ 最近扫描代码提交号 | **待下一轮扫描**（11/14–17 真实扫描运行尚未发生，不构造记录）。本节点入库的 r03-fix（312 新增行）与 distribution（新增行）secret-scan 均 0 命中并归档，属密钥/地址扫描证据，不替代业务扫描轮次 | 下一轮扫描须有 `cross_league_mw_check` 输出留证＋代码提交号（OD-F 附加条件） |
+| ⑥ 跨联赛状态依据 | 维持：已接线（代码路径证明）＋两条 caveat；未在真实候选触发 | OD-F 两附加条件与 11-24 按 §75 恢复不变 |
+| ⑦ 状态板／过期文字 | **本 Q 段即终态更新**（状态板同步回填） | Q 文档提交自身 SHA 由 Git 对象给出，不在本文件预写 |
+| ⑧ 原生 DB CI 成功编号 | **关闭**：同一 B 上 Offline 43608957166＋Native 43608957129 双 success；四 Linux 分区、storage 版本切换（75 passed）与聚合全部实际执行成功 | Windows 设计性 skip 单列，不算失败也不算通过 |
+| ⑨ 费率／到期方向／只读常量＋selfcheck | 维持节点实现与独立复审证据；B 的 Offline run 中 `PASS: full local verification`（含 selfcheck 门）实际通过 | 不沿用未核实历史输出；D 文档提交自身的门禁由其提交后回执承载 |
+
+两条 CI 绿只满足相关软件条件：**不代替外部审计方增量复审、OD-B 归档门、下一轮扫描或统计优势判定；M0 原始 FAIL（2026-11-13）在增量复审结论到达前不翻转为 PASS。**
+
+**CodeGraph**：按 2026-09-12 owner override 记 **N/A**（不初始化、不要求同步、不声称执行过；不得标 PASS）；历史技术性记录为只读 explore 尝试 exit 1、无可用索引（R01 报告与 port-isolation 报告）。
+
+**证据入库**：本节点把库外关键证据 33 文件复制入库 `docs/remediation-evidence/2026-11-14/`（决策记录、r03 三计划＋复审结论要点、实验报告、镜像验证报告、旧复审三份存证、CI 回执、r03-fix 证据 9 文件、Q 底稿与七项复核基础文件），逐文件 bytes/SHA256 与敏感扫描结论见其 `MANIFEST.md`（0 公网 IP、0 凭据值，无脱敏改写）。正式交接书为 `docs/handoffs/2026-11-13-m0-remediation.md`（D）：完整版本链、逐节点处置表、CI 失败史、独立复审链、七项本地复核终态、九出口、偏差与 M1 启动门状态。
+
+**M1 启动门**：R09 双绿与 R10 handback（本节点＋D 交付书）到达后，M1-next-nodes-plan 登记的启动条件已满足技术面；M1 计划自身的独立复审按其文件头仍待同一 reviewer 复审确认，实施由 owner／协调者派发，本节点不启动 M1。
+
+**自引用边界**：本段与 D、证据目录所在的文档提交，其自身 SHA 与其后发生的任何 CI/复审结果不在本文预写；由提交完成后的 Git 对象与最终交接回执给出。
