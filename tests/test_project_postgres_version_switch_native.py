@@ -250,6 +250,16 @@ try:
     runpy.run_path(str(payload), run_name="__main__")
 except SystemExit as error:
     exit_code = error.code
+except Exception as error:
+    if payload.name == "seed.py":
+        try:
+            context = error.__context__
+            value = context.errno if isinstance(context, OSError) else None
+            errno = str(value) if type(value) is int else "ERRNO_UNAVAILABLE"
+            print("OLD_SEED_FIRST_FAILURE_ERRNO=" + errno, file=sys.stderr)
+        except BaseException:
+            pass  # Even a broken diagnostic must preserve the original error.
+    raise
 else:
     exit_code = 0
 
@@ -813,10 +823,71 @@ def _old_cli(rig, *arguments, timeout: int = 900) -> subprocess.CompletedProcess
                  'project_database.py', *arguments], rig['neutral'], timeout=timeout)
 
 
+def _old_seed_tcp_counts(path: Path, port: int) -> str:
+    """Bounded post-exit snapshot; never infer absence from incomplete input."""
+    states = {
+        '01': 'ESTABLISHED', '02': 'SYN_SENT', '03': 'SYN_RECV',
+        '04': 'FIN_WAIT1', '05': 'FIN_WAIT2', '06': 'TIME_WAIT',
+        '07': 'CLOSE', '08': 'CLOSE_WAIT', '09': 'LAST_ACK',
+        '0A': 'LISTEN', '0B': 'CLOSING', '0C': 'NEW_SYN_RECV',
+        '0D': 'BOUND_INACTIVE',
+    }
+    try:
+        with path.open('rb') as stream:
+            raw = stream.read(65537)
+        if len(raw) > 65536 or not raw.endswith(b'\n'):
+            return 'UNAVAILABLE'
+        lines = raw.decode('ascii').splitlines()
+        if not lines or lines[0].split()[:4] not in (
+                ['sl', 'local_address', 'rem_address', 'st'],
+                ['sl', 'local_address', 'remote_address', 'st']):
+            return 'UNAVAILABLE'
+        counts = {'local': {}, 'peer': {}}
+        width = 8 if path.name == 'tcp' else 32
+        for line in lines[1:]:
+            fields = line.split()
+            if len(fields) < 4 or fields[3] not in states:
+                return 'UNAVAILABLE'
+            ports = []
+            for endpoint in fields[1:3]:
+                if not re.fullmatch(r'[0-9A-Fa-f]{' + str(width) + r'}:[0-9A-Fa-f]{4}', endpoint):
+                    return 'UNAVAILABLE'
+                ports.append(int(endpoint.rsplit(':', 1)[1], 16))
+            for side, actual in zip(('local', 'peer'), ports):
+                if actual == port:
+                    state = states[fields[3]]
+                    counts[side][state] = counts[side].get(state, 0) + 1
+        return json.dumps(counts, sort_keys=True, separators=(',', ':'))
+    except Exception:  # diagnostics never expose a raw row or exception text
+        return 'UNAVAILABLE'
+
+
+def _observe_old_seed_exit(rig) -> None:
+    """No ownership claim: a later proc snapshot cannot prove the first cause."""
+    tcp = tcp6 = 'UNAVAILABLE'
+    try:
+        port = rig.port
+        base = rig.base.resolve(strict=True)
+        original = rig.original.resolve(strict=True)
+        if (type(port) is int and 0 < port < 65536 and port != 55432
+                and original == base / 'Original Project'):
+            tcp = _old_seed_tcp_counts(Path('/proc/net/tcp'), port)
+            tcp6 = _old_seed_tcp_counts(Path('/proc/net/tcp6'), port)
+    except Exception:
+        pass
+    print('OLD_SEED_AFTER_CHILD_EXIT OWNER_UNKNOWN', 'tcp=' + tcp, 'tcp6=' + tcp6)
+
+
 def _old_payload(rig, name: str, text: str, *arguments, timeout: int = 900):
     payload = _payload_file(rig, name, text)
     result = _run([rig['python'], '-I', '-B', '-c', _OLD_RUNNER, str(rig['old_source']),
                    str(payload), *arguments], rig['neutral'], timeout=timeout)
+    if name == 'seed.py':
+        try:
+            if result.returncode != 0 or 'PAYLOAD_SOURCE_OK' not in _stderr_text(result):
+                _observe_old_seed_exit(rig)
+        except BaseException:
+            pass  # Observation cannot replace the existing provenance assertion.
     assert 'PAYLOAD_SOURCE_OK' in _stderr_text(result)
     return result
 
@@ -1276,3 +1347,300 @@ def test_native_same_root_source_selection_rollback_and_refusals(tmp_path, monke
     if rig.get('cleanup_failure'):
         raise AssertionError('cleanup could not stop the owned disposable instance: '
                              + rig['cleanup_failure'])
+
+
+# These offline probes exercise the runner/observer, not the native bind or SQL
+# proof above. All process and proc boundaries here use synthetic inputs.
+def _synthetic_old_seed_runner(monkeypatch, payload, *, name='seed.py', emit=None):
+    import builtins
+    from io import StringIO
+    from types import SimpleNamespace
+
+    source = Path('/synthetic-old-source')
+    script = source / name
+    stderr, stdout = StringIO(), StringIO()
+    process = SimpleNamespace(argv=['runner', str(source), str(script)],
+                              path=[], modules={}, stderr=stderr, stdout=stdout)
+
+    def run_path(path, *, run_name):
+        assert path == str(script) and run_name == '__main__'
+        process.modules['polymarket_alpha_lab'] = SimpleNamespace(
+            __file__=str(source / 'src/polymarket_alpha_lab/__init__.py'))
+        payload()
+
+    imports = {'pathlib': SimpleNamespace(Path=Path), 'sys': process,
+               'runpy': SimpleNamespace(run_path=run_path)}
+    namespace = dict(vars(builtins))
+    namespace['__import__'] = lambda name, *args, **kwargs: imports[name]
+    if emit is not None:
+        namespace['print'] = emit
+    error = None
+    # No subprocess or filesystem resolution: preserve the real runner's
+    # exception object, and model only CPython's process-exit boundary.
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, 'resolve', lambda self: self)
+        try:
+            exec(compile(_OLD_RUNNER, '<old-seed-runner>', 'exec'),
+                 {'__builtins__': namespace})
+        except BaseException as caught:
+            error = caught
+    code = error.code if isinstance(error, SystemExit) else 1
+    return (subprocess.CompletedProcess([], code, stdout.getvalue().encode(),
+                                        stderr.getvalue().encode()), error)
+
+
+def test_old_seed_observer_preserves_first_error_context_and_traceback(monkeypatch):
+    failure = RuntimeError('synthetic seed failure')
+    context = OSError(98, 'PRIVATE_SENTINEL')
+
+    def payload():
+        try:
+            raise context
+        except OSError:
+            raise failure from None
+
+    result, caught = _synthetic_old_seed_runner(monkeypatch, payload)
+    assert caught is failure and type(caught) is RuntimeError
+    assert caught.__context__ is context and caught.__cause__ is None
+    assert caught.__suppress_context__ is True and result.returncode == 1
+    assert result.stderr == b'OLD_SEED_FIRST_FAILURE_ERRNO=98\n'
+    assert result.stdout == b'' and b'PAYLOAD_SOURCE_OK' not in result.stderr
+    traceback = caught.__traceback__
+    frames = []
+    while traceback is not None:
+        frames.append(traceback.tb_frame.f_code.co_filename)
+        traceback = traceback.tb_next
+    assert frames.count('<old-seed-runner>') == 1  # a bare raise, not raise error
+
+
+@pytest.mark.parametrize('value', [None, '98', True, 98.0])
+def test_old_seed_observer_rejects_non_integer_errno(monkeypatch, value):
+    context = OSError()
+    context.errno = value
+    failure = RuntimeError('synthetic seed failure')
+
+    def payload():
+        try:
+            raise context
+        except OSError:
+            raise failure from None
+
+    result, caught = _synthetic_old_seed_runner(monkeypatch, payload)
+    assert caught is failure and caught.__context__ is context
+    assert result.returncode == 1
+    assert result.stderr == b'OLD_SEED_FIRST_FAILURE_ERRNO=ERRNO_UNAVAILABLE\n'
+
+
+def test_old_seed_observer_without_oserror_context(monkeypatch):
+    failure = RuntimeError('synthetic seed failure')
+
+    def payload():
+        raise failure
+
+    result, caught = _synthetic_old_seed_runner(monkeypatch, payload)
+    assert caught is failure and caught.__context__ is None
+    assert result.stderr == b'OLD_SEED_FIRST_FAILURE_ERRNO=ERRNO_UNAVAILABLE\n'
+
+
+@pytest.mark.parametrize('observer_failure', [RuntimeError, SystemExit, KeyboardInterrupt])
+def test_old_seed_observer_print_failure_cannot_replace_seed_error(monkeypatch, observer_failure):
+    failure = ValueError('synthetic seed failure')
+    writes = []
+
+    def payload():
+        raise failure
+
+    def broken_print(*args, **kwargs):
+        writes.append(args)
+        raise observer_failure('PRIVATE_SENTINEL')
+
+    result, caught = _synthetic_old_seed_runner(monkeypatch, payload, emit=broken_print)
+    assert caught is failure and result.returncode == 1
+    assert len(writes) == 1 and result.stderr == b''
+
+
+def test_old_seed_observer_errno_read_failure_cannot_replace_seed_error(monkeypatch):
+    class UnreadableError(OSError):
+        @property
+        def errno(self):
+            raise RuntimeError('PRIVATE_SENTINEL')
+
+    context = UnreadableError()
+    failure = ValueError('synthetic seed failure')
+
+    def payload():
+        try:
+            raise context
+        except OSError:
+            raise failure from None
+
+    result, caught = _synthetic_old_seed_runner(monkeypatch, payload)
+    assert caught is failure and caught.__context__ is context
+    assert result.returncode == 1 and result.stderr == b''
+
+
+def test_old_seed_observer_nonseed_exception_has_no_diagnostic(monkeypatch):
+    failure = RuntimeError('synthetic readback failure')
+
+    def payload():
+        raise failure
+
+    result, caught = _synthetic_old_seed_runner(monkeypatch, payload, name='readback.py')
+    assert caught is failure and result.returncode == 1 and result.stderr == b''
+
+
+@pytest.mark.parametrize('exit_code', [None, 0, 7])
+def test_old_seed_observer_success_and_system_exit_keep_source_marker(monkeypatch, exit_code):
+    def payload():
+        if exit_code is not None:
+            raise SystemExit(exit_code)
+
+    result, caught = _synthetic_old_seed_runner(monkeypatch, payload)
+    assert type(caught) is SystemExit and result.returncode == (exit_code or 0)
+    assert result.stderr == b'PAYLOAD_SOURCE_OK\n'
+
+
+@pytest.mark.parametrize(('name', 'code', 'marker', 'observations'), [
+    ('seed.py', 0, True, 0), ('seed.py', 1, False, 1),
+    ('seed.py', 0, False, 1), ('seed.py', 1, True, 1),
+    ('readback.py', 1, False, 0), ('readback.py', 1, True, 0),
+])
+def test_old_seed_parent_observes_only_completed_seed_failures(
+        monkeypatch, tmp_path, name, code, marker, observations):
+    rig = _Rig(python='synthetic-python', old_source=tmp_path / 'old', neutral=tmp_path)
+    result = subprocess.CompletedProcess([], code, b'', b'PAYLOAD_SOURCE_OK\n' if marker else b'')
+    calls = []
+    monkeypatch.setitem(globals(), '_payload_file', lambda *args: tmp_path / name)
+
+    def run(*args, **kwargs):
+        calls.append('child-completed')
+        return result
+
+    def observe(actual):
+        assert actual is rig
+        calls.append('observer')
+
+    monkeypatch.setitem(globals(), '_run', run)
+    monkeypatch.setitem(globals(), '_observe_old_seed_exit', observe)
+    if marker:
+        assert _old_payload(rig, name, 'synthetic') is result
+    else:
+        with pytest.raises(AssertionError):
+            _old_payload(rig, name, 'synthetic')
+    assert calls == ['child-completed'] + ['observer'] * observations
+
+
+def test_old_seed_parent_run_exception_is_unchanged_without_observer(monkeypatch, tmp_path):
+    failure = subprocess.TimeoutExpired('synthetic', 1)
+    rig = _Rig(python='synthetic-python', old_source=tmp_path / 'old', neutral=tmp_path)
+    monkeypatch.setitem(globals(), '_payload_file', lambda *args: tmp_path / 'seed.py')
+    observations = []
+
+    def run(*args, **kwargs):
+        raise failure
+
+    monkeypatch.setitem(globals(), '_run', run)
+    monkeypatch.setitem(globals(), '_observe_old_seed_exit', lambda rig: observations.append(rig))
+    with pytest.raises(subprocess.TimeoutExpired) as caught:
+        _old_payload(rig, 'seed.py', 'synthetic')
+    assert caught.value is failure and observations == []
+
+
+@pytest.mark.parametrize('observer_failure', [RuntimeError, SystemExit, KeyboardInterrupt])
+def test_old_seed_parent_observer_failure_preserves_source_assertion(
+        monkeypatch, tmp_path, observer_failure):
+    rig = _Rig(python='synthetic-python', old_source=tmp_path / 'old', neutral=tmp_path)
+    monkeypatch.setitem(globals(), '_payload_file', lambda *args: tmp_path / 'seed.py')
+    monkeypatch.setitem(globals(), '_run', lambda *args, **kwargs:
+                        subprocess.CompletedProcess([], 1, b'', b''))
+    observations = []
+
+    def observe(rig):
+        observations.append(rig)
+        raise observer_failure('PRIVATE_SENTINEL')
+
+    monkeypatch.setitem(globals(), '_observe_old_seed_exit', observe)
+    with pytest.raises(AssertionError):
+        _old_payload(rig, 'seed.py', 'synthetic')
+    assert observations == [rig]
+
+
+def _synthetic_seed_proc(monkeypatch, tmp_path, tcp, tcp6, *, port=40000):
+    reads = []
+
+    class Stream(BytesIO):
+        def read(self, size=-1):
+            assert 0 < size <= 65537
+            reads.append(size)
+            return super().read(size)
+
+    def opened(path, mode):
+        assert mode == 'rb'
+        assert path.as_posix() in ('/proc/net/tcp', '/proc/net/tcp6')
+        value = tcp if path.name == 'tcp' else tcp6
+        if isinstance(value, BaseException):
+            raise value
+        return Stream(value)
+
+    monkeypatch.setattr(Path, 'open', opened)
+    monkeypatch.setattr(Path, 'resolve', lambda self, **kwargs: self)
+    return _Rig(base=tmp_path, original=tmp_path / 'Original Project', port=port), reads
+
+
+def test_old_seed_proc_observer_counts_only_local_and_peer_task_port(monkeypatch, tmp_path, capsys):
+    tcp = (b'sl local_address rem_address st\n'
+           b'0: 0100007F:9C40 00000000:0000 0A PRIVATE_SENTINEL\n'
+           b'1: 0100007F:9C40 0100007F:9C41 06 PRIVATE_SENTINEL\n'
+           b'2: 0100007F:9C42 0100007F:9C40 01 PRIVATE_SENTINEL\n'
+           b'3: 0100007F:9C40 0100007F:9C40 06 PRIVATE_SENTINEL\n'
+           b'4: 0100007F:9C41 0100007F:9C42 06 PRIVATE_SENTINEL\n')
+    tcp6 = (b'sl local_address remote_address st\n'
+            + b'0: ' + b'0' * 32 + b':9C41 ' + b'0' * 32 + b':9C40 06 PRIVATE_SENTINEL\n')
+    with monkeypatch.context() as patch:
+        rig, reads = _synthetic_seed_proc(patch, tmp_path, tcp, tcp6)
+        _observe_old_seed_exit(rig)
+    out, err = capsys.readouterr()
+    assert err == '' and reads == [65537, 65537]
+    assert out == ('OLD_SEED_AFTER_CHILD_EXIT OWNER_UNKNOWN '
+                   'tcp={"local":{"LISTEN":1,"TIME_WAIT":2},'
+                   '"peer":{"ESTABLISHED":1,"TIME_WAIT":1}} '
+                   'tcp6={"local":{},"peer":{"TIME_WAIT":1}}\n')
+    assert all(value not in out for value in ('PRIVATE_SENTINEL', '0100007F', '9C40', '9C41', '9C42'))
+
+
+@pytest.mark.parametrize('unavailable', [
+    PermissionError('PRIVATE_SENTINEL'), FileNotFoundError('PRIVATE_SENTINEL'),
+    b'x' * 65537, b'sl local_address rem_address st\n0: 0100007F:9C40',
+    b'', b'wrong header\n', b'sl local_address rem_address st\nmalformed\n',
+    b'sl local_address rem_address st\n0: 0100007F:9C40 0100007F:9C41 FF\n',
+    b'sl local_address rem_address st\n0: PRIVATE_SENTINEL 0100007F:9C40 06\n',
+], ids=['permission', 'missing', 'over-limit', 'partial-row', 'empty',
+        'header', 'malformed-row', 'unknown-state', 'malformed-endpoint'])
+def test_old_seed_proc_observer_unavailable_is_not_zero(monkeypatch, tmp_path, capsys, unavailable):
+    with monkeypatch.context() as patch:
+        rig, _ = _synthetic_seed_proc(patch, tmp_path, unavailable,
+                                     b'sl local_address remote_address st\n')
+        _observe_old_seed_exit(rig)
+    out = capsys.readouterr().out
+    assert out == ('OLD_SEED_AFTER_CHILD_EXIT OWNER_UNKNOWN tcp=UNAVAILABLE '
+                   'tcp6={"local":{},"peer":{}}\n')
+
+
+@pytest.mark.parametrize('port', [55432, 0, 65536, None, True, '40000'])
+def test_old_seed_proc_observer_refuses_non_task_port_without_reads(monkeypatch, tmp_path, capsys, port):
+    with monkeypatch.context() as patch:
+        rig, reads = _synthetic_seed_proc(patch, tmp_path, AssertionError('unexpected read'),
+                                         AssertionError('unexpected read'), port=port)
+        _observe_old_seed_exit(rig)
+    assert reads == []
+    assert capsys.readouterr().out == (
+        'OLD_SEED_AFTER_CHILD_EXIT OWNER_UNKNOWN tcp=UNAVAILABLE tcp6=UNAVAILABLE\n')
+
+
+def test_old_seed_proc_observer_refuses_root_outside_fixture(monkeypatch, tmp_path, capsys):
+    with monkeypatch.context() as patch:
+        rig, reads = _synthetic_seed_proc(patch, tmp_path, AssertionError('unexpected read'),
+                                         AssertionError('unexpected read'))
+        rig['original'] = tmp_path.parent / 'another-root'
+        _observe_old_seed_exit(rig)
+    assert reads == [] and 'tcp=UNAVAILABLE tcp6=UNAVAILABLE' in capsys.readouterr().out
