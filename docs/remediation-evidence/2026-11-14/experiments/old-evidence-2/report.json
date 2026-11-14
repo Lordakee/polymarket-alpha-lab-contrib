@@ -1,0 +1,600 @@
+{
+  "actualran": true,
+  "budgets": {
+    "business_elapsed_s": 48.394457749,
+    "child_output_exceeded": false,
+    "child_output_max": 2968,
+    "child_output_stderr_max": 89,
+    "child_output_stdout_max": 2950,
+    "cleanup_elapsed_s": null,
+    "evidence_budget_exceeded": false,
+    "evidence_bytes_total": null,
+    "proc_budget_exceeded": false,
+    "proc_bytes_read": 121466,
+    "proc_reads": 16
+  },
+  "candidate_tree": "22d2a7b79d4ae1d44c41abb5fccbd23afae53fe9",
+  "cleanup": {
+    "attempted": true,
+    "elapsed_s": 5.139471313,
+    "status": "stopped",
+    "success": true,
+    "verification_exit": 0
+  },
+  "command": "old-prefix",
+  "conclusion": "This single prefix attempt did not reproduce; original CI cause remains undetermined.",
+  "control_report_outcome": "CONTROL_EXPECTED_MATCH",
+  "disk_free_bytes": 96546234368,
+  "driver": "/home/ubuntu/r03-next-run-20261114-01/tools/r03_next_driver.py",
+  "driver_sha256": "24ae2af60f8d3eb48ab2e01da8463699133d951accabfbbd0c2bc7354a469a03",
+  "events": {
+    "init63": {
+      "line_count": 12,
+      "lines": [
+        {
+          "function": "initialize",
+          "kind": "hook_call",
+          "monotonic_ns": 2748442946218630
+        },
+        {
+          "kind": "proc_snapshot",
+          "label": "bind_pre_initialize",
+          "monotonic_ns": 2748445457879605,
+          "tcp": {
+            "local": {},
+            "peer": {}
+          },
+          "tcp6": {
+            "local": {},
+            "peer": {}
+          }
+        },
+        {
+          "action": "start",
+          "function": "_control",
+          "kind": "hook_call",
+          "monotonic_ns": 2748446811164805
+        },
+        {
+          "function": "_stop",
+          "kind": "hook_call",
+          "monotonic_ns": 2748451282641209
+        },
+        {
+          "action": "stop",
+          "function": "_control",
+          "kind": "hook_call",
+          "monotonic_ns": 2748451372336799
+        },
+        {
+          "kind": "proc_snapshot",
+          "label": "before_control_stop",
+          "monotonic_ns": 2748451385118142,
+          "tcp": {
+            "local": {
+              "LISTEN": 1
+            },
+            "peer": {
+              "FIN_WAIT2": 1,
+              "TIME_WAIT": 72
+            }
+          },
+          "tcp6": {
+            "local": {},
+            "peer": {}
+          }
+        },
+        {
+          "kind": "proc_snapshot",
+          "label": "after_control_stop",
+          "monotonic_ns": 2748451914454376,
+          "tcp": {
+            "local": {},
+            "peer": {
+              "TIME_WAIT": 73
+            }
+          },
+          "tcp6": {
+            "local": {},
+            "peer": {}
+          }
+        },
+        {
+          "count": 73,
+          "kind": "psql_aggregate",
+          "monotonic_ns": 2748451961607081
+        },
+        {
+          "count": 1,
+          "kind": "control_status_aggregate",
+          "monotonic_ns": 2748451961658937
+        },
+        {
+          "count": 2,
+          "kind": "bind_lines_found",
+          "monotonic_ns": 2748451961672484
+        },
+        {
+          "kind": "provenance_flag",
+          "loaded_within_old": true,
+          "monotonic_ns": 2748451980727851
+        },
+        {
+          "enabled": true,
+          "events": 11,
+          "kind": "observer_trailer",
+          "monotonic_ns": 2748451980774196,
+          "truncated": false
+        }
+      ],
+      "missing": false,
+      "oversize_file": false,
+      "oversize_lines": 0,
+      "path": "/home/ubuntu/r03-next-run-20261114-01/old-data-2/events-init.json",
+      "stage": "init63",
+      "unparsable_lines": 0
+    },
+    "install_runtime": {
+      "line_count": 3,
+      "lines": [
+        {
+          "count": 2,
+          "kind": "bind_lines_found",
+          "monotonic_ns": 2748440401116207
+        },
+        {
+          "kind": "provenance_flag",
+          "loaded_within_old": true,
+          "monotonic_ns": 2748440416401596
+        },
+        {
+          "enabled": true,
+          "events": 2,
+          "kind": "observer_trailer",
+          "monotonic_ns": 2748440416445816,
+          "truncated": false
+        }
+      ],
+      "missing": false,
+      "oversize_file": false,
+      "oversize_lines": 0,
+      "path": "/home/ubuntu/r03-next-run-20261114-01/old-data-2/events-install.json",
+      "stage": "install_runtime",
+      "unparsable_lines": 0
+    },
+    "reinit_refusal": {
+      "line_count": 6,
+      "lines": [
+        {
+          "function": "initialize",
+          "kind": "hook_call",
+          "monotonic_ns": 2748454635842627
+        },
+        {
+          "chain": [
+            {
+              "errno": null,
+              "exc_type": "ProjectDatabaseError",
+              "frames": [
+                {
+                  "file": "src/polymarket_alpha_lab/project_postgres/server.py",
+                  "line": 188,
+                  "name": "initialize"
+                },
+                {
+                  "file": "src/polymarket_alpha_lab/project_postgres/files.py",
+                  "line": 20,
+                  "name": "fail"
+                }
+              ],
+              "suppress_context": true,
+              "via": "raised"
+            }
+          ],
+          "exc_type": "ProjectDatabaseError",
+          "function": "initialize",
+          "kind": "hook_exception",
+          "monotonic_ns": 2748457391238358,
+          "reason_code": "project_postgres_existing_data_not_reinitialized"
+        },
+        {
+          "kind": "proc_snapshot",
+          "label": "blocked_initialize",
+          "monotonic_ns": 2748457401897528,
+          "tcp": {
+            "local": {},
+            "peer": {
+              "TIME_WAIT": 73
+            }
+          },
+          "tcp6": {
+            "local": {},
+            "peer": {}
+          }
+        },
+        {
+          "count": 2,
+          "kind": "bind_lines_found",
+          "monotonic_ns": 2748457444807515
+        },
+        {
+          "kind": "provenance_flag",
+          "loaded_within_old": true,
+          "monotonic_ns": 2748457461303307
+        },
+        {
+          "enabled": true,
+          "events": 5,
+          "kind": "observer_trailer",
+          "monotonic_ns": 2748457461347540,
+          "truncated": false
+        }
+      ],
+      "missing": false,
+      "oversize_file": false,
+      "oversize_lines": 0,
+      "path": "/home/ubuntu/r03-next-run-20261114-01/old-data-2/events-reinit.json",
+      "stage": "reinit_refusal",
+      "unparsable_lines": 0
+    },
+    "seed_session": {
+      "line_count": 12,
+      "lines": [
+        {
+          "function": "_start",
+          "kind": "hook_call",
+          "monotonic_ns": 2748468065166287
+        },
+        {
+          "kind": "proc_snapshot",
+          "label": "bind_pre__start",
+          "monotonic_ns": 2748468079150750,
+          "tcp": {
+            "local": {},
+            "peer": {
+              "TIME_WAIT": 73
+            }
+          },
+          "tcp6": {
+            "local": {},
+            "peer": {}
+          }
+        },
+        {
+          "action": "start",
+          "function": "_control",
+          "kind": "hook_call",
+          "monotonic_ns": 2748468079446333
+        },
+        {
+          "function": "_stop",
+          "kind": "hook_call",
+          "monotonic_ns": 2748469557958719
+        },
+        {
+          "action": "stop",
+          "function": "_control",
+          "kind": "hook_call",
+          "monotonic_ns": 2748469708880829
+        },
+        {
+          "kind": "proc_snapshot",
+          "label": "before_control_stop",
+          "monotonic_ns": 2748469719451198,
+          "tcp": {
+            "local": {
+              "LISTEN": 1
+            },
+            "peer": {
+              "FIN_WAIT1": 1,
+              "TIME_WAIT": 87
+            }
+          },
+          "tcp6": {
+            "local": {},
+            "peer": {}
+          }
+        },
+        {
+          "kind": "proc_snapshot",
+          "label": "after_control_stop",
+          "monotonic_ns": 2748469848096578,
+          "tcp": {
+            "local": {},
+            "peer": {
+              "TIME_WAIT": 88
+            }
+          },
+          "tcp6": {
+            "local": {},
+            "peer": {}
+          }
+        },
+        {
+          "count": 6,
+          "kind": "psql_aggregate",
+          "monotonic_ns": 2748472417471831
+        },
+        {
+          "count": 3,
+          "kind": "control_status_aggregate",
+          "monotonic_ns": 2748472417525727
+        },
+        {
+          "count": 2,
+          "kind": "bind_lines_found",
+          "monotonic_ns": 2748472417541241
+        },
+        {
+          "kind": "provenance_flag",
+          "loaded_within_old": true,
+          "monotonic_ns": 2748472436459678
+        },
+        {
+          "enabled": true,
+          "events": 11,
+          "kind": "observer_trailer",
+          "monotonic_ns": 2748472436505171,
+          "truncated": false
+        }
+      ],
+      "missing": false,
+      "oversize_file": false,
+      "oversize_lines": 0,
+      "path": "/home/ubuntu/r03-next-run-20261114-01/old-data-2/events-seed.json",
+      "stage": "seed_session",
+      "unparsable_lines": 0
+    },
+    "status_stopped": {
+      "line_count": 4,
+      "lines": [
+        {
+          "count": 1,
+          "kind": "control_status_aggregate",
+          "monotonic_ns": 2748462621781288
+        },
+        {
+          "count": 2,
+          "kind": "bind_lines_found",
+          "monotonic_ns": 2748462621878170
+        },
+        {
+          "kind": "provenance_flag",
+          "loaded_within_old": true,
+          "monotonic_ns": 2748462663212403
+        },
+        {
+          "enabled": true,
+          "events": 3,
+          "kind": "observer_trailer",
+          "monotonic_ns": 2748462663284233,
+          "truncated": false
+        }
+      ],
+      "missing": false,
+      "oversize_file": false,
+      "oversize_lines": 0,
+      "path": "/home/ubuntu/r03-next-run-20261114-01/old-data-2/events-status.json",
+      "stage": "status_stopped",
+      "unparsable_lines": 0
+    }
+  },
+  "finished_monotonic_ns": 2748477833297812,
+  "first_failure": null,
+  "fixture_and_cleanup_output_filtered": "version-switch fixture: candidate 6add9b041754600109e17e6aa05b0cb99aaface6 22d2a7b79d4ae1d44c41abb5fccbd23afae53fe9 old-catalog-63 3e8c813dcb7ce238 candidate-catalog-70 4d57c7cda54cd712\nversion-switch cleanup: stopped",
+  "harness_texts": {
+    "old_entry_sha256": "9445fae0d86ce047a451fc46b13ee886ea0028015f0ae2d8bd1d6d7023a6f128",
+    "old_runner_sha256": "e5b435bb9b8a5661e0e588228b234dfaa078f63dc3d65d572fcc8a3083140d35",
+    "seed_payload_sha256": "562aa69d913e9b3d0bbe8a8e108312d66a7b2f0a579b473fd5cd926d3f9f4b5d"
+  },
+  "invocation_id": "R03NEXT-INV-20261114-01",
+  "observer_path": "/home/ubuntu/r03-next-run-20261114-01/tools/r03_next_observer.py",
+  "observer_sha256": "5f33b3a8c8690066d2a9380bf4443120f3d57ded7964389027da98db59b102eb",
+  "original_root_label": "Original Project",
+  "outcome": "NOTREPRODUCED",
+  "plan_sha256_supplied": "027f877e8c7ce01779c046fd15891b0f4b092416563df86cc467e66c74bf55d5",
+  "platform": "linux",
+  "port": 31642,
+  "prefix": {
+    "files": 1706,
+    "inventory_bytes": 186507,
+    "inventory_sha256": "812d410a15f218b432c2ea3ed531a8e266509e92fd533ceeebc58e1f1af651e4",
+    "prefix": "/home/ubuntu/pal-m0-startup-20261113-yx2fyoje/environments/pg18-portable",
+    "tool_versions": [
+      "postgres (PostgreSQL) 18.6 (Ubuntu 18.6-1.pgdg24.04+2)",
+      "initdb (PostgreSQL) 18.6 (Ubuntu 18.6-1.pgdg24.04+2)",
+      "pg_ctl (PostgreSQL) 18.6 (Ubuntu 18.6-1.pgdg24.04+2)",
+      "psql (PostgreSQL) 18.6 (Ubuntu 18.6-1.pgdg24.04+2)",
+      "pg_controldata (PostgreSQL) 18.6 (Ubuntu 18.6-1.pgdg24.04+2)"
+    ],
+    "total_bytes": 49889272,
+    "version": "18.6"
+  },
+  "python": "3.12.3",
+  "snapshots": [
+    {
+      "label": "after_pick",
+      "monotonic_ns": 2748428135222590,
+      "port": 31642,
+      "tcp": {
+        "local": {},
+        "peer": {}
+      },
+      "tcp6": {
+        "local": {},
+        "peer": {}
+      }
+    },
+    {
+      "label": "returned_install_runtime",
+      "monotonic_ns": 2748440489202885,
+      "port": 31642,
+      "tcp": {
+        "local": {},
+        "peer": {}
+      },
+      "tcp6": {
+        "local": {},
+        "peer": {}
+      }
+    },
+    {
+      "label": "before_init",
+      "monotonic_ns": 2748440498909256,
+      "port": 31642,
+      "tcp": {
+        "local": {},
+        "peer": {}
+      },
+      "tcp6": {
+        "local": {},
+        "peer": {}
+      }
+    },
+    {
+      "label": "returned_init63",
+      "monotonic_ns": 2748452072961613,
+      "port": 31642,
+      "tcp": {
+        "local": {},
+        "peer": {
+          "TIME_WAIT": 73
+        }
+      },
+      "tcp6": {
+        "local": {},
+        "peer": {}
+      }
+    },
+    {
+      "label": "stopped",
+      "monotonic_ns": 2748462777405291,
+      "port": 31642,
+      "tcp": {
+        "local": {},
+        "peer": {
+          "TIME_WAIT": 73
+        }
+      },
+      "tcp6": {
+        "local": {},
+        "peer": {}
+      }
+    },
+    {
+      "label": "before_seed_launch",
+      "monotonic_ns": 2748462792312577,
+      "port": 31642,
+      "tcp": {
+        "local": {},
+        "peer": {
+          "TIME_WAIT": 73
+        }
+      },
+      "tcp6": {
+        "local": {},
+        "peer": {}
+      }
+    },
+    {
+      "label": "seed_returned",
+      "monotonic_ns": 2748472608531265,
+      "port": 31642,
+      "tcp": {
+        "local": {},
+        "peer": {
+          "TIME_WAIT": 88
+        }
+      },
+      "tcp6": {
+        "local": {},
+        "peer": {}
+      }
+    },
+    {
+      "label": "after_cleanup",
+      "monotonic_ns": 2748477759630401,
+      "port": 31642,
+      "tcp": {
+        "local": {},
+        "peer": {
+          "TIME_WAIT": 88
+        }
+      },
+      "tcp6": {
+        "local": {},
+        "peer": {}
+      }
+    }
+  ],
+  "source_after": {
+    "change_count": 0,
+    "clean": true,
+    "head": "6add9b041754600109e17e6aa05b0cb99aaface6",
+    "head_is_c3": true,
+    "head_tree": "22d2a7b79d4ae1d44c41abb5fccbd23afae53fe9",
+    "old_present": true,
+    "old_tree": "d6f6750b1068a3c75ab6249d5ca4f1ef7e010ee4",
+    "old_tree_pinned": true,
+    "tree_is_pinned": true
+  },
+  "source_before": {
+    "change_count": 0,
+    "clean": true,
+    "head": "6add9b041754600109e17e6aa05b0cb99aaface6",
+    "head_is_c3": true,
+    "head_tree": "22d2a7b79d4ae1d44c41abb5fccbd23afae53fe9",
+    "old_present": true,
+    "old_tree": "d6f6750b1068a3c75ab6249d5ca4f1ef7e010ee4",
+    "old_tree_pinned": true,
+    "tree_is_pinned": true
+  },
+  "stages": [
+    {
+      "exit": 0,
+      "payload_source_ok": false,
+      "returned_monotonic_ns": 2748440488312464,
+      "stage": "install_runtime",
+      "started_monotonic_ns": null,
+      "stdout_fields": {
+        "status": "runtime_installed"
+      }
+    },
+    {
+      "exit": 0,
+      "payload_source_ok": false,
+      "returned_monotonic_ns": 2748452071403255,
+      "stage": "init63",
+      "started_monotonic_ns": null,
+      "stdout_fields": {
+        "migrations_applied": 63,
+        "status": "initialized"
+      }
+    },
+    {
+      "exit": 1,
+      "payload_source_ok": false,
+      "returned_monotonic_ns": 2748457562210770,
+      "stage": "reinit_refusal",
+      "started_monotonic_ns": null
+    },
+    {
+      "exit": 0,
+      "payload_source_ok": false,
+      "returned_monotonic_ns": 2748462774805395,
+      "stage": "status_stopped",
+      "started_monotonic_ns": null,
+      "stdout_fields": {
+        "status": "stopped"
+      }
+    },
+    {
+      "exit": 0,
+      "payload_source_ok": true,
+      "stage": "seed_session"
+    }
+  ],
+  "state": "finished",
+  "task_data": "/home/ubuntu/r03-next-run-20261114-01/old-data-2",
+  "task_evidence": "/home/ubuntu/r03-next-run-20261114-01/old-evidence-2"
+}

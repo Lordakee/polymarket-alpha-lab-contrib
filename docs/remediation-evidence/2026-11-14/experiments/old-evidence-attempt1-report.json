@@ -1,0 +1,48 @@
+{
+  "actualran": false,
+  "budgets": {
+    "business_elapsed_s": null,
+    "child_output_exceeded": false,
+    "child_output_max": 0,
+    "child_output_stderr_max": 0,
+    "child_output_stdout_max": 0,
+    "cleanup_elapsed_s": null,
+    "evidence_budget_exceeded": false,
+    "evidence_bytes_total": null,
+    "proc_budget_exceeded": false,
+    "proc_bytes_read": 0,
+    "proc_reads": 0
+  },
+  "cleanup": {
+    "attempted": false
+  },
+  "command": "old-prefix",
+  "conclusion": "prefix inventory malformed entry",
+  "driver": "/home/ubuntu/r03-next-run-20261114-01/tools/r03_next_driver.py",
+  "driver_sha256": "5f85ddff1f15e67d8fdb80b672c2f2f35d45c039b6d200de8732e2bf406c5088",
+  "events": {},
+  "first_failure": null,
+  "invocation_id": "R03NEXT-INV-20261114-01",
+  "observer_path": "/home/ubuntu/r03-next-run-20261114-01/tools/r03_next_observer.py",
+  "observer_sha256": "5f33b3a8c8690066d2a9380bf4443120f3d57ded7964389027da98db59b102eb",
+  "outcome": "BLOCKED",
+  "plan_sha256_supplied": "027f877e8c7ce01779c046fd15891b0f4b092416563df86cc467e66c74bf55d5",
+  "platform": "linux",
+  "python": "3.12.3",
+  "snapshots": [],
+  "source_before": {
+    "change_count": 0,
+    "clean": true,
+    "head": "6add9b041754600109e17e6aa05b0cb99aaface6",
+    "head_is_c3": true,
+    "head_tree": "22d2a7b79d4ae1d44c41abb5fccbd23afae53fe9",
+    "old_present": true,
+    "old_tree": "d6f6750b1068a3c75ab6249d5ca4f1ef7e010ee4",
+    "old_tree_pinned": true,
+    "tree_is_pinned": true
+  },
+  "stages": [],
+  "state": "finished",
+  "task_data": "/home/ubuntu/r03-next-run-20261114-01/old-data",
+  "task_evidence": "/home/ubuntu/r03-next-run-20261114-01/old-evidence"
+}

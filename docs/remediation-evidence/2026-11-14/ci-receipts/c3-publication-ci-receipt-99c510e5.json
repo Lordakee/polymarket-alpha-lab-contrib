@@ -1,0 +1,269 @@
+{
+  "utc": "2026-11-14T03:42:03.509745+00:00",
+  "publication": "exact",
+  "sha": "6add9b041754600109e17e6aa05b0cb99aaface6",
+  "tree": "22d2a7b79d4ae1d44c41abb5fccbd23afae53fe9",
+  "main_still_exact": true,
+  "R09": "BLOCKED: Native version-switch failure",
+  "dispatches": 0,
+  "reruns": 0,
+  "cancellations": 0,
+  "terminal_runs": {
+    "offline": {
+      "id": 43551531524,
+      "attempt": 1,
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    "native": {
+      "id": 43551531643,
+      "attempt": 1,
+      "event": "push",
+      "status": "completed",
+      "conclusion": "failure"
+    }
+  },
+  "native_steps": [
+    {
+      "job": "linux-native-research",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Assemble the qualified PG18 portable prefix",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-14T03:25:21Z",
+          "completed_at": "2026-11-14T03:25:41Z"
+        },
+        {
+          "name": "Assemble throwaway papersim cluster",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 6,
+          "started_at": "2026-11-14T03:25:41Z",
+          "completed_at": "2026-11-14T03:25:41Z"
+        },
+        {
+          "name": "Prove isolated native partition",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-14T03:25:41Z",
+          "completed_at": "2026-11-14T03:28:10Z"
+        },
+        {
+          "name": "Prove native version switch",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8,
+          "started_at": "2026-11-14T03:28:10Z",
+          "completed_at": "2026-11-14T03:28:10Z"
+        },
+        {
+          "name": "Verify tracked source unchanged",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-14T03:28:10Z",
+          "completed_at": "2026-11-14T03:28:10Z"
+        }
+      ]
+    },
+    {
+      "job": "linux-native-storage",
+      "conclusion": "failure",
+      "steps": [
+        {
+          "name": "Assemble the qualified PG18 portable prefix",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-14T03:25:19Z",
+          "completed_at": "2026-11-14T03:25:35Z"
+        },
+        {
+          "name": "Assemble throwaway papersim cluster",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 6,
+          "started_at": "2026-11-14T03:25:35Z",
+          "completed_at": "2026-11-14T03:25:35Z"
+        },
+        {
+          "name": "Prove isolated native partition",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-14T03:25:35Z",
+          "completed_at": "2026-11-14T03:26:46Z"
+        },
+        {
+          "name": "Prove native version switch",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 8,
+          "started_at": "2026-11-14T03:26:46Z",
+          "completed_at": "2026-11-14T03:26:58Z"
+        },
+        {
+          "name": "Verify tracked source unchanged",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 9,
+          "started_at": "2026-11-14T03:26:58Z",
+          "completed_at": "2026-11-14T03:26:58Z"
+        }
+      ]
+    },
+    {
+      "job": "linux-native-papersim",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Assemble the qualified PG18 portable prefix",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-14T03:25:19Z",
+          "completed_at": "2026-11-14T03:25:33Z"
+        },
+        {
+          "name": "Assemble throwaway papersim cluster",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-14T03:25:33Z",
+          "completed_at": "2026-11-14T03:25:34Z"
+        },
+        {
+          "name": "Prove isolated native partition",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-14T03:25:34Z",
+          "completed_at": "2026-11-14T03:25:36Z"
+        },
+        {
+          "name": "Prove native version switch",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8,
+          "started_at": "2026-11-14T03:25:36Z",
+          "completed_at": "2026-11-14T03:25:36Z"
+        },
+        {
+          "name": "Verify tracked source unchanged",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-14T03:25:36Z",
+          "completed_at": "2026-11-14T03:25:37Z"
+        }
+      ]
+    },
+    {
+      "job": "linux-native-dispatch",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Assemble the qualified PG18 portable prefix",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-14T03:25:22Z",
+          "completed_at": "2026-11-14T03:25:36Z"
+        },
+        {
+          "name": "Assemble throwaway papersim cluster",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 6,
+          "started_at": "2026-11-14T03:25:36Z",
+          "completed_at": "2026-11-14T03:25:36Z"
+        },
+        {
+          "name": "Prove isolated native partition",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-14T03:25:36Z",
+          "completed_at": "2026-11-14T03:31:47Z"
+        },
+        {
+          "name": "Prove native version switch",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8,
+          "started_at": "2026-11-14T03:31:47Z",
+          "completed_at": "2026-11-14T03:31:47Z"
+        },
+        {
+          "name": "Verify tracked source unchanged",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-14T03:31:47Z",
+          "completed_at": "2026-11-14T03:31:48Z"
+        }
+      ]
+    },
+    {
+      "job": "windows-native-${{ matrix.partition }}",
+      "conclusion": "skipped",
+      "steps": []
+    },
+    {
+      "job": "windows-native",
+      "conclusion": "skipped",
+      "steps": []
+    },
+    {
+      "job": "linux-native",
+      "conclusion": "failure",
+      "steps": [
+        {
+          "name": "Require every native partition",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 2,
+          "started_at": "2026-11-14T03:31:55Z",
+          "completed_at": "2026-11-14T03:31:55Z"
+        }
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "path": "D:\\Projects\\pal-remediation-plans-20261113\\c3-main-prep-166886b66268\\publication-receipt-20261114T032439Z-b4e01dbb.json",
+      "bytes": 810,
+      "sha256": "9931ccf5ce93a4e333b33b3b5d4275a56d10bc2326aa780aade9bfd77c5b47e3"
+    },
+    {
+      "path": "D:\\Projects\\pal-remediation-plans-20261113\\c3-main-prep-166886b66268\\publication-readback-6b5ace0c.json",
+      "bytes": 921,
+      "sha256": "5317848d51c3c51cf27aceaca6fe533dd2c7ebc17b9e7c3cb152cd508b5e0321"
+    },
+    {
+      "path": "D:\\Projects\\pal-remediation-plans-20261113\\c3-main-prep-166886b66268\\ci-run-43551531524-attempt1-20261114T033141Z-3a1609.json",
+      "bytes": 3683,
+      "sha256": "4e2b5c3e70e61f3db71ca94d3113f9998a555e70767b479c84845ce4e253fabf"
+    },
+    {
+      "path": "D:\\Projects\\pal-remediation-plans-20261113\\c3-main-prep-166886b66268\\ci-run-43551531643-attempt1-20261114T033231Z-b53d95.json",
+      "bytes": 19284,
+      "sha256": "aa95a21c32e533d540929e22724793a1c84f5b4582c20e287147a6dfa64a679d"
+    },
+    {
+      "path": "D:\\Projects\\pal-remediation-plans-20261113\\c3-main-prep-166886b66268\\ci-storage-failure-784d18b8.json",
+      "bytes": 19774,
+      "sha256": "0afb2b006cf0b10b5b44ccca6148aea3b27d54a33e3a0edaff396d63b029c8d6"
+    },
+    {
+      "path": "D:\\Projects\\pal-remediation-plans-20261113\\c3-main-prep-166886b66268\\ci-job-summaries-867bd170.json",
+      "bytes": 5672,
+      "sha256": "d1df2baa8e29e3746de92879289be27ee8c5cc3d32526b9b1b6a13f8582abad6"
+    }
+  ]
+}

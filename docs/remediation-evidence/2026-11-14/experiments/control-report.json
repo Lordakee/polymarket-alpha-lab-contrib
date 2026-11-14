@@ -1,0 +1,269 @@
+{
+  "actualran": true,
+  "budgets": {
+    "proc_budget_exceeded": false,
+    "proc_bytes_read": 47532,
+    "proc_reads": 12
+  },
+  "command": "control",
+  "conclusion": "Mechanism control matched: server-first active close leaves local TIME_WAIT that a no-reuse bind rejects; client-first does not. Mechanism only, no attribution.",
+  "control_deadline_monotonic_ns": 2747541400140548,
+  "driver": "/home/ubuntu/r03-next-run-20261114-01/tools/r03_next_driver.py",
+  "driver_sha256": "5f85ddff1f15e67d8fdb80b672c2f2f35d45c039b6d200de8732e2bf406c5088",
+  "finished_monotonic_ns": 2747526457654597,
+  "first_failure": null,
+  "invocation_id": "R03NEXT-INV-20261114-01",
+  "observer_path": "/home/ubuntu/r03-next-run-20261114-01/tools/r03_next_observer.py",
+  "observer_sha256": "5f33b3a8c8690066d2a9380bf4443120f3d57ded7964389027da98db59b102eb",
+  "outcome": "CONTROL_EXPECTED_MATCH",
+  "plan_sha256_supplied": "027f877e8c7ce01779c046fd15891b0f4b092416563df86cc467e66c74bf55d5",
+  "platform": "linux",
+  "ports": [
+    25882,
+    32135
+  ],
+  "python": "3.12.3",
+  "scenarios": [
+    {
+      "active_closer": "server",
+      "bind_no_reuse": {
+        "bound": false,
+        "errno": 98
+      },
+      "bind_reuse": {
+        "bound": true,
+        "errno": null
+      },
+      "client_eof_after_first_fin": true,
+      "client_got_ack": true,
+      "completed": true,
+      "expected_match": true,
+      "finished_monotonic_ns": 2747526430671846,
+      "fresh_socket_reuse_default": 0,
+      "kind": "server_first",
+      "listener_reuse_value": 1,
+      "observed_local_time_wait": 1,
+      "observed_peer_time_wait": 0,
+      "peer_eof_after_second_fin": true,
+      "port": 25882,
+      "post_bind": {
+        "label": "post_bind_server_first",
+        "monotonic_ns": 2747526421952044,
+        "port": 25882,
+        "tcp": {
+          "local": {
+            "TIME_WAIT": 1
+          },
+          "peer": {}
+        },
+        "tcp6": {
+          "local": {},
+          "peer": {}
+        }
+      },
+      "post_close": {
+        "label": "post_close_server_first",
+        "monotonic_ns": 2747526413208963,
+        "port": 25882,
+        "tcp": {
+          "local": {
+            "TIME_WAIT": 1
+          },
+          "peer": {}
+        },
+        "tcp6": {
+          "local": {},
+          "peer": {}
+        }
+      },
+      "pre_start": {
+        "label": "pre_server_first",
+        "monotonic_ns": 2747526400148028,
+        "port": 25882,
+        "tcp": {
+          "local": {},
+          "peer": {}
+        },
+        "tcp6": {
+          "local": {},
+          "peer": {}
+        }
+      },
+      "server_got_hello": true,
+      "sockets_open_at_end": 0,
+      "started_monotonic_ns": 2747526400144254
+    },
+    {
+      "active_closer": "client",
+      "bind_no_reuse": {
+        "bound": true,
+        "errno": null
+      },
+      "bind_reuse": {
+        "bound": true,
+        "errno": null
+      },
+      "client_eof_after_second_fin": true,
+      "client_got_ack": true,
+      "completed": true,
+      "expected_match": true,
+      "finished_monotonic_ns": 2747526457627354,
+      "fresh_socket_reuse_default": 0,
+      "kind": "client_first",
+      "listener_reuse_value": 1,
+      "observed_local_time_wait": 0,
+      "observed_peer_time_wait": 1,
+      "peer_eof_after_first_fin": true,
+      "port": 32135,
+      "post_bind": {
+        "label": "post_bind_client_first",
+        "monotonic_ns": 2747526448812755,
+        "port": 32135,
+        "tcp": {
+          "local": {},
+          "peer": {
+            "TIME_WAIT": 1
+          }
+        },
+        "tcp6": {
+          "local": {},
+          "peer": {}
+        }
+      },
+      "post_close": {
+        "label": "post_close_client_first",
+        "monotonic_ns": 2747526439649017,
+        "port": 32135,
+        "tcp": {
+          "local": {},
+          "peer": {
+            "TIME_WAIT": 1
+          }
+        },
+        "tcp6": {
+          "local": {},
+          "peer": {}
+        }
+      },
+      "pre_start": {
+        "label": "pre_client_first",
+        "monotonic_ns": 2747526430694572,
+        "port": 32135,
+        "tcp": {
+          "local": {},
+          "peer": {}
+        },
+        "tcp6": {
+          "local": {},
+          "peer": {}
+        }
+      },
+      "server_got_hello": true,
+      "sockets_open_at_end": 0,
+      "started_monotonic_ns": 2747526430690769
+    }
+  ],
+  "snapshots": [
+    {
+      "label": "pre_server_first",
+      "monotonic_ns": 2747526400148028,
+      "port": 25882,
+      "tcp": {
+        "local": {},
+        "peer": {}
+      },
+      "tcp6": {
+        "local": {},
+        "peer": {}
+      }
+    },
+    {
+      "label": "post_close_server_first",
+      "monotonic_ns": 2747526413208963,
+      "port": 25882,
+      "tcp": {
+        "local": {
+          "TIME_WAIT": 1
+        },
+        "peer": {}
+      },
+      "tcp6": {
+        "local": {},
+        "peer": {}
+      }
+    },
+    {
+      "label": "post_bind_server_first",
+      "monotonic_ns": 2747526421952044,
+      "port": 25882,
+      "tcp": {
+        "local": {
+          "TIME_WAIT": 1
+        },
+        "peer": {}
+      },
+      "tcp6": {
+        "local": {},
+        "peer": {}
+      }
+    },
+    {
+      "label": "pre_client_first",
+      "monotonic_ns": 2747526430694572,
+      "port": 32135,
+      "tcp": {
+        "local": {},
+        "peer": {}
+      },
+      "tcp6": {
+        "local": {},
+        "peer": {}
+      }
+    },
+    {
+      "label": "post_close_client_first",
+      "monotonic_ns": 2747526439649017,
+      "port": 32135,
+      "tcp": {
+        "local": {},
+        "peer": {
+          "TIME_WAIT": 1
+        }
+      },
+      "tcp6": {
+        "local": {},
+        "peer": {}
+      }
+    },
+    {
+      "label": "post_bind_client_first",
+      "monotonic_ns": 2747526448812755,
+      "port": 32135,
+      "tcp": {
+        "local": {},
+        "peer": {
+          "TIME_WAIT": 1
+        }
+      },
+      "tcp6": {
+        "local": {},
+        "peer": {}
+      }
+    }
+  ],
+  "source": {
+    "change_count": 0,
+    "clean": true,
+    "head": "6add9b041754600109e17e6aa05b0cb99aaface6",
+    "head_is_c3": true,
+    "head_tree": "22d2a7b79d4ae1d44c41abb5fccbd23afae53fe9",
+    "old_present": true,
+    "old_tree": "d6f6750b1068a3c75ab6249d5ca4f1ef7e010ee4",
+    "old_tree_pinned": true,
+    "tree_is_pinned": true
+  },
+  "stages": [],
+  "state": "finished",
+  "task_data": "/home/ubuntu/r03-next-run-20261114-01/control-data",
+  "task_evidence": "/home/ubuntu/r03-next-run-20261114-01/control-evidence"
+}

@@ -1,0 +1,176 @@
+{
+ "record_type": "R09 decisive dual-CI on final SHA B - double green",
+ "utc_compiled": "2026-11-14T15:24:02Z",
+ "commit": {
+  "B": "f5ca185a50ad6349275cd79dabd5b701b65a2548",
+  "tree": "b9c40393a2e2b9f3ad217b9f01545c7788a89b14",
+  "parent_M": "29a86f642adb6df83c81a2bfff4f18ddd906ef62",
+  "M_parents": [
+   "ad001c77a530c156b6ce42ff21b01b8711fd3e2b",
+   "7d993df58574c0cb713d360334fe352ed591c4a9"
+  ]
+ },
+ "publish": {
+  "method": "thin bundle bridge (4722B sha256 cc5704f0...) -> local -> direct fast-forward push ad001c77..f5ca185a to fork main, no force",
+  "pre_push_remote_main": "ad001c77 (immediate)",
+  "readback": {
+   "remote_main": "f5ca185a50ad6349275cd79dabd5b701b65a2548",
+   "api_tree": "b9c40393a2e2b9f3ad217b9f01545c7788a89b14",
+   "api_parents": [
+    "29a86f642adb6df83c81a2bfff4f18ddd906ef62"
+   ]
+  }
+ },
+ "runs": {
+  "event": "push",
+  "attempt": 1,
+  "head_sha": "f5ca185a50ad6349275cd79dabd5b701b65a2548",
+  "dispatch_used": false,
+  "rerun": false,
+  "cancel": false,
+  "offline": {
+   "id": 43608957166,
+   "created": "2026-11-14T15:12:50Z",
+   "updated": "2026-11-14T15:19:45Z",
+   "conclusion": "success",
+   "url": "https://github.com/wmqfl861/polymarket-alpha-lab/actions/runs/43608957166",
+   "pytest": "41501 passed, 122 skipped, 20 warnings in 372.70s",
+   "pass_lines": [
+    "PASS: editable installation",
+    "PASS: module help",
+    "PASS: module report discovery",
+    "PASS: console help",
+    "PASS: console report discovery",
+    "PASS: compile source, tests and scripts",
+    "PASS: full pytest",
+    "PASS: full local verification"
+   ],
+   "job": "offline all steps success incl cleanliness check"
+  },
+  "native": {
+   "id": 43608957129,
+   "created": "2026-11-14T15:12:50Z",
+   "updated": "2026-11-14T15:19:56Z",
+   "conclusion": "success",
+   "url": "https://github.com/wmqfl861/polymarket-alpha-lab/actions/runs/43608957129",
+   "jobs": {
+    "papersim": "success 92 passed in 1.69s",
+    "research": "success 1227 passed, 18 skipped in 143.58s",
+    "dispatch": "success 1933 passed, 15 skipped in 383.31s",
+    "storage": "success: partition 320 passed 2 skipped in 92.19s; VERSION SWITCH SUCCESS 75 passed in 161.86s (15:14:56Z-15:17:38Z); cleanliness executed+success; upload success",
+    "windows jobs": "skipped (if:false designed)",
+    "aggregate linux-native": "success (Require every native partition passed)"
+   }
+  }
+ },
+ "decisive_verbatim": [
+  "..version-switch fixture: candidate f5ca185a50ad6349275cd79dabd5b701b65a2548 b9c40393a2e2b9f3ad217b9f01545c7788a89b14 old-catalog-63 3e8c813dcb7ce238 candidate-catalog-70 4d57c7cda54cd712",
+  "version-switch phase old-initialize: start",
+  "OLD_SEED_WAIT_BEFORE port=29040 tcp={\"local\":{\"TIME_WAIT\":1},\"peer\":{\"TIME_WAIT\":72}} tcp6={\"local\":{},\"peer\":{}} monotonic_ns=160197992079",
+  "OLD_SEED_WAIT_AFTER port=29040 tcp={\"local\":{},\"peer\":{}} tcp6={\"local\":{},\"peer\":{}} elapsed_s=59.099",
+  "version-switch phase old-initialize: done in 74.4s",
+  "version-switch native: PASS; old-initialize:74.4s;lifecycle-backup:12.9s;current-selection:11.2s;old-rollback:5.3s;bundle-refusals:16.2s;pending-backup-refusals:20.3s;explicit-migration:14.4s",
+  "version-switch cleanup: stopped",
+  "OLD_SEED_CHILD_STDERR_BEGIN / PAYLOAD_SOURCE_OK / OLD_SEED_CHILD_STDERR_END (untruncated echo block in artifact log)",
+  "OLD_SEED_WAIT_BEFORE port=40000 tcp={\"local\":{\"TIME_WAIT\":1},\"peer\":{\"TIME_WAIT\":1}} tcp6={\"local\":{},\"peer\":{}} monotonic_ns=305687204506",
+  "75 passed in 161.86s (0:02:41)"
+ ],
+ "root_cause_confirmation": "WAIT_BEFORE saw 72 peer TIME_WAIT on port 29040; readiness wait drained to zero in 59.099s; bind then succeeded and full 7-phase proof passed; second wait path on port 40000 also exercised. Matches adjudicated root cause: OLD no-reuse bind falsely rejecting CI TIME_WAIT + codex-adjudicated harness readiness-wait handling.",
+ "declaration": {
+  "final_sha": "f5ca185a50ad6349275cd79dabd5b701b65a2548",
+  "double_green": true,
+  "R09_CI_gate": "achieved on B itself",
+  "history_preserved": [
+   "C2-era failures",
+   "C3 (6add9b04)",
+   "ad001c77 run 43590617533 storage version-switch failure",
+   "C2/C3 four historical failures retained as history"
+  ]
+ },
+ "artifacts": {
+  "all_live": true,
+  "members": [
+   {
+    "artifact": "native-postgres-linux-proof-storage-f5ca185a50ad6349275cd79dabd5b701b65a2548",
+    "partition": "storage",
+    "member": "native-proof.log",
+    "bytes": 5556,
+    "sha256": "3508db8a3841fc4932d99d835760f8888caf6e71276f72e70a7f0cfe109050be"
+   },
+   {
+    "artifact": "native-postgres-linux-proof-storage-f5ca185a50ad6349275cd79dabd5b701b65a2548",
+    "partition": "storage",
+    "member": "native-proof.xml",
+    "bytes": 63122,
+    "sha256": "4f3c1f783dbcc120f690a5000a5b7c3182c9bd16835637ef8aeeec1314f5c3bf"
+   },
+   {
+    "artifact": "native-postgres-linux-proof-storage-f5ca185a50ad6349275cd79dabd5b701b65a2548",
+    "partition": "storage",
+    "member": "version-switch-proof.log",
+    "bytes": 2503,
+    "sha256": "6d02d989afe20d8f86bf629e08ffe75f32680223529bfae0b245e479ad37dc0d"
+   },
+   {
+    "artifact": "native-postgres-linux-proof-storage-f5ca185a50ad6349275cd79dabd5b701b65a2548",
+    "partition": "storage",
+    "member": "version-switch-proof.xml",
+    "bytes": 17207,
+    "sha256": "8e50b8b315be81646877f99428aad588365ff7667e152209ac9a992656f1384f"
+   },
+   {
+    "artifact": "native-postgres-linux-proof-research-f5ca185a50ad6349275cd79dabd5b701b65a2548",
+    "partition": "research",
+    "member": "native-proof.log",
+    "bytes": 19251,
+    "sha256": "54cb7e27b87aef5ff75fee700abbfdb68e8040434f7b36d6d84a08efd220ab39"
+   },
+   {
+    "artifact": "native-postgres-linux-proof-research-f5ca185a50ad6349275cd79dabd5b701b65a2548",
+    "partition": "research",
+    "member": "native-proof.xml",
+    "bytes": 264835,
+    "sha256": "9b3cbdeedcac5a5f82705d46123f99b9ccd0ef04ee4976fbed007ddbdf7b9f85"
+   },
+   {
+    "artifact": "native-postgres-linux-proof-dispatch-f5ca185a50ad6349275cd79dabd5b701b65a2548",
+    "partition": "dispatch",
+    "member": "native-proof.log",
+    "bytes": 13673,
+    "sha256": "8e53ecc69033a087237891dfdad726279b58ad4e0241354ff34cfcdcf596dd9c"
+   },
+   {
+    "artifact": "native-postgres-linux-proof-dispatch-f5ca185a50ad6349275cd79dabd5b701b65a2548",
+    "partition": "dispatch",
+    "member": "native-proof.xml",
+    "bytes": 399854,
+    "sha256": "a9ce5f45175cccfc7fc6fbd3bab7d9a4b484bcb0cda74e6d35323f3dbae7ec0d"
+   },
+   {
+    "artifact": "native-postgres-linux-proof-papersim-f5ca185a50ad6349275cd79dabd5b701b65a2548",
+    "partition": "papersim",
+    "member": "native-proof.log",
+    "bytes": 1100,
+    "sha256": "8b784ef70064cec323dd1c9c0fc0ac8c906a7ce0616139af3d0c1fcab5855484"
+   },
+   {
+    "artifact": "native-postgres-linux-proof-papersim-f5ca185a50ad6349275cd79dabd5b701b65a2548",
+    "partition": "papersim",
+    "member": "native-proof.xml",
+    "bytes": 17121,
+    "sha256": "07fae51e250ab8c7b5e2fa27d57b12ceb4e07d83b8f094528d0a635087372798"
+   },
+   {
+    "artifact": "offline-verification-f5ca185a50ad6349275cd79dabd5b701b65a2548",
+    "partition": "offline",
+    "member": "offline-verification.log",
+    "bytes": 57764,
+    "sha256": "6e464487de13a109d73bdcc95b2bc4e6044fe0107836502e5700128169eae2b9"
+   }
+  ]
+ },
+ "guards": {
+  "source_changes": false,
+  "force_push": false
+ }
+}

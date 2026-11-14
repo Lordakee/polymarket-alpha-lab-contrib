@@ -1,0 +1,560 @@
+Reading additional input from stdin...
+Not inside a trusted directory and --skip-git-repo-check was not specified.
+Reading additional input from stdin...
+OpenAI Codex v0.167.0
+--------
+workdir: D:\Projects\polymarket-alpha-lab
+model: gpt-6-astra
+provider: my
+approval: never
+sandbox: read-only
+reasoning effort: max
+reasoning summaries: auto
+session id: 01a1da51-7274-7a83-b15d-83877a5f3582
+--------
+user
+# 决策简报：M0 整改终局处置（2026-11-14）
+
+你是 polymarket-alpha-lab 项目的**决策代理**（gpt-6-astra，思考 max）。项目 owner 已将本轮全部待决事项委托给你裁定（原话："需要做决策的地方你交给本地codex来决定，指定模型时gpt-6-astra/max，全都决策好以后，上传全部代码和交接文档"）。你只在本文列出的选项与参数范围内做决定；无资金/凭据/模型配置/规则修改授权。你可以只读访问本机文件核验证据（只读沙箱）。输出一份结构化决策记录（见末尾格式要求）。
+
+## 项目现状（全部已核验）
+
+- canonical 仓库 wmqfl861/polymarket-alpha-lab：main = `ad001c77a530c156b6ce42ff21b01b8711fd3e2b`（tree bd195335）。链：…→37b28895→C2 9286eefb→C3 6add9b04（合并观察器+PG密钥重试）→ad001c77（diag2 失败当刻取证）。
+- 保留分支：`audit/distribution-20261114-bdb39b51` = 7d993df5（distribution 密钥下载重试，已过全部门禁+独立复审，真实 CI run 43583373068 success）；`remed/r03-observer`=156ba4ef、`remed/native-pg-key-download`=a9decad6（均已入 main 历史）；`handoff/m0-review-2026-11-13`=6687ace9（审核交接包）。
+- CI 现状（同一 main）：
+  - Offline verification run 43590617596：**success**（41,483 passed/122 skipped）。
+  - Native project PostgreSQL run 43590617533：**failure**——research(1227)/dispatch(1933)/papersim(92) 全绿；storage 分区证明 311 passed；**"Prove native version switch" 1 failed/65 passed**；aggregate 因 storage 失败。这是该阶段第 4 次连续 CI 失败（C2 自动 43431642963、C2 手动 43453970876、C3 43551531643、ad001c77 43590617533，4/4）。
+- R09（同 SHA 双绿）因此阻塞；R10 正式交接文件、Q 回填、外部证据入库均排队在 R09 之后。
+
+## 根因证据链（已闭合至高证据强度）
+
+1. **机制（已证明）**：归档实验 A（零 PG 合成对照，两轮独立复审后执行）：服务端主动关闭 TCP 连接 → 该端口本端留下 TIME_WAIT（Linux ~60s）→ 对同 addr:port 的**无 SO_REUSEADDR bind 精确返回 errno 98**；带 reuse 则成功。客户端先关闭 → 仅 peer 侧 TIME_WAIT，两种 bind 均成功。证据：/home/ubuntu/r03-next-run-20261114-01/control-evidence/report.json（6500B，sha256 b07a4429…）。
+2. **失败调用点（代码核验）**：冻结 OLD 基线 2b20002c 的 src/polymarket_alpha_lab/project_postgres/server.py `_start:146`：先执行无 reuse 的 `probe.bind(('127.0.0.1', port))`，再 :149 `pg_ctl start`；失败即 `fail('project_postgres_port_in_use')`，而 files.py:19-20 的 fail() 是 `raise … from None`（主动隐藏原始 OSError 栈——历史日志看不到 bind 位置的原因）。
+3. **CI 现场**：4/4 失败均在 OLD initialize→smart stop→stopped 之后 seed 阶段首错 errno=98（C3 捕获）/port_in_use（全部）；diag2 增强（ad001c77）后最新失败的子进程退出快照：任务端口 **local TIME_WAIT=6**（C3 时为 3）、peer 67、OWNER_UNKNOWN。TIME_WAIT 生命周期 ~60s 且 bind 失败与进程退出间隔亚秒——退出快照的 local TW 在 bind 时刻必然在场。
+4. **本机对照（2 次真实 OLD 前缀，均通过）**：本机快服务器上 OLD 客户端（psql/pg_ctl）全部主动关闭 → 端口只有 peer 侧 TIME_WAIT（73→88），local 恒空 → bind 成功，seed 全断言通过。证据：/home/ubuntu/r03-next-run-20261114-01/old-evidence-2/report.json（15795B，sha256 2406322b…）。
+5. **结论**：冻结 OLD 的无 reuse 端口预检在"自身 init 阶段服务端主动关闭留下 local TIME_WAIT"时误拒自身重启；GitHub runner（慢、2 核）上服务端先关的时序近乎必现（4/4），本机快环境下客户端先关而不复现。这是**冻结 OLD 基线与 CI 环境的真实不兼容**，非测试断言错误。
+6. 已知残余缺口（不影响上述结论）：diag2 的链 JSON 被 pytest saferepr 截断（三处 artifact 同文），完整帧链未存档；帧截断方向为最外 8 帧（真实链浅不受影响，docstring 与实现不符——P3）。
+
+## 待决事项
+
+### 决策 1：R03 处置（四选一，可组合）
+
+- **A. seed 前等待端口 local TIME_WAIT 清空**（有界轮询 /proc，上限建议 90s；只在失败前置条件存在时等待）。证明语义：**完全保留原命题**（OLD 在同端口停后可重 init+seed），仅等待内核状态就绪；CI 成本约 +60-90s/次。历史上"等待回收"曾被列为需 owner 批准项——本次批准权即在你。
+- **B. seed 阶段换用全新端口**（pick_port 再取一个）。证明语义略弱化：不再是"同端口重入"（端口占用拒绝语义另有专项测试钉住）；CI 零额外时间；但弱化了"stop 后原端口可复用"的隐含覆盖。
+- **C. 仅补取证**（父进程在断言前逐字回显子进程 stderr，绕过 pytest 截断，拿完整链 JSON 入档；不解除 R09 阻塞）。可与 A/B 组合为"先取证再修复"或并入同一节点。
+- **D. 维持现状**（R09/R10/M1 持续阻塞，OLD 冻结不改、测试不迁就）。
+- 背书事实：当前 C3 产品的同路径 `_start` 已带 SO_REUSEADDR（OLD 冻结不可改，否则跨过冻结边界需 owner 亲自处理——不在你的选项内）。
+
+### 决策 2：distribution 修复（7d993df5）并入 main 的时机
+
+- (a) 立即并入（R03 修复节点之前或合并为一次推送）→ 最终交付 SHA 含全部修复，双 CI 只需跑最终 SHA；
+- (b) R09 先在"R03 修复版 main"上闭环，distribution 之后单独并入并重跑双 CI；
+- (c) 暂不并入（保留分支交付）。
+- 约束：并入 main 需该 SHA 上 Offline+Native 双绿才算交付证据；7d993df5 已有自身分支上的 distribution CI success。
+
+### 决策 3：附带小修是否与决策 1 的实施同节点
+
+- diag2 的 P3-1（帧截断保留最外 8 帧 vs docstring 称最内；改为取尾部 8 帧或修正 docstring）与 P3-3（secret-scan 证据日志归档）是否随下一节点一并处理，还是延后。
+
+### 决策 4：参数细节（若你选 A）
+
+- 轮询间隔、总上限、超时后的行为（FAIL 保留首错 vs SKIP 标记）、以及是否在等待前后各记一次端口快照入证据。
+
+## 你的输出格式（严格）
+
+```
+DECISION 1: <A|B|C|D|组合> — <一句话理由>
+DECISION 2: <a|b|c> — <一句话理由>
+DECISION 3: <同节点|延后> — <一句话理由>
+DECISION 4: <若适用：间隔/上限/超时行为/快照要求>
+RATIONALE: <不超过 300 字的总体推理，含对证明语义与 CI 成本的权衡>
+BOUNDARIES CONFIRMED: 冻结 OLD 不改 / 无资金凭据模型规则变更 / 实施仍走 计划→独立复审→红绿→全门禁→聚焦提交→复审→推送→同 SHA 双 CI
+```
+
+证据文件（如需核验，均为只读）：本简报所引 SHA/路径与 D:\Projects\pal-remediation-plans-20261113\ 下 q-facts-c3-20261114.md（33,151B，sha256 d536b3ab…）、r03-diag2 计划与证据、/home/ubuntu/r03-next-run-20261114-01/ 一致。不要修改任何文件。
+2026-11-14T13:48:55.352696Z ERROR rmcp::transport::worker: worker quit with fatal: Transport channel closed, when UnexpectedServerResponse("HTTP 404: ")
+hook: SessionStart
+hook: SessionStart
+hook: SessionStart
+hook: SessionStart Completed
+hook: SessionStart Completed
+hook: SessionStart Completed
+hook: UserPromptSubmit
+hook: UserPromptSubmit Completed
+codex
+我会按这次授予的裁定范围给出决策，重点核对证明语义、失败证据和最终交付 SHA 的门禁要求；全程只读，不修改文件或配置。
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -Command "Get-Content -LiteralPath 'D:\\Projects\\polymarket-alpha-lab\\DELIVERY_PLAN.md' -TotalCount 190" in D:\Projects\polymarket-alpha-lab
+exec
+"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -Command "rg --files 'D:\\Projects\\pal-remediation-plans-20261113' -g '*q-facts-c3*' -g '*r03-diag2*' -g 'AGENTS.md'" in D:\Projects\polymarket-alpha-lab
+ exited 1 in 2215ms:
+rg: D:\Projects\pal-remediation-plans-20261113\C2-manual-native-tools-gvvvgehr: 拒绝访问。 (os error 5)
+rg: D:\Projects\pal-remediation-plans-20261113\R03-version-port-evidence-v_i3qogj: 拒绝访问。 (os error 5)
+D:\Projects\pal-remediation-plans-20261113\r03-diag2-plan-20261114.md
+D:\Projects\pal-remediation-plans-20261113\q-facts-c3-20261114.md
+
+hook: PostToolUse
+ succeeded in 2761ms:
+# V1 交付总计划：BTC／ETH 研究与模拟验证版
+
+<!-- STATUS BOARD (FX-05, 2026-11-12) — 回答"几条线、各到哪、等谁" -->
+## 状态板（2026-11-12）
+
+| 线 | 状态 | 等谁 |
+|----|------|------|
+| **模拟盘主线**（本计划 §37-§77 + 服务器运行） | 活跃：66 结算，净口径 +20.7%（CI −4.9..+47，详见 §77/V-6）；M0 五泳道执行中 | OD-A~H（§77.3；未答复按保守默认） |
+| V1 六包（§61 前） | 工程完成、未激活（G1 后无真实预测；管线零使用 V-5） | owner（OD-A） |
+| 仓库正本 | wmqfl861/main `9e761317`（Lordakee 落后至 5bdae2e3，V-4） | owner（OD-C） |
+| 模型资产 | 足球 κ 新表+折减（§75 生效）；NBA/欧国联 = 影子禁入场（§74/§76）；加密 GBM 活跃 | NBA 复验 ~11/24；欧国联影子 11/14-17 |
+| 审计整改 | 交接包已合并（9e761317）；M0 泳道 A/B/C/D 并行 + E 本节 | 泳道返回→复审→提交 |
+
+---
+状态：**WP-01 的 G1 候选到待审入口已验收；其余五包未完成；不是 V1 发布完成声明。**
+计划基线：`bd8f3c50bef29f0b3c64a260bf99f23d739684f4`（PR #26）。
+基线日期：2026-09-14。用户已同意先收敛 BTC／ETH 首版，再扩展其他团队。
+维护规则：每个相关 PR 同步更新本文件的状态、缺口、依赖及固定版本证据。
+
+2026-09-19 接手更新：D1 本地 Agent、D2 所需研究数据、D3 首轮不设业务规模／金额限制已明确。
+当前口径见第 4、6、7、38 节；旧章节保留当时的未决状态，不得再据此要求用户重复决定。
+
+## 1. 唯一的当前交付口径
+
+本文件是当前 V1 的范围、工作顺序和结束条件的唯一总表；它不是又一个独立报告模块。
+`AGENTS.md` 仍管理工程、安全及授权约束。旧路线图继续作为长期方向和历史依据，
+但旧的 Supabase 部署要求、外部审核要求、仅 BTC 可运行等描述不能覆盖当前项目规则。
+本计划不授权读取密钥、付费模型调用、用户业务库写入或实盘交易。
+
+**V1 的终点：** 普通用户在 Linux 上通过一套明确入口，完成受支持 BTC／ETH 市场的
+筛选、规则审阅、获准模型研究、记录保存、任务运行管理、人工核验结算和成本感知模拟评估；
+能识别失败与未知状态，能停止及重启且不丢失历史，能安装一个固定版本的可追溯发布包。
+“输入 prepared”“代码合并”“测试全绿”都不单独等于这条完整路径已验收。
+
+项目只有一个本期产品里程碑：**V1-Research-Paper**。下面 WP-01 至 WP-06 是六个工作包，
+不是六次对话、六个文件或六个 PR；不再把每个查询器或修复称为一个新的产品阶段。
+
+## 2. 首版范围与明确不做的事
+
+| 纳入 V1 | 留到下一版或单独授权阶段 |
+| --- | --- |
+| `crypto_btc`、`crypto_eth` 两个团队；复用现有通用研究循环 | 另外八个团队的领域采集、连续运行及真实业务验收；十团队长期目标保留 |
+| 显式 Yes/No、受现有合约形态和实际观察时间门禁支持的固定时点价格事件 | 路径依赖触价、期间最高／最低、区间统计、未知或矛盾规则；不为凑候选放宽门禁 |
+| 项目私有原生 PostgreSQL、现有迁移账本、Linux 本地使用（第 61 节重定基，Windows 目标退役） | Docker、Supabase 服务、共享外部数据库、其他耐久业务存储 |
+| 人工审阅规则、显式批准研究输入和模型；有界任务运行 | 自动批准模型输出、自动认证来源或链上最终性、任意工具／网址／代码执行 |
+| 真实研究接入、失败留存、结算证据、模拟成交成本与评估 | 实盘、账户／钱包、签名、真实订单、自动仓位或资金分配 |
+| 一个统一操作流程；优先复用现有命令行和组件 | 新 Web 仪表盘、重复健康报告／门禁／摘要层、框架重写和微服务拆分 |
+| Linux 可追溯安装与保全旧数据的版本切换说明（2026-09-27 owner 指令转为 Linux 唯一平台，见第 61 节） | 原地覆盖旧 kit、复制 `.local` 冒充迁移、自动删库修复、无条件自动升级器；Windows 安装目标已退役 |
+
+来源适配是准入条件而不是口头免责声明：Coinbase／Kraken 的 USD 小时行情只能作为研究输入，
+不能当成 Binance USDT 分钟结算数据。规则审阅和结算核验必须明确引用合约实际指定的来源、
+交易对、时间和粒度。此版允许人工独立取得结算证据；不要求先开发所有结算源的自动历史采集器。
+无法核验的事件保留未决，不算已结算，也不纳入“已完成样本”。
+
+## 3. 已有能力不是从零重写
+
+| 可复用基础 | 基线证据／使用说明 | 不能由此推导的结论 |
+| --- | --- | --- |
+| 项目私有数据库启停、迁移、备份与权限控制 | [database/README.md](database/README.md)、[quickstart](database/quickstart.md)；PR #10—#14 | 用户业务库已升级、已有真实预测或新 V1 已发布 |
+| 公开发现、双源预览、合约／观察时刻检查 | [发现](docs/research-crypto-discovery.md)、[启动](docs/research-crypto-launch.md)、[合约](docs/research-crypto-contract-scope.md)、[时刻](docs/research-crypto-observation-time.md)；PR #16—#22 | 第一个搜索结果可研究、来源等价、当前结果已获批 |
+| 通用有界模型／工具循环、批量并行及任务收录 | [研究 Agent](docs/team-research-agent.md)、[启动](docs/research-crypto-launch.md) | 十团队真实运行完毕、常驻调度已完成、提供商已选定或已获付费授权 |
+| 任务查询、完整有界清单及评估入口 | [查询](docs/research-execution-inspection.md)、[清单](docs/research-execution-inventory.md)、[评估](docs/research-evaluation-console.md)；PR #23—#25 | 查得到记录就能自动重跑、无记录等于全库为空、没有未完成任务等于预测有效 |
+| 未决市场清单、候选证据、人工确认和单条结算查询 | [清单](docs/research-resolution-queue.md)、[确认](docs/research-resolution-review.md)、[查询](docs/research-resolution-inspection.md)；PR #13、#15、#26 | 自动确认最终性、旧候选被后来结果升级、真实结算全链路已验收 |
+| 模拟成交、成本、风险和验证规范的既有组件 | [验证门槛](docs/research/validation-gates.md)、[长期路线](docs/superpowers/specs/2026-06-13-automated-investment-roadmap.md) | 这些组件已接入新研究主流程，或已有可信收益证据 |
+
+证据分类必须保留：`代码已合并`、`离线验证`、`隔离原生集成`、`真实公开输入`、
+`用户报告的本机检查`、`获准真实模型`、`完整业务验收`。一种不能替代另一种。
+PR #26 的全量、Windows 和 kit 测试是组件工程证据，不是六个工作包的完成证明。
+
+用户此前报告本机研究清单为零，之后报告了公开预览成功及受控网络重试恢复；
+本计划没有重新查询其机器，也不把这份历史报告当成数据库“现在仍为空”的实时结论。
+此前未发布的候选筛选器／模型预检只算未交付候选，不计入 main 的能力或本期完成量；
+曾被平台拒绝的写入不得通过换接口、编码或代传绕过。
+
+## 4. 六个工作包总验收表
+
+状态词：`NEXT` 下一实施项；`PARTIAL` 有基础但未完成；`AWAITING_OWNER` 缺用户决定；
+`IN_PROGRESS` 正在实施；`WAITING` 等待真实事件或证据；`BLOCKED` 具体障碍；`DONE` 全部完成条件及证据齐备。
+“工程基础已有”不是 DONE。下表是当前交付状态；章节内历史记录保留其当时口径，不是虚构的完成百分比。
+
+| ID／工作包 | 当前状态 | 剩余缺口 | 依赖 | 完成证据 |
+| --- | --- | --- | --- | --- |
+| WP-01 候选到研究入口 | **DONE（G1）** | 有界发现、最新规则／观察时刻、一次完整预览和待审规格已接通；本项不包含模型授权或来源真伪认证 | 现有公开输入、PR #19／#20 门禁 | [PR #28](https://github.com/wmqfl861/polymarket-alpha-lab/pull/28)：52 项反例测试、三条 CI、真实 BTC／ETH 待审样例；详见第 10 节 |
+| WP-02 真实模型与预算 | **PARTIAL** | D1—D3 已明确；本次修复凭据／重定向和必引证据调用前边界。已实现显式无金额封顶 Python 执行路径及 Codex 事件协议转换；已补同库授权／逐次调用审计及真实原生子进程启动、I/O 限制和退出清理；已增加固定版本受控命令配置及官方完整包合成验证；已增加 Claude Code bare／不保存会话的显式 API 模式替代接线，复用审计及进程层；官方 Claude 二进制未实测，仍缺实际写入／上下文／提供商核验；Codex ephemeral 仍写 SQLite，禁止据此真实启用；隔离边界已按第 61 节改为 Linux 命名空间探针（取代第 57 节 B 与第 60 节 C 路线） | 先接 Codex CLI 的现有 factory 合同；不探测凭据；真实验收依赖具体本地配置和 WP-01 | G2：两团队分别至少一次获准真实研究；原失败保留；重复请求不再次调用模型；授权与使用可核对 |
+| WP-03 任务调度与恢复 | **PARTIAL** | 持久批次／公平轮转／共享额度已接统一受控入口：查询批次、轮次和预算，审核后显式入库批次／预算，显式运行一轮与停止恢复；独立脚本不装配真实客户端。同一合成 CLI 原生组合场景已补两工作者并发中断、领取不重放和额度不返还证明（第 47 节）。仍缺本地 Agent／实际使用核验及最终 G3 组合验收 | 复用现有领取／收录；先合成模型，真实运行依赖 WP-02 与已明确的 D3 | G3：两轮调度＋一次停机重启＋混合失败／中断场景，任务不丢失、不重复执行、不隐去 incomplete |
+| WP-04 结算闭环 | **PARTIAL** | 已接原预测／候选哈希绑定的人工确认入口，核对原规则、声明来源与分钟时刻，并复用原子结算保存；仍缺真实 BTC／ETH 前瞻预测、实际匹配来源和独立人工核验 | WP-01 支持事件；WP-02 真实记录；事件到期和独立人工核验 | G4：BTC／ETH 各至少一个真实事件保留预测到结算的完整证据；过期、争议、拒绝和未决路径可追踪 |
+| WP-05 研究到模拟评估 | **PARTIAL** | 已接同库模拟证据、审核结算损益下界、--settled-paper 评估及现有任务命令的保存／查询入口；全部尝试、未决和缺失仍保留。仍缺获准真实预测、真实输入／费率证据及完整操作验收；假设成本不等于账户收益，准入不保证提交确认先于截止 | WP-02、WP-04；订单簿和成本记录；可先做离线组合 | G5：两团队至少各一个完整工程样本；拒绝项、样本缺口、成本和时间均可复算，不据此声称策略有效 |
+| WP-06 操作与发布收尾 | **PARTIAL** | 统一说明、入口完整性、排空与同版本整包冷恢复已合并验收（PR #49）；冷备份仍绑定原物理根；获准配置、Linux 版本切换证据与长期 Release 待办（Windows 专项已按第 61 节冻结为历史）；PS5.1 项已按第 57 节以环境特定方式关闭（三例失败证据与进程内 .NET 首用冷路径假设按第 46 节保全；仅受支持配置下可复现失败才重开）；安全数据版本切换设计已交付（第 48 节）；安全数据版本切换离线兼容性证据已交付（第 51 节；仅限固定版本对）；一次性数据上的版本切换原生证据已交付（第 55 节） | 文档整理现在可做；最终验收依赖 G1—G5 | G6：固定版本 Linux 全流程＋负向恢复验收＋发布资产哈希（第 61 节重定基）；无本机补丁拼装、无覆盖旧数据 |
+
+**当前完整验收：1／6（仅 WP-01／G1）。** 这是六个端到端工作包的状态，不表示现有代码完成量为零。
+每项达到 DONE 必须填入确切 PR、head／merge／tree、执行命令、结果、适用平台和未执行项；
+真实业务记录在项目数据库私下留存，GitHub 只放已审阅的脱敏验收摘要。
+
+## 5. 每个工作包的停止条件
+
+### WP-01：先解决主流程，不新增旁路报告
+
+- 只处理有界搜索结果；检查最新规则和实际取价时刻，保留失败、拒绝、未检查、无候选的区别。
+- 明确请求总上限及每次重试原因。到截止时间停止下一步，不延长截止时间凑成功。
+- 待审规格携带市场 ID、条件 ID、规则绑定、研究时间窗及来源用途；筛选不等于批准。
+- 不支持的规则、源不匹配或已发生观察不得启动研究。最后启动前再次验证，避免继承旧资格。
+- 完成 G1 后转 WP-02／WP-03；额外排行榜、报告或健康摘要不在这个工作包内。
+
+### WP-02：有授权才有真实模型验收
+
+- D1—D3 已按第 7 节明确，不再重复询问。模型客户端的标签不证明实际提供商，编码 Agent 的登录不等于项目配置。
+- 实现前先审阅凭据隔离与数据发送设计；实际凭据只在用户批准的本地运行边界提供，不进入聊天、GitHub、报告或研究证据。
+- 新任务先记录前瞻性请求和领取，再执行模型，完整保存成功／阻断／失败；输入无效时不浪费付费调用。
+- 同一任务重放返回原结果；不自动重试付费模型或借换 task ID 绕过 incomplete。恢复路径不抹掉首次失败。
+- 保留单次调用、进程并发、输入输出及截止／停止的工程边界；首轮不另设业务规模／金额封顶。
+  必须显式区分“用户未要求金额上限”和“已有硬金额上限”；现有 ModelCallBudget 只能表达后者。
+  无封顶应用路径不等于实际CLI已验收；不得用零价、巨大虚构额度或伪造收费声明冒充保证；使用与费用保留可核验状态。
+
+### WP-03：连续运行有明确边界
+
+- 复用项目数据库、原任务身份和领取协议。队列运行元数据如需持久化，只能使用同一项目 PostgreSQL。
+- 显式启动和停止；不默认注册系统服务、不无限重试、不从模型回答产生新任务。
+- 先用合成模型验证正常轮次、部分失败、截止到期、进程中断、重启和并行重复请求；故障注入不使用付费模型。
+- 不靠记录年龄猜 worker 已死并重新执行；丢失结果保留 incomplete，原评分完整性约束继续生效。
+- G3 的场景验证说明可运维，不宣称无限期稳定、严格实时或跨机器分布式能力。
+
+### WP-04：可人工核验，不假装自动最终性
+
+- 复用既有候选采集、审核提交和原子结果保存接口；结算来源必须匹配合约指定的市场／时间／粒度。
+- 人工取得实际来源证据是首版允许的流程。自动全历史采集、链上验证及未知类型解析推迟。
+- 原预测须早于观察时刻；确认和未确认记录不可混同，后来结算不能改写旧候选。
+- 争议、50/50、错误来源、时间冲突、缺失证据保持未决或阻断；不能默认 NO、自动覆盖结果或补造历史。
+- 真实事件未到期或无法独立核验时记录 WAITING，不通过合成结算宣布 G4 完成。
+
+### WP-05：软件闭环与策略有效性分开
+
+- 先核对已存在组件，再做必要适配。模拟成交使用可执行 bid／ask、深度、手续费和可说明的滑点；不以 midpoint 代替可成交价。
+- 实验名义数量是明确的模拟参数，不是资金建议或真实下单量。无真实订单、钱包或自动头寸配置。
+- 保留全部研究尝试和模拟拒绝项；按一致时间、模型、协议版本和事件分组，展示样本分母、缺失结算及成本。
+- 每团队至少一个真实工程样本仅证明接线可运行，不证明校准、收益或统计显著性；样本不足必须明示。
+- 原 [Gate 0—8](docs/research/validation-gates.md) 不被此处替代。进入更高等级的
+  200 次候选观察、50 次模拟交易、30 次已结算／退出交易，以及深度策略至少四周前向采集等
+  既有起始门槛仍适用；V1 软件可交付不等于策略获晋级或实盘获授权。
+
+### WP-06：固定版本交付，而不是继续累加功能
+
+- 一份 quickstart 串起配置、发现／审阅、研究、任务管理、结算和评估；优先组合现有入口，不预设新 UI。
+- 使用同一固定版本跑完整隔离 Linux 路径，验证停止／重启、错误配置、网络失败和无业务写入的只读检查（第 61 节重定基；Windows 路径已退役）。
+- 正式本机验收只安排云端无法替代的步骤；不反复重跑已经通过且未受影响的数据库、网络或下载检查。
+- 发布长期可达的明确标记研究／模拟用途的 Release：原始测试 ZIP、SHA256、源码 commit／tree、依赖和升级限制。
+- 旧运行时及数据库保全；新源码可经审核指向原物理项目根。旧 kit 不覆盖解压，任何数据迁移另行设计与授权。
+- 自审发现清零、最终差异与最终测试树一致后才给 V1 结论。既有未执行检查、平台限制、预算和数据限制随版本说明。
+
+## 6. 实施顺序、并行与完成判据
+
+关键路径：**WP-01 → WP-02 → WP-04 → WP-05 → WP-06**。
+WP-03 可在现有领取／存储接口上先做离线设计和实现，但必须在最终交付前接入；
+WP-02 的无凭据装配设计、WP-04 的人工操作流程、WP-06 的文档整理也可并行，写入范围不得冲突。
+本地 Agent 方向已确定；具体可执行文件／版本／模型仍需显式配置与核验，不能把“找密钥”交给本地 Agent。
+
+WP-01 已按第 10 节关闭 G1，不继续扩充筛选排行榜或旁路报告。
+**（2026-09-27 第 61 节起：平台转为 Linux 唯一，L0—L6 节点见该节。）下一实施重点：无金额封顶、持久调用审计、Codex 协议和真实子进程执行层已接通；固定 Codex 配置与完整包合成验证已接通；Claude Code 替代协议与无会话命令配置已实现，先核验官方二进制的实际状态写入、上下文、工具及重试行为；不把 API 模式当作订阅登录、不默认回退；通过后再验实际身份并进行获准真实运行。WP-03 的真实模型组合验收仍按原要求推进。**
+Claude Code、OpenCode、Grok CLI、ZCode CLI 为允许的后续替代项，不默认兼容或自动回退。
+D1—D3 不再阻塞离线实现；真实调用仍需所选版本的隔离／输出／使用验收和显式运行配置。
+随后复用原流程完成 WP-03 停机重启、WP-04 实际结算、WP-05 成本样本和 WP-06 固定版发布。
+先核对允许的发布路径和已有代码；不得把历史未发布工作假定为现成依赖。
+若写入被平台拒绝，记录具体障碍，不换接口、编码或本地代传绕过；可继续不依赖受阻内容的工作包。
+
+每个 PR 开工前写清 `WP-ID + 要关闭的验收缺口 + 最小改动范围 + 所需授权`。
+开发完成后由协调者作单独自审及反例验证，不宣称第三方／全新 Agent 审核；
+相关测试和适用的最终 CI 必须通过，同步总表证据，再合并。
+只修首版阻断性问题或本次改动引入的缺陷；其他增强登记在文末延期区，不自动扩大首版。
+发现会改变范围或完成条件的需求时必须重新取得用户同意，不能悄悄降低门槛或增加第七个工作包。
+
+**发布判据：G1—G6 全部有可复核证据，D1—D3 已明确且对应授权受遵守，
+无未解决的首版阻断缺陷，同一发布版本通过最终集成与自审。**
+未达到前只能报告“工作包推进／组件完成”，不能报告整个阶段完成。
+到达后冻结 V1；统计样本积累和后续领域扩展使用新的里程碑，不自动变成本期永远做不完的尾项。
+
+## 7. 用户已决事项、剩余配置与授权边界
+
+| 决定 | 当前状态 | 需要的非敏感信息 | 影响 |
+| --- | --- | --- | --- |
+| D1 提供商和准确模型 | **方向已定：本地 Agent** | 允许 Codex、Claude Code、OpenCode、Grok CLI、ZCode CLI；先接 Codex，具体 executable／版本／model 需显式配置 | 不再等待泛化选型决定；未核验的 CLI 不自动启动或回退 |
+| D2 研究输入发送许可 | **已同意：所有所需研究数据** | 具体任务仍绑定问题、完整规则、批准证据及后续工具消息 | 不是扫描无关文件或发送凭据的许可；不裁剪已批准输入冒充兼容 |
+| D3 首轮规模和费用约束 | **首轮不设业务规模／金额限制** | 已接无封顶应用路径；保留单次调用／资源／截止／停止边界，真实使用审计仍待验收 | 正整数金额 ModelCallBudget 不是无限模式；不伪造价格、额度或收费认证 |
+
+不在聊天中索要 API 密钥，也不探测 `.env`、登录缓存或用户凭据。以上记录最新 D1—D3；
+本次“接手、审计并直接修改仓库”仍是源码开发，不自动启动真实模型、修改用户业务库或实盘交易。
+首个适配器先用合成子进程／响应验证；真正本地必需的配置与实测只在源码和云端检查完成后交接。
+
+## 8. 进度更新与计划可信度
+
+上轮提出的工期是粗粒度资源估算，不是承诺日期、后台执行安排或已经验证的进度。
+范围已冻结、WP-01 已验收且 D1—D3 已明确；后续按实际工作量、阻断时间与可并行性评估。
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+**我核对文件只读状态**
+**我核对事实文件与计划哈希**
+**我比较P3-1的修正位置**
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -Command "Get-Content -LiteralPath 'D:\\Projects\\pal-remediation-plans-20261113\\r03-diag2-plan-20261114.md'" in D:\Projects\polymarket-alpha-lab
+exec
+"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -Command "Get-Item -LiteralPath 'D:\\Projects\\pal-remediation-plans-20261113\\q-facts-c3-20261114.md' | Select-Object FullName,Length; Get-FileHash -LiteralPath 'D:\\Projects\\pal-remediation-plans-20261113\\q-facts-c3-20261114.md' -Algorithm SHA256; rg -n -C 5 -- '43590617533|43590617596|TIME_WAIT|P3-1|P3-3|7d993df5|90s|R09|R10|diag2|bind|冻结' 'D:\\Projects\\pal-remediation-plans-20261113\\q-facts-c3-20261114.md'" in D:\Projects\polymarket-alpha-lab
+ succeeded in 2136ms:
+# R03-diag2 计划：把失败当刻取证最小移植进 shipped version-switch 测试
+
+状态：READY_FOR_FRESH_PLAN_REVIEW；本文件不授权实施。实施须待 fresh 独立计划复审 PASS 后由协调者分派。
+唯一仓库写域：`tests/test_project_postgres_version_switch_native.py`（恰 1 文件）。基线：main=C3 `6add9b041754600109e17e6aa05b0cb99aaface6`（tree `22d2a7b79d4ae1d44c41abb5fccbd23afae53fe9`）。工作树：Linux ROOT 下新 worktree `worktrees/r03-diag2-<unique>`（自 C3 建分支；主 checkout 保持 clean 不动），实施前核对 HEAD=C3、clean、OLD 对象在。
+
+## 原来证明什么 / 改后证明什么
+
+- 原证明（不变）：本测试固定 OLD `2b20002c`→candidate 的同根源码切换契约——63/70 目录与指纹、pending/回退/冲突/恢复各拒绝路径、身份与快照等价、bundle 完整性、七阶段 native 证明；离线部分证明 runner 的 `OLD_SEED_FIRST_FAILURE_ERRNO` 观察器与 `OLD_SEED_AFTER_CHILD_EXIT` 退出后 proc 观察器的语义（既有合成测试全部保留）。
+- 改后证明（唯一新增）：seed 失败**当刻**的决定性证据可见性——在失败异常向上传播的同一子进程内、于 stderr 输出一行 `OLD_SEED_FAILURE_MOMENT`：reason_code（`^[a-z0-9_]+$` 校验，否则 `<noncode>`）、`__context__`/`__cause__` 有界 BFS 帧链（≤4 节点，`via=raised|cause|context`、`suppress_context` 可见，帧为相对 src 的 `file:line:name`，包外/伪文件记 `<outside>`/原名）、任务端口此刻 `/proc/net/tcp{,6}` local/peer 状态计数（与既有 `_old_seed_tcp_counts` 同语义：单文件读 ≤65537 字节、`len>65536` 或无结尾换行或任何畸形 → `UNAVAILABLE`，绝不记零）。
+- 判定不变：所有既有断言、通过/失败条件、skip 门一字不动；失败时测试仍按原方式失败，只是 stderr 多一行取证。成功路径零新增输出。现有 errno 观察器与 AFTER_CHILD_EXIT 快照原样保留。
+
+## 设计（全部位于该测试文件内）
+
+1. 新增模块级常量 `_SEED_FAILURE_DIAGNOSTICS`（纯 stdlib 字符串，供 seed 子进程执行）：`_chain(exc)`（BFS≤4，via/suppress/errno 仅 `type(...) is int`）、`_seed_tcp_counts(name, port)`（上述边界语义的独立副本；既有模块函数 `_old_seed_tcp_counts` 不动，二者语义由测试分别钉住，刻意不交叉重构）、`_seed_failure_emit(error, port, stream=None)`（整体包裹 try/except BaseException，自身任何失败不得吞掉/替换原异常；输出单行 `OLD_SEED_FAILURE_MOMENT code=… chain=<json> tcp=… tcp6=…`，端口无效记 `PORT_UNAVAILABLE`）。
+2. `_SEED_PAYLOAD`：顶部导入追加 `ProjectDatabaseError`（OLD `project_postgres.files`）；主体包一层 `try: … except (OSError, ProjectDatabaseError) as error: _seed_failure_emit(error, _port); raise`（bare re-raise，异常对象不变）；`_port` 来自新增可选 `sys.argv[2]`（int 且 1..65535，否则 None→不快照）。payload 其余字节与业务逻辑不动。
+3. 唯一 harness 调用点 `:928` 追加端口实参：`_old_payload(rig, 'seed.py', _SEED_PAYLOAD, str(original), str(rig['port']))`。`_OLD_RUNNER`/`_OLD_ENTRY`/`_old_payload`/`_observe_old_seed_exit`/`_old_seed_tcp_counts` 及全部断言不动。
+4. 输出纪律延续：无地址（原始或编码）、无 inode/PID/其他端口、无凭据/DSN/SQL/locals；仅计数、相对帧、固定 reason code 与类型/errno 标量。
+
+## 离线合成测试（新增；沿用既有 `_synthetic_old_seed_runner`/`_synthetic_seed_proc` 架构）
+
+新增 `_synthetic_seed_payload`：向 `sys.modules` 注入 fake `polymarket_alpha_lab*`（SimpleNamespace/轻类，满足 payload 的 6 组导入与 `db.session()`/`status()` 形状），exec 真实 `_SEED_PAYLOAD`，argv=[payload, root, port]，monkeypatch `builtins.open` 喂合成 `/proc/net/tcp{,6}`；用后清理 sys.modules。用例：
+- T1 帧链 from-None 语义：fake session 抛 `OSError(98)`→payload 内层 `raise PDE-like from None` 场景与直接 OSError 场景各一，断言 `code=`、`via=raised`、context 链含 OSError、`suppress_context=true` 可见、帧 `src/...server.py:146:_start` 形状（用带真实 `__traceback__` 的合成异常构造）。
+- T2 非整数 errno：`errno` 为 None/True/'98'/98.0 时字段为 null，不抛、不误报。
+- T3 proc 边界：>65536 截断、无结尾换行、表头错、坏 state/endpoint、open 异常 → `UNAVAILABLE`；正确输入 → 仅 local/peer 计数且只含任务端口。
+- T4 成功路径零输出：fake 全成功 → stderr 无 `OLD_SEED_FAILURE_MOMENT`，stdout 正常 JSON。
+- T5 观察失败不吞原异常：monkeypatch `_chain`（exec 命名空间内）抛错 → emit 不向外抛，payload 原异常原样传播、bare-raise 帧计数=1（对齐既有 `frames.count(...) == 1` 风格）。
+红绿顺序：先写 T1–T5（对尚不存在的常量/接线，红），落地常量后 T1–T3/T5 绿、payload 集成项仍红，再接线 payload+端口实参后全绿；每步保留真实输出。
+
+## 门禁与提交
+
+- 聚焦：env python（ROOT/environments/r03）跑本文件（无 native opt-in，离线部分）全绿；随后 `scripts/verify_local.py --full`（同一锁定 env、干净环境构造）通过；`python -I -m py_compile`/内存 compile；`git diff --check`；对新增行走既有 secret-scan 规则（无新增泄露）。
+- 恰 1 次聚焦提交：仅该测试文件，parent=main（应为 C3；若 main 已前移则先停报协调者），identity `ZCode <zcode@local>`，提交信息说明"failure-moment forensics only; assertions unchanged"。不推送；等协调者指示后快进推 main。
+- CI：推送后自然触发的 Offline 与 Native 双 run 如实记录 run id/attempt/结论；仅当 Native 自然 run 不存在时由协调者授权 dispatch 一次。不重跑历史失败 CI。
+
+## 边界与禁止
+
+不改 OLD 归档内容/产品源码/其他测试/任何断言/skip 门/迁移/threshold/selfcheck/规则；不重试、不为凑绿改判；本轮不运行 native 证明、不触线上库、不读凭据；证据与输出继续无公网地址。实施与自审标注 self-review；独立 fresh 代码复审由协调者安排（read-only、VERDICT 行）。
+
+hook: PostToolUse
+ succeeded in 2254ms:
+
+1-# Q 事实底稿：C3 周期已核实事实汇编（2026-11-14）
+2-
+3:**用途**：本文是 R09 双绿后对 `DELIVERY_PLAN.md` 状态板/§77 做文档回填提交（下称 Q）的唯一事实输入之一。Q 只允许把本文标为 VERIFIED 的事实写成已发生；标 UNKNOWN/IN-REVIEW/BLOCKED 的事项必须按原状态措辞，禁止把计划、预期或锚点写成已完成。
+4-
+5-**编写方法与边界**：本 worker 只读研究 + 仅写本文件（写前已确认不存在）。全部事实逐条回到原始文件核验：本地文件按字节计算 SHA256；git 事实从 `D:\Projects\polymarket-alpha-lab`（本地 HEAD `37b288956187de404ee0047bc0a5beeccbe9dbf6`，C3 等对象在本地对象库中）用 `git show`/`git cat-file` 读取固定对象；未跑测试、未触 DB/凭据、未改任何 tracked 文件；除一次 `gh api GET .../branches/main` 外无联网。凡证据只存在于 Linux 服务器（`/home/ubuntu/...`）而本 Windows worker 无法读到的，即使派发任务给出锚点值，也按"未从原始文件复核"如实标注。
+6-
+7-**状态标签**：`VERIFIED`＝本 worker 已从下述原始出处核验；`UNKNOWN`＝未能证实（含锚点值但本机不可复核/本地无记录）；`IN-REVIEW`＝已进入独立复审流程、尚无终局结论；`BLOCKED`＝被明确阻塞。
+8-
+--
+16-
+17-| # | 事实 | 状态 |
+18-|---|---|---|
+19-| 1 | C3=`6add9b041754600109e17e6aa05b0cb99aaface6`（tree `22d2a7b79d4ae1d44c41abb5fccbd23afae53fe9`）已发布为 canonical main，双亲为观察者分支与 PG 密钥重试分支 | VERIFIED |
+20-| 2 | Offline CI run 43551531524 success（41461/122/20，full verifier+cleanliness 过） | VERIFIED |
+21:| 3 | Native CI run 43551531643 failure：storage 的 version-switch 步骤 1 failed/43 passed；R09 因此 BLOCKED | VERIFIED |
+22-| 4 | C3 本地 full 门（C3-full-wrapper）exit 0 的证据在 Linux 服务器，本机不可复核 | UNKNOWN |
+23-| 5 | 039f 分类扫描的具体计数本地无证据 | UNKNOWN |
+24-| 6 | CodeGraph 按 owner override 记 N/A（不得标 PASS） | VERIFIED |
+25:| 7 | R09 BLOCKED；R10 正式 Q/D 未开始；M1 计划存在、启动门=R09 合格终点 | VERIFIED |
+26-| 8 | 下一次 OLD seed 取证计划已建、待 fresh 复审 | IN-REVIEW |
+27-
+28----
+29-
+30-## 1. 版本链与发布回执
+--
+54-
+55----
+56-
+57-## 2. 真实 CI（C3 push 后两条 run）
+58-
+59:**总回执**：`PAL-R\c3-main-prep-166886b66268\c3-publication-ci-receipt-99c510e5.json`（8471B，SHA256 `c86e3438354ed66fcb87039a8afeabd8aedd0e669ed3c80be3253bf7d0f13446`，重算一致）。UTC 2026-11-14T03:42:03Z：publication exact、main_still_exact true、`"R09": "BLOCKED: Native version-switch failure"`、dispatches/reruns/cancellations 均 0。其 `evidence` 数组登记六文件，本 worker 已全部重算哈希并与回执登记值逐一相符（见 §9 清单）。run↔SHA 唯一关联另见 `ci-association-20261114T032636Z-0b780a82.json`（1398B，SHA256 `0d93f3722d3b48f4e045db44abdba7653121040fb64c0c77a58f32989d612238`：两 workflow（356256001/356529000）对 head_sha `6add9b04`/main/push 各恰一条 run）。状态：**VERIFIED**
+60-
+61-- **F2.1 Offline run 43551531524 success**（attempt 1，event push，branch main，head `6add9b04`，created 2026-11-14T03:25:07Z，job `offline` id 132314853831，ubuntu-24.04）。步骤：`Run sanitized full offline verification` success（03:25:17→03:31:22）、`Check tracked-file cleanliness` success。日志摘录（`ci-job-summaries-867bd170.json` 行872/873/875）：`41461 passed, 122 skipped, 20 warnings in 340.01s`、`PASS: full pytest`、`PASS: full local verification`；raw log 96686B，SHA256 `f607aca618bac76a9fa5af87115fe730b76da5070cde2dc155984c94d02e47f1`（回执侧记录，raw 未落盘本地）。curl_error_count 0。
+62-  出处：`ci-run-43551531524-attempt1-20261114T033141Z-3a1609.json`（3683B，SHA256 `4e2b5c3e70e61f3db71ca94d3113f9998a555e70767b479c84845ce4e253fabf`）+ `ci-job-summaries-867bd170.json`（5672B，SHA256 `d1df2baa8e29e3746de92879289be27ee8c5cc3d32526b9b1b6a13f8582abad6`）。状态：**VERIFIED**
+63-
+64-- **F2.2 Native run 43551531643 failure**（attempt 1，push，main，head `6add9b04`）。逐分区（总回执 `native_steps` + job summaries + storage 日志）：
+--
+73-- **F2.3 PG 版本**：全部 native 分区日志 `postgres (PostgreSQL) 18.7 (Ubuntu 18.7-1.pgdg24.04+2)`（job summaries 各 job 行478；apt 解包 `postgresql-18 (18.7-1.pgdg24.04+2)`）。状态：**VERIFIED**
+74-
+75-- **F2.4 storage 首错与后果**：失败测试 `tests/test_project_postgres_version_switch_native.py::test_native_same_root_source_selection_rollback_and_refusals`，栈位 测试:1323 → `initialize_and_seed_with_old_source`:928 → `_old_payload`；断言 `assert 'PAYLOAD_SOURCE_OK' in _stderr_text(result)` 于测试:891 失败，stderr 实为 `OLD_SEED_FIRST_FAILURE_ERRNO=98\nTraceback ...rror(code) from None\npolymarket_alpha_lab.project_postgres.files.ProjectDatabaseError: project_postgres_port_in_use`——即 **OLD seed 载荷首错 errno=98/port_in_use，`PAYLOAD_SOURCE_OK` 缺失是首错的后果**。`##[error]Process completed with exit code 1`。proof artifact `native-postgres-linux-proof-storage-6add9b04...` 上传 11402B，zip SHA256 `6162ff7f9ae450a66d9f908d87bc6e19f9f1a7ffb74d5505d735ab7e11274a44`（retention 7 天，非耐久证据）。
+76-  出处：`PAL-R\c3-native-failure-logs\storage-job-132314854354-attempt1.log`（72115B，SHA256 `be844af5bfcefa1af9202e9580e6d23b87c403fb0c988ba9c35311dd1752dc69`，与 `ci-storage-failure-784d18b8.json`/`ci-storage-complete-failure-9a81b4bb58.json` 登记的 raw_log_sha256 一致）行 561-615、618-643。状态：**VERIFIED**
+77-
+78:- **F2.5 退出后观察与 cleanup**：子进程退出后观察器输出（日志行563）`OLD_SEED_AFTER_CHILD_EXIT OWNER_UNKNOWN tcp={"local":{"TIME_WAIT":3},"peer":{"TIME_WAIT":70}} tcp6={"local":{},"peer":{}}`；随后（行564）`version-switch cleanup: stopped`。失败**当时**的端口归属/套接字状态：**NOT_EMITTED**（pytest 截断子进程 stderr；完整 OSError/bind 栈、失败 bind 地址端口、事件时刻 owner 在日志中均不可见——见 brief-B §已核实的执行侧证据）。
+79-  状态：**VERIFIED**（退出后快照与 NOT_EMITTED 结论两者都是已核实事实）
+80-
+81-- **F2.6 ev-* 证据映射**（brief-D/brief-B 登记的服务器侧 `/home/ubuntu/codex-tasks-20261114/` 文件与本地副本对照）：
+82-  - `ev-c3-complete-failure.json`（24,434B，SHA256 `d69324c754a16cf2023abcc01425ed386a1720d37310753d2835f6a125884014`）≡ 本地 `ci-storage-complete-failure-9a81b4bb58.json`（24434B，同哈希，重算一致；其 `prior_comparison` 亦与 `ci-storage-failure-784d18b8.json` 的 size/digest 相符）。**VERIFIED**
+83-  - `ev-c3-first-failure.json`：brief-B/D 描述为"同 job 首错摘录（含 errno98 与退出后 OWNER_UNKNOWN 快照）"；本地 `ci-storage-failure-784d18b8.json`（19774B，SHA256 `0afb2b006cf0b10b5b44ccca6148aea3b27d54a33e3a0edaff396d63b029c8d6`，重算一致）的 selection 与该描述吻合，但 brief 未给该 ev 文件字节/哈希，**两者同一性未做字节级证明**（本地文件本身 VERIFIED；身份对应 UNKNOWN）。
+--
+90-## 3. 本地门（C3-full-wrapper）
+91-
+92-- **F3.1 证据位置**：`LNX/evidence/C3-full-wrapper-b_6oqmlh`（Linux 服务器路径；本 Windows worker 不可读）。派发锚点值：stdout 57670B，SHA256 `0c7035813ff7682f2c07258658d9ba38b3febca74db017a6a91db4f169b74afc`；result.json 13446B，SHA256 `ac21e154997cedc1ffa9432c2a8c5ab2e3235d5bc71ca0ad93cce9534590b7d5`；selfcheck 1623B，SHA256 `791f9f95d52abfa442c51fdf701ce5c2dd04e51d7cdce2d904f73ee4ac02dd54`，10/10、194 public exports。
+93-  状态：**UNKNOWN**（"C3 上完整 `verify_local.py --full` 实跑 exit 0"这一事实未从原始文件复核；锚点值照录。Q 回填 DELIVERY_PLAN 前应先在 Linux 侧按上述 hash/bytes 回读核验）
+94-
+95:- **F3.2 交叉一致（非独立复核）**：selfcheck 冻结基线（1623B / `791f9f95...` / 194 exports / 10/10 / stderr 空）与本地多份记录一致：`PAL-R\final-C-local-gates-report.json` selfcheck 段（`bytes:1623, public_exports:194, sha256:791f9f95..., baseline_byte_equal:true`）；`distribution-retry-final-plan-20261114.md` §4（"selfcheck 保持 194 exports、10/10、stderr 空、exit=0；既有原始 stdout 基线为 1623 bytes，SHA256 791f9f95..."，该计划作者另行 SSH 核对过 Linux checkout）。两处均非 C3 wrapper 运行本身的证明。
+96-  状态：**VERIFIED**（基线值交叉一致）；对 C3 实跑仍为 UNKNOWN
+97-
+98-- **F3.3 "独立证据回读 PASS（e780 审核）"**：本地未找到 e780 审核记录（PAL-R 全目录检索仅命中 C2 manifest 中一个无关哈希子串）。状态：**UNKNOWN**
+99-
+100----
+--
+105-  状态：**UNKNOWN**（全部计数未证实；Q 不得把 039f 写成已发生或当作九出口第 5 项的"最近一次真实扫描 SHA"依据，除非另取原始扫描报告及其 hash）
+106-
+107-- **F4.2 C2 旧门增量 2189 行**：`PAL-R\M0-recovery-progress-new-integrator-20261113.json`（13192B，SHA256 `a51e9079043fa15248c8bd6d77d0b94e533766600c46fc17171a8cffd241adb2`）:46 `existing_secret_rules_added_line_scan: "2189 added lines from baseline; zero findings"`，标签 `self-check, not independent review`，对应 Linux 证据 `evidence/final-acceptance-C2/mechanical-gates.json`。
+108-  状态：**VERIFIED**（且其自我标签明确：增量行扫描、非独立复审、**不是历史全树 PASS**——Q 措辞必须保留此边界）
+109-
+110:- **F4.3 九出口第 5 项措辞要求**：`R05-R10.md` §8 出口映射第 5 行："11/14-17 那轮输出若尚无，必须写'待下一轮扫描'，不得构造运行记录"；`R10-blocked-report.txt`（3880B，SHA256 `77c5c9134531af3fe2292659f05ba55571ec8a4c648790c57586045a48c75714`）:20 亦记"九出口'最近一次真实扫描 SHA'仍为'待下一轮扫描'"。
+111-  状态：**VERIFIED**
+112-
+113----
+114-
+115-## 5. CodeGraph
+--
+120-- **F5.2 Q 的记录方式**：CodeGraph 同步记 **N/A（owner override 豁免），不得标 PASS**。现行计划亦如此固定：`distribution-retry-final-plan-20261114.md`:16 "CodeGraph 按现行 owner override N/A，不初始化、不要求同步、不声称执行过"（该文件 29482B，SHA256 `08bda4f4667e1bd9983a9dd624cd84a533d4fcb10420fa889d4947daaf66944a`）。状态：**VERIFIED**
+121-- **F5.3 技术侧尝试记录**（历史、非 C3 特有）：`R01-report.md`:50 "A read-only CodeGraph explore was attempted first. It exited 1 with no usable index; ... No index was created or synchronized."（`R01-report.md` 11671B，SHA256 `eac25a7096f9b7af4118fff78031d0fbdc11073910a94e2744f75965e3f374c3`）；`port-isolation-report.md`:81 只读 node 查询 exit 1（无可用 index、未初始化/未同步）。状态：**VERIFIED**（与 F5.2 合并理解：豁免为主记录，技术 exit-1 为附带事实）
+122-
+123----
+124-
+125:## 6. R09 / R10 / M1 与九出口
+126-
+127:- **F6.1 R09 = BLOCKED**：C3 发布回执明确 `"R09": "BLOCKED: Native version-switch failure"`（F2 总回执）；`DELIVERY_PLAN.md`@C3:3780 "**R09 尚未提供最终双绿。**"（R05 无下游依赖的文档修正先进行；R09 需同一完整 SHA 上 Offline success + Native success——四 Linux 分区、storage `Prove native version switch` 及聚合均成功——并逐项核对九个 M0 出口）。C3 Native 43551531643 storage version-switch 失败（F2.2），故 R09 维持 BLOCKED。
+128-  状态：**VERIFIED / BLOCKED**
+129-
+130:- **F6.2 R10 未开始正式 Q/D**：`R10-blocked-report.txt`:3（2026-11-13）"R09 未达，正式 Q/R10 不落仓库，M0 不宣告完成，M1 实现不启动"；`DELIVERY_PLAN.md`@C3:3782 "本次不创建 R10、不编 run id、不宣布 M0 出口关闭"。本 worker 确认 PAL-R 内只有 R10-draft/R10-blocked-report 等仓库外文件，无落库的正式 Q/D。
+131-  状态：**VERIFIED**
+132-
+133-- **F6.3 M1 计划状态**：`PAL-R\M1-next-nodes-plan.md`（28092B，SHA256 `0a48b7bc6e000f3df693431815a842291079bc7498f57248c97727031e55e47f`）。已核实内容：
+134:  - 启动门（§1"何时能实施"）：R09/R10 正式 handback 齐全、R10 交还最终源 SHA，最终**同一 SHA** 双绿（Native 四 Linux 分区 + storage `Prove native version switch` 成功且聚合成功）后，由协调者派发 M1 节点；旧 SHA、skip、单绿均不能替代；FX-18 须另有外部增量 review PASS。本轮不实施。
+135-  - 文件头（行2）：首轮 reviewer `agent_a98df238` 判定 FAIL；该版仅修复其五项发现，**待同一 reviewer 复审**；文尾"本文件仅规划者交付，尚无独立计划复审"。
+136-  派发锚点称"M1 计划已独立 PASS"——本地无该 PASS 记录，且计划文件自身停留在"待复审"。状态：计划存在与启动门内容 **VERIFIED**；"已独立 PASS" **IN-REVIEW**（Q 不得写 M1 计划复审已通过，除非另取复审回执）
+137-
+138:- **F6.4 九个 M0 出口范围映射**（Q 逐项引用的基准表）：`PAL-R\R05-R10.md`（50694B，SHA256 `f1ab5c42484a16fe9fdf30afc593e2878b33ee0ee273e5ff922426bf00fa217f`）§8 "R09 九项出口映射"：①V-1~V-9 书面答案（**V-8 明确并入 FX-23 而非假称做完**）②净口径报告及毛口径对账 ③视图现状/库外复算（OD-H 不执行）④镜像/清单/替换表 ⑤最近扫描代码提交号（无则写"待下一轮扫描"）⑥跨联赛状态依据 ⑦状态板/过期文字 ⑧原生 DB CI 成功编号（同一完整 SHA 双绿）⑨费用/到期方向/只读常量+selfcheck。配套：`DELIVERY_PLAN.md`@C3:3659 "**V-8（P3-10）**：四个 PR #34／#35／#41／#67 的内容级核对并入 FX-23，当前未完成"；:3807 P3-10/V-8 → "FX-23；未关闭，不伪称已被取代"。
+139:  当前逐项状态（截至本底稿）：⑧ **BLOCKED**（F2.2）；⑤ **待下一轮扫描**（F4.1/F4.3，除非 039f 获原始证据）；V-8 **延期至 FX-23、未关闭**；其余各项以 R05-R10 §8 映射的验收要求为准、未逐项重验。
+140-  状态：**VERIFIED**（映射表与 V-8/FX-23 延期）；⑧ 为 **BLOCKED**
+141-
+142----
+143-
+144-## 7. 根因调查现状（OLD seed errno=98）
+145-
+146:**已核实的调用链**（`H` = C3 `tests/test_project_postgres_version_switch_native.py`；`S` = 冻结 OLD `2b20002c83ee33acb95fb2ca3de841f3e883ebbf`（tree `d6f6750b1068a3c75ab6249d5ca4f1ef7e010ee4`）的 `src/polymarket_alpha_lab/project_postgres/server.py`；全部行号由本 worker 从 git 固定对象逐行读取核对）：
+147-
+148-- **F7.1 H:920-928 序列**：`:920` `_old_cli(... 'init', '--port', port)` → `:923-925` 重复 init 必须拒绝（`project_postgres_existing_data_not_reinitialized`）→ `:926-927` status 必须 `stopped` → `:928` `seeded = _old_payload(rig, 'seed.py', _SEED_PAYLOAD, str(original))`（即 CI 失败栈中的 :928 调用点；完整序列 H:914-928 见 r03-next 计划 §已证实的调用链）。状态：**VERIFIED**
+149:- **F7.2 S:296 → _start:144-148 无 reuse bind 先于 :149 pg_ctl**：`session`（`S:296` `started = self._start(info)`）→ `_start`（`S:140` 起）：`S:144` `socket(AF_INET, SOCK_STREAM)`、`S:146` `probe.bind(('127.0.0.1', info['port']))` **未设 SO_REUSEADDR**、`S:147-148` `except OSError: fail('project_postgres_port_in_use')`，bind 探测先于 `S:149` `self._control('start', ...)`（pg_ctl start）。状态：**VERIFIED**
+150:- **F7.3 OLD initialize:187-193**：`S:187-188` home 已存在即拒绝（重复 init 路径，不再 bind）；首次 init 的同型无 reuse bind 在 `S:189-193`（bind 位于 `:191`）——**非本次 seed 失败点**。init 成功路径 `S:227-233` finally → `_stop`（`S:153-161`：身份检查、活动连接检查、`pg_ctl stop -m smart -w -t 60`）。状态：**VERIFIED**
+151-- **F7.4 fail(from None) 隐藏上下文**：OLD `files.py:19-20` `def fail(code): raise ProjectDatabaseError(code) from None`（C3 同文件同实现）。语义（r03-next 计划 §5）：原 OSError 仍在 `__context__`，默认 traceback 显示被 suppress——与 CI 日志中仅见终端 `ProjectDatabaseError: project_postgres_port_in_use` 一致。状态：**VERIFIED**
+152-- **F7.5 errno 观察只抽整数**：C3 观察器 `H:256-259`：`value = context.errno if isinstance(context, OSError) else None; errno = str(value) if type(value) is int else "ERRNO_UNAVAILABLE"; print("OLD_SEED_FIRST_FAILURE_ERRNO=" + errno, ...)`——只输出整数 errno，不输出栈/地址/owner；配套测试 `H:1417-1465`（非整数 errno → ERRNO_UNAVAILABLE；观察失败不能替代 seed 错误）。状态：**VERIFIED**
+153-- **F7.6 seed 载荷链**：`H:928` → `_old_payload`（def `H:881`；`H:887-891` PAYLOAD_SOURCE_OK 来源断言，`:891` 即 CI AssertionError 位）→ `_OLD_RUNNER`（赋值 `H:233`）→ `_SEED_PAYLOAD`（赋值 `H:417`，内含 `db.session()` 于 `H:471`）。PAYLOAD_SOURCE_OK 正常运行后才打印（`H:277`），缺失是首错后果（F2.4）。状态：**VERIFIED**
+154-- **F7.7 C3 产品侧对比**：当前 C3 `server.py` `_start` 于 `:148-152`（posix 分支 `:151-152` `probe.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)`）已带 reuse，initialize 侧 `:200` 亦有——其余 native 分区绿不覆盖 OLD 路径。状态：**VERIFIED**
+155:- **F7.8 仍未证实（NOT_EMITTED）**：失败当时 P 上的套接字状态/owner、完整 OSError bind 栈、失败 bind 地址端口、OLD stop 与 seed bind 之间的真实时序。退出后快照（local TW=3/peer TW=70，OWNER_UNKNOWN）不能当失败时刻状态。主假说 H1（OLD smart stop 自身连接留 local TIME_WAIT，无 reuse bind 误拒）支持但未确认；一次已批准取证 NOTREPRODUCED（端口 32088，十采样 LISTEN=0/local TW=0，peer TW 0→73→88，seed 成功——见 `R03-version-port-evidence-v_i3qogj\report.json`，F2.6 已核哈希；`R10-blocked-report.txt`:11 同记）。状态：**VERIFIED**（"未证实清单"本身）；根因判定 **UNKNOWN**
+156-
+157-**STOP 边界原句与出处**：`PAL-R\R03-version-port-followup-plan.md`（4399B，SHA256 `1e4fb22333bdc64ad71310db93f186b8c6bca956cd22c225e8fea1086c48ec67`）第 3 步（文件 :17）：
+158:> "若成功未复现，报告'本次未复现，CI 根因仍未定'；若看到真实 listener，仅报告占用证据及来源是否可知；**若证实 OLD 对自身 TIME_WAIT 误拒，按真实产品缺陷 STOP 并报 owner，不改测试或产品规避**。"
+159:状态：**VERIFIED**（r03-next 计划尾部另作澄清："原 STOP 边界不是'连诊断都不能继续'……真正超出现有 OD-A 授权的是修改/重选冻结 OLD、引入兼容启动替代其生命周期、取消 OLD 冷启动义务或改变验收结论"）
+160-
+161-**新取证计划**：`PAL-R\r03-next-diagnostic-plan-20261114.md` **已存在**（状态行 "READY_FOR_FRESH_PLAN_REVIEW；本文件不授权执行"）。该文件正被其作者持续修订，本 worker 两次观测到不同字节：2026-11-14 00:4x（-0800）17919B，SHA256 `ca768b036e394f6cdd316108cb2d004d57827c4329b6af03375ec147ff00e4ec`；2026-11-14T00:51:53-0800 18224B，SHA256 `56bd4ea2bcb804df83986fdf0fea27bd000bb327bc926aacf6a23b6d2b93f0b2`。**Q 引用时必须以引用时刻实测 hash 为准**，本文两个观测值仅证明其存在与修订中状态。内容：步骤 A 零 PG 合成 socket 机制对照 + 步骤 B 全新自有 PG 上真实 OLD 前缀（`/proc/net/tcp{,6}` 有界读取、失败当时采样、OWNER_UNKNOWN 边界、cleanup 与首错保全）。另 Codex-A 实验计划草稿 `codex-briefs-20261114\brief-A-rootcause-experiment-plan.md`（6010B，SHA256 `183b02150bba07c32202756d12782cc1f3e133d992667d52b23f576fbd95f4ca`）、Codex-B 独立复核 `brief-B-independent-verification.md`（3993B，SHA256 `65254af830fccb9bcdd7f8e75a944cd2715878dfd23946bf382fc12db60fea65`）、Codex-D 横向对比 `brief-D-failure-log-analysis.md`（3257B，SHA256 `8b8cd015b570d29efabc7db530efd90c5e49cca0f3056caba05dd30dc7fd147b`）为派发简报。状态：**IN-REVIEW**（计划在审，未执行、未授权执行）
+162-
+163----
+164-
+--
+189-| PAL-R\C2-manual-native-evidence\prior-R03-evidence.json | 6673 | 4251e2049eec9a6cbc5ce5bf5e16195c1bb560f92e69be3a0fe66517f16e68c5 |
+190-| PAL-R\R03-version-port-evidence-v_i3qogj\report.json | 6673 | 4251e2049eec9a6cbc5ce5bf5e16195c1bb560f92e69be3a0fe66517f16e68c5 |
+191-| D:\Projects\pal-m0-startup-20261113-y2xt2b7x\evidence\github-C2-final\43431642963-attempt-1\053.sanitized.log | 7288 | 1682a22c94b4a0642979467f7472f03c33f2bc07e5a6e7566c01fd012d4bbdf |
+192-| PAL-R\R03-version-port-followup-plan.md | 4399 | 1e4fb22333bdc64ad71310db93f186b8c6bca956cd22c225e8fea1086c48ec67 |
+193-| PAL-R\r03-next-diagnostic-plan-20261114.md（修订中，见 F7 注） | 18224 | 56bd4ea2bcb804df83986fdf0fea27bd000bb327bc926aacf6a23b6d2b93f0b2（2026-11-14T00:51:53-0800 观测；另有 17919B/ca768b03... 早一版观测） |
+194:| PAL-R\R05-R10.md | 50694 | f1ab5c42484a16fe9fdf30afc593e2878b33ee0ee273e5ff922426bf00fa217f |
+195:| PAL-R\R10-blocked-report.txt | 3880 | 77c5c9134531af3fe2292659f05ba55571ec8a4c648790c57586045a48c75714 |
+196-| PAL-R\M1-next-nodes-plan.md | 28092 | 0a48b7bc6e000f3df693431815a842291079bc7498f57248c97727031e55e47f |
+197-| PAL-R\M0-recovery-progress-new-integrator-20261113.json | 13192 | a51e9079043fa15248c8bd6d77d0b94e533766600c46fc17171a8cffd241adb2 |
+198-| PAL-R\final-C-local-gates-report.json | 13971 | （selfcheck 段引用；全文哈希未单独登记，引用时以行内值为准） |
+199-| PAL-R\distribution-retry-final-plan-20261114.md | 29482 | 08bda4f4667e1bd9983a9dd624cd84a533d4fcb10420fa889d4947daaf66944a |
+200-| PAL-R\R01-report.md | 11671 | eac25a7096f9b7af4118fff78031d0fbdc11073910a94e2744f75965e3f374c3 |
+--
+210-
+211-## 10. Q 使用注意（禁止事项）
+212-
+213-1. 只把标 **VERIFIED** 的条目写成已发生事实，且引用时带上本文的出处（文件+SHA256/字节 或 commit SHA）。
+214-2. **UNKNOWN 条目不得写成完成**：C3-full-wrapper 实跑细节（F3.1）、两分支复审 PASS（F1.3/F1.4）、e780 回读审核（F3.3）、039f 全部计数（F4.1）、M1 计划复审 PASS（F6.3）、根因判定（F7.8）。Q 落笔前可先在 Linux 侧按 §3/§4 的锚点 hash 回读补证，补到即按新证据另行登记，不得凭锚点直接转 VERIFIED。
+215:3. R09 保持 **BLOCKED** 措辞（版本切换失败），不得写成"双绿"或"Native 绿"；Offline 绿与 Native 各分区绿分开表述，不拼接。
+216-4. 九出口第 5 项在无原始扫描证据前写"待下一轮扫描"；V-8 写"并入 FX-23、未关闭"。
+217-5. CodeGraph 记 **N/A（owner override）**，不标 PASS，可附 exit-1 技术记录。
+218-6. r03-next 取证计划处于 **IN-REVIEW**，Q 中只能写"计划已建待 fresh 复审"，不得写已执行或已授权执行。
+219-7. 本底稿自身不含公网 IP/凭据；Q 引用日志时保持同样脱敏（`[REDACTED_IP]` 原样）。
+FullName                                                          Length
+--------                                                          ------
+D:\Projects\pal-remediation-plans-20261113\q-facts-c3-20261114.md  33151
+                                                                       1
+
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+**Checking full-hash formatting**
+**我核对哈希与证据文件**
+codex
+本地 Q 底稿和 diag2 计划确认了冻结 OLD、同端口切换及 R09 同 SHA 双绿的边界；这些文档早于本次简报，最新 CI 和实验结论以简报为准。裁定方向是保留同端口证明，将等待限定在 seed 前的 local TIME_WAIT 清空，并在同一节点补齐诊断输出。
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -Command "Get-ChildItem -LiteralPath 'D:\\Projects\\pal-remediation-plans-20261113' -File | Where-Object { "'$_.Name -match '"'diag2|decision|next-run' } | Select-Object Name,Length | Format-Table -AutoSize" in D:\Projects\polymarket-alpha-lab
+exec
+"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -Command "Get-FileHash -LiteralPath 'D:\\Projects\\pal-remediation-plans-20261113\\q-facts-c3-20261114.md' -Algorithm SHA256 | Format-List Path,Hash" in D:\Projects\polymarket-alpha-lab
+ succeeded in 2728ms:
+
+Name                             Length
+----                             ------
+codex-decision-brief-20261114.md   7163
+r03-diag2-plan-20261114.md         6303
+
+
+hook: PostToolUse
+ succeeded in 2774ms:
+
+Path : D:\Projects\pal-remediation-plans-20261113\q-facts-c3-20261114.md
+Hash : D536B3AB8D498EBBC0C861C085CC1D3279A91D7820A7FE800585479249DBABE6
+
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+**Exploring TIME_WAIT behavior**
+**Reviewing traceback frames**
+**Waiting for local TIME_WAIT**
+**等待本地 TIME_WAIT 清空**
+codex
+DECISION 1: A+C — 批准 seed 前有界等待任务端口的 local TIME_WAIT 清空，并在同一节点补齐失败断言前逐字回显已捕获 stderr，保留冻结 OLD 的同端口重入证明与完整有界诊断，无须先单独跑一轮取证 CI。
+
+DECISION 2: a — 将 distribution 修复 7d993df5 与 R03 修复保留为各自的聚焦提交，经门禁和独立复审后合入同一次 main 推送，以包含全部修复的最终 SHA 获取 Offline+Native 双绿，避免闭环后再次变更交付基线。
+
+DECISION 3: 同节点 — P3-1 改为取尾部、即最内侧 8 帧，使实现符合 docstring 并优先保留故障源；P3-3 同步归档本节点既有 secret-scan 门禁的实际日志及完整性信息，补齐交付证据。
+
+DECISION 4: 间隔 1s；单调时钟累计上限 90s，不滚动续期；初始 local TIME_WAIT 为零则立即继续，非零才等待，清空后执行一次原 seed；超时或 /proc 读取、解析不可判定均 FAIL，保留首次失败及诊断，不 SKIP、不自动重试 seed、不换端口兜底；等待前、清空后各记录一次任务端口快照，超时或读取失败时记录终态、实际耗时及不可判定原因，UNKNOWN 不得视为零，seed 原有失败观察器继续保留。
+
+RATIONALE: 本次简报的机制对照、冻结代码与四次 CI 证据足以支持处置。A 保留相同 OLD、端口和原断言，将内核就绪明确为前置条件；OLD 的即时重启缺陷仍如实登记。有 local TIME_WAIT 时通常增加约 60s，最多等待 90s，无该状态不等待。C 与小修同节点完成，历史已截断证据仍标缺失。distribution 同批集成减少重复 CI；R09 仅在最终同 SHA 的 Offline、Native 全流程及聚合均成功后解除，随后推进 R10、Q 回填和外部证据入库。
+
+BOUNDARIES CONFIRMED: 冻结 OLD 不改 / 无资金凭据模型规则变更 / 实施仍走 计划→独立复审→红绿→全门禁→聚焦提交→复审→推送→同 SHA 双 CI
+hook: Stop
+hook: Stop Completed
+tokens used
+44,888
+DECISION 1: A+C — 批准 seed 前有界等待任务端口的 local TIME_WAIT 清空，并在同一节点补齐失败断言前逐字回显已捕获 stderr，保留冻结 OLD 的同端口重入证明与完整有界诊断，无须先单独跑一轮取证 CI。
+
+DECISION 2: a — 将 distribution 修复 7d993df5 与 R03 修复保留为各自的聚焦提交，经门禁和独立复审后合入同一次 main 推送，以包含全部修复的最终 SHA 获取 Offline+Native 双绿，避免闭环后再次变更交付基线。
+
+DECISION 3: 同节点 — P3-1 改为取尾部、即最内侧 8 帧，使实现符合 docstring 并优先保留故障源；P3-3 同步归档本节点既有 secret-scan 门禁的实际日志及完整性信息，补齐交付证据。
+
+DECISION 4: 间隔 1s；单调时钟累计上限 90s，不滚动续期；初始 local TIME_WAIT 为零则立即继续，非零才等待，清空后执行一次原 seed；超时或 /proc 读取、解析不可判定均 FAIL，保留首次失败及诊断，不 SKIP、不自动重试 seed、不换端口兜底；等待前、清空后各记录一次任务端口快照，超时或读取失败时记录终态、实际耗时及不可判定原因，UNKNOWN 不得视为零，seed 原有失败观察器继续保留。
+
+RATIONALE: 本次简报的机制对照、冻结代码与四次 CI 证据足以支持处置。A 保留相同 OLD、端口和原断言，将内核就绪明确为前置条件；OLD 的即时重启缺陷仍如实登记。有 local TIME_WAIT 时通常增加约 60s，最多等待 90s，无该状态不等待。C 与小修同节点完成，历史已截断证据仍标缺失。distribution 同批集成减少重复 CI；R09 仅在最终同 SHA 的 Offline、Native 全流程及聚合均成功后解除，随后推进 R10、Q 回填和外部证据入库。
+
+BOUNDARIES CONFIRMED: 冻结 OLD 不改 / 无资金凭据模型规则变更 / 实施仍走 计划→独立复审→红绿→全门禁→聚焦提交→复审→推送→同 SHA 双 CI

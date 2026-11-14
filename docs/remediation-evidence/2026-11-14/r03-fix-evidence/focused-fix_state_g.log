@@ -1,0 +1,95 @@
+..s.................................................................FFF. [ 96%]
+..F                                                                      [100%]
+=================================== FAILURES ===================================
+________________ test_seed_wait_timeout_fails_with_diagnostics _________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7cdbf53d19d0>
+capsys = <_pytest.capture.CaptureFixture object at 0x7cdbf52c4530>
+
+    def test_seed_wait_timeout_fails_with_diagnostics(monkeypatch, capsys):
+        _seed_wait_proc(monkeypatch, [
+            ('tcp', _seed_wait_busy(3)), ('tcp6', _seed_wait_clean6()),
+        ])
+        sleeps = []
+    
+        def fake_sleep(seconds):
+            sleeps.append(seconds)
+    
+>       with pytest.raises(pytest.Failed, match='OLD_SEED_WAIT_TIMEOUT'):
+                           ^^^^^^^^^^^^^
+E       AttributeError: module 'pytest' has no attribute 'Failed'. Did you mean: 'File'?
+
+tests/test_project_postgres_version_switch_native.py:2352: AttributeError
+_____________ test_seed_wait_unavailable_initial_fails_never_zero ______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7cdbf52c4170>
+capsys = <_pytest.capture.CaptureFixture object at 0x7cdbf52c5640>
+
+    def test_seed_wait_unavailable_initial_fails_never_zero(monkeypatch, capsys):
+        _seed_wait_proc(monkeypatch, [('tcp', b'garbage\n'),
+                                      ('tcp6', _seed_wait_clean6())])
+>       with pytest.raises(pytest.Failed,
+                           ^^^^^^^^^^^^^
+                           match='OLD_SEED_WAIT_UNAVAILABLE'):
+E                          AttributeError: module 'pytest' has no attribute 'Failed'. Did you mean: 'File'?
+
+tests/test_project_postgres_version_switch_native.py:2364: AttributeError
+__________________ test_seed_wait_unavailable_mid_poll_fails ___________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7cdbf52c4380>
+capsys = <_pytest.capture.CaptureFixture object at 0x7cdbf52c5880>
+
+    def test_seed_wait_unavailable_mid_poll_fails(monkeypatch, capsys):
+        _seed_wait_proc(monkeypatch, [
+            ('tcp', _seed_wait_busy(1)), ('tcp6', _seed_wait_clean6()),
+            ('tcp', b'partial'), ('tcp6', _seed_wait_clean6()),
+        ])
+>       with pytest.raises(pytest.Failed,
+                           ^^^^^^^^^^^^^
+                           match='OLD_SEED_WAIT_UNAVAILABLE'):
+E                          AttributeError: module 'pytest' has no attribute 'Failed'. Did you mean: 'File'?
+
+tests/test_project_postgres_version_switch_native.py:2378: AttributeError
+_________________ test_seed_diag_frames_keeps_innermost_eight __________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7cdbf52c6000>
+tmp_path = PosixPath('/tmp/pytest-of-ubuntu/pytest-43/test_seed_diag_frames_keeps_in0')
+
+    def test_seed_diag_frames_keeps_innermost_eight(monkeypatch, tmp_path):
+        monkeypatch.syspath_prepend(str(tmp_path))
+        server = str(tmp_path / 'src/polymarket_alpha_lab'
+                     '/project_postgres/server.py')
+        source = ('def _seed_raise_target(depth):\n'
+                  '    if depth <= 0:\n'
+                  '        raise OSError(98, "PRIVATE_SENTINEL")\n'
+                  '    return _seed_raise_target(depth - 1)\n')
+        namespace = {}
+        exec(compile(source, server, 'exec'), namespace)
+        try:
+            namespace['_seed_raise_target'](11)
+        except OSError as error:
+            failure = error
+        else:
+            raise AssertionError('deep synthetic chain did not raise')
+        depth = 0
+        traceback = failure.__traceback__
+        while traceback is not None:
+            depth += 1
+            traceback = traceback.tb_next
+        assert depth == 13  # 12 invocation frames plus this test frame
+        diag = _seed_diag_exec()
+        frames = diag['_seed_diag_frames'](failure.__traceback__, tmp_path)
+        assert len(frames) == 8
+>       assert frames[0][1] == '_seed_raise_target' and frames[0][2] == 3
+E       AssertionError: assert ('test_seed_di...nermost_eight' == '_seed_raise_target'
+E         
+E         - _seed_raise_target
+E         + test_seed_diag_frames_keeps_innermost_eight)
+
+tests/test_project_postgres_version_switch_native.py:2482: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_project_postgres_version_switch_native.py::test_seed_wait_timeout_fails_with_diagnostics
+FAILED tests/test_project_postgres_version_switch_native.py::test_seed_wait_unavailable_initial_fails_never_zero
+FAILED tests/test_project_postgres_version_switch_native.py::test_seed_wait_unavailable_mid_poll_fails
+FAILED tests/test_project_postgres_version_switch_native.py::test_seed_diag_frames_keeps_innermost_eight
+4 failed, 70 passed, 1 skipped in 4.42s

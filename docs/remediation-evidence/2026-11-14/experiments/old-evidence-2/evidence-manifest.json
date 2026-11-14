@@ -1,0 +1,36 @@
+{
+  "child_event_files": {
+    "events-init.json": {
+      "bytes": 1227,
+      "sha256": "59b8cc35d17e237d15f1773a326f179a15a601a13abdf9a8a9c45d3253e8fa72"
+    },
+    "events-install.json": {
+      "bytes": 258,
+      "sha256": "f55177282d7594904cefde17ce139cf317ceb9bb040dd4c26f164512bf145111"
+    },
+    "events-reinit.json": {
+      "bytes": 964,
+      "sha256": "0afa0627cad99b0abc9c6d13ccde038dafda1b20398d6b09dbcb15b0900ce6e8"
+    },
+    "events-seed.json": {
+      "bytes": 1232,
+      "sha256": "76abc6f0acbcf5f66b8568fc5800171bd70bff476d0478b1fd6e189dd794f282"
+    },
+    "events-status.json": {
+      "bytes": 336,
+      "sha256": "714e7d67f6a3f2f4f2a45f6d2c05a29e8559e1756495613c45e7a44901ecd303"
+    }
+  },
+  "first-failure.sanitized.log": {
+    "bytes": 50,
+    "sha256": "a7cdb1899944b28b77800a19adae3af4f32148b645a0407619f9a73a77587406"
+  },
+  "port-observations.json": {
+    "bytes": 11124,
+    "sha256": "65d8630fa8f58763f1d872448a168dda036e1c3fa854f1a245f5c325a863e344"
+  },
+  "report.json": {
+    "bytes": 15795,
+    "sha256": "2406322b16e62224581c649f205c72b2c75f15f02733c3a0da59f1cacd23e8f2"
+  }
+}

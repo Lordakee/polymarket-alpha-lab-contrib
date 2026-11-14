@@ -1,0 +1,470 @@
+{
+  "events": {
+    "init63": {
+      "line_count": 12,
+      "lines": [
+        {
+          "function": "initialize",
+          "kind": "hook_call",
+          "monotonic_ns": 2748442946218630
+        },
+        {
+          "kind": "proc_snapshot",
+          "label": "bind_pre_initialize",
+          "monotonic_ns": 2748445457879605,
+          "tcp": {
+            "local": {},
+            "peer": {}
+          },
+          "tcp6": {
+            "local": {},
+            "peer": {}
+          }
+        },
+        {
+          "action": "start",
+          "function": "_control",
+          "kind": "hook_call",
+          "monotonic_ns": 2748446811164805
+        },
+        {
+          "function": "_stop",
+          "kind": "hook_call",
+          "monotonic_ns": 2748451282641209
+        },
+        {
+          "action": "stop",
+          "function": "_control",
+          "kind": "hook_call",
+          "monotonic_ns": 2748451372336799
+        },
+        {
+          "kind": "proc_snapshot",
+          "label": "before_control_stop",
+          "monotonic_ns": 2748451385118142,
+          "tcp": {
+            "local": {
+              "LISTEN": 1
+            },
+            "peer": {
+              "FIN_WAIT2": 1,
+              "TIME_WAIT": 72
+            }
+          },
+          "tcp6": {
+            "local": {},
+            "peer": {}
+          }
+        },
+        {
+          "kind": "proc_snapshot",
+          "label": "after_control_stop",
+          "monotonic_ns": 2748451914454376,
+          "tcp": {
+            "local": {},
+            "peer": {
+              "TIME_WAIT": 73
+            }
+          },
+          "tcp6": {
+            "local": {},
+            "peer": {}
+          }
+        },
+        {
+          "count": 73,
+          "kind": "psql_aggregate",
+          "monotonic_ns": 2748451961607081
+        },
+        {
+          "count": 1,
+          "kind": "control_status_aggregate",
+          "monotonic_ns": 2748451961658937
+        },
+        {
+          "count": 2,
+          "kind": "bind_lines_found",
+          "monotonic_ns": 2748451961672484
+        },
+        {
+          "kind": "provenance_flag",
+          "loaded_within_old": true,
+          "monotonic_ns": 2748451980727851
+        },
+        {
+          "enabled": true,
+          "events": 11,
+          "kind": "observer_trailer",
+          "monotonic_ns": 2748451980774196,
+          "truncated": false
+        }
+      ],
+      "missing": false,
+      "oversize_file": false,
+      "oversize_lines": 0,
+      "path": "/home/ubuntu/r03-next-run-20261114-01/old-data-2/events-init.json",
+      "stage": "init63",
+      "unparsable_lines": 0
+    },
+    "install_runtime": {
+      "line_count": 3,
+      "lines": [
+        {
+          "count": 2,
+          "kind": "bind_lines_found",
+          "monotonic_ns": 2748440401116207
+        },
+        {
+          "kind": "provenance_flag",
+          "loaded_within_old": true,
+          "monotonic_ns": 2748440416401596
+        },
+        {
+          "enabled": true,
+          "events": 2,
+          "kind": "observer_trailer",
+          "monotonic_ns": 2748440416445816,
+          "truncated": false
+        }
+      ],
+      "missing": false,
+      "oversize_file": false,
+      "oversize_lines": 0,
+      "path": "/home/ubuntu/r03-next-run-20261114-01/old-data-2/events-install.json",
+      "stage": "install_runtime",
+      "unparsable_lines": 0
+    },
+    "reinit_refusal": {
+      "line_count": 6,
+      "lines": [
+        {
+          "function": "initialize",
+          "kind": "hook_call",
+          "monotonic_ns": 2748454635842627
+        },
+        {
+          "chain": [
+            {
+              "errno": null,
+              "exc_type": "ProjectDatabaseError",
+              "frames": [
+                {
+                  "file": "src/polymarket_alpha_lab/project_postgres/server.py",
+                  "line": 188,
+                  "name": "initialize"
+                },
+                {
+                  "file": "src/polymarket_alpha_lab/project_postgres/files.py",
+                  "line": 20,
+                  "name": "fail"
+                }
+              ],
+              "suppress_context": true,
+              "via": "raised"
+            }
+          ],
+          "exc_type": "ProjectDatabaseError",
+          "function": "initialize",
+          "kind": "hook_exception",
+          "monotonic_ns": 2748457391238358,
+          "reason_code": "project_postgres_existing_data_not_reinitialized"
+        },
+        {
+          "kind": "proc_snapshot",
+          "label": "blocked_initialize",
+          "monotonic_ns": 2748457401897528,
+          "tcp": {
+            "local": {},
+            "peer": {
+              "TIME_WAIT": 73
+            }
+          },
+          "tcp6": {
+            "local": {},
+            "peer": {}
+          }
+        },
+        {
+          "count": 2,
+          "kind": "bind_lines_found",
+          "monotonic_ns": 2748457444807515
+        },
+        {
+          "kind": "provenance_flag",
+          "loaded_within_old": true,
+          "monotonic_ns": 2748457461303307
+        },
+        {
+          "enabled": true,
+          "events": 5,
+          "kind": "observer_trailer",
+          "monotonic_ns": 2748457461347540,
+          "truncated": false
+        }
+      ],
+      "missing": false,
+      "oversize_file": false,
+      "oversize_lines": 0,
+      "path": "/home/ubuntu/r03-next-run-20261114-01/old-data-2/events-reinit.json",
+      "stage": "reinit_refusal",
+      "unparsable_lines": 0
+    },
+    "seed_session": {
+      "line_count": 12,
+      "lines": [
+        {
+          "function": "_start",
+          "kind": "hook_call",
+          "monotonic_ns": 2748468065166287
+        },
+        {
+          "kind": "proc_snapshot",
+          "label": "bind_pre__start",
+          "monotonic_ns": 2748468079150750,
+          "tcp": {
+            "local": {},
+            "peer": {
+              "TIME_WAIT": 73
+            }
+          },
+          "tcp6": {
+            "local": {},
+            "peer": {}
+          }
+        },
+        {
+          "action": "start",
+          "function": "_control",
+          "kind": "hook_call",
+          "monotonic_ns": 2748468079446333
+        },
+        {
+          "function": "_stop",
+          "kind": "hook_call",
+          "monotonic_ns": 2748469557958719
+        },
+        {
+          "action": "stop",
+          "function": "_control",
+          "kind": "hook_call",
+          "monotonic_ns": 2748469708880829
+        },
+        {
+          "kind": "proc_snapshot",
+          "label": "before_control_stop",
+          "monotonic_ns": 2748469719451198,
+          "tcp": {
+            "local": {
+              "LISTEN": 1
+            },
+            "peer": {
+              "FIN_WAIT1": 1,
+              "TIME_WAIT": 87
+            }
+          },
+          "tcp6": {
+            "local": {},
+            "peer": {}
+          }
+        },
+        {
+          "kind": "proc_snapshot",
+          "label": "after_control_stop",
+          "monotonic_ns": 2748469848096578,
+          "tcp": {
+            "local": {},
+            "peer": {
+              "TIME_WAIT": 88
+            }
+          },
+          "tcp6": {
+            "local": {},
+            "peer": {}
+          }
+        },
+        {
+          "count": 6,
+          "kind": "psql_aggregate",
+          "monotonic_ns": 2748472417471831
+        },
+        {
+          "count": 3,
+          "kind": "control_status_aggregate",
+          "monotonic_ns": 2748472417525727
+        },
+        {
+          "count": 2,
+          "kind": "bind_lines_found",
+          "monotonic_ns": 2748472417541241
+        },
+        {
+          "kind": "provenance_flag",
+          "loaded_within_old": true,
+          "monotonic_ns": 2748472436459678
+        },
+        {
+          "enabled": true,
+          "events": 11,
+          "kind": "observer_trailer",
+          "monotonic_ns": 2748472436505171,
+          "truncated": false
+        }
+      ],
+      "missing": false,
+      "oversize_file": false,
+      "oversize_lines": 0,
+      "path": "/home/ubuntu/r03-next-run-20261114-01/old-data-2/events-seed.json",
+      "stage": "seed_session",
+      "unparsable_lines": 0
+    },
+    "status_stopped": {
+      "line_count": 4,
+      "lines": [
+        {
+          "count": 1,
+          "kind": "control_status_aggregate",
+          "monotonic_ns": 2748462621781288
+        },
+        {
+          "count": 2,
+          "kind": "bind_lines_found",
+          "monotonic_ns": 2748462621878170
+        },
+        {
+          "kind": "provenance_flag",
+          "loaded_within_old": true,
+          "monotonic_ns": 2748462663212403
+        },
+        {
+          "enabled": true,
+          "events": 3,
+          "kind": "observer_trailer",
+          "monotonic_ns": 2748462663284233,
+          "truncated": false
+        }
+      ],
+      "missing": false,
+      "oversize_file": false,
+      "oversize_lines": 0,
+      "path": "/home/ubuntu/r03-next-run-20261114-01/old-data-2/events-status.json",
+      "stage": "status_stopped",
+      "unparsable_lines": 0
+    }
+  },
+  "snapshots": [
+    {
+      "label": "after_pick",
+      "monotonic_ns": 2748428135222590,
+      "port": 31642,
+      "tcp": {
+        "local": {},
+        "peer": {}
+      },
+      "tcp6": {
+        "local": {},
+        "peer": {}
+      }
+    },
+    {
+      "label": "returned_install_runtime",
+      "monotonic_ns": 2748440489202885,
+      "port": 31642,
+      "tcp": {
+        "local": {},
+        "peer": {}
+      },
+      "tcp6": {
+        "local": {},
+        "peer": {}
+      }
+    },
+    {
+      "label": "before_init",
+      "monotonic_ns": 2748440498909256,
+      "port": 31642,
+      "tcp": {
+        "local": {},
+        "peer": {}
+      },
+      "tcp6": {
+        "local": {},
+        "peer": {}
+      }
+    },
+    {
+      "label": "returned_init63",
+      "monotonic_ns": 2748452072961613,
+      "port": 31642,
+      "tcp": {
+        "local": {},
+        "peer": {
+          "TIME_WAIT": 73
+        }
+      },
+      "tcp6": {
+        "local": {},
+        "peer": {}
+      }
+    },
+    {
+      "label": "stopped",
+      "monotonic_ns": 2748462777405291,
+      "port": 31642,
+      "tcp": {
+        "local": {},
+        "peer": {
+          "TIME_WAIT": 73
+        }
+      },
+      "tcp6": {
+        "local": {},
+        "peer": {}
+      }
+    },
+    {
+      "label": "before_seed_launch",
+      "monotonic_ns": 2748462792312577,
+      "port": 31642,
+      "tcp": {
+        "local": {},
+        "peer": {
+          "TIME_WAIT": 73
+        }
+      },
+      "tcp6": {
+        "local": {},
+        "peer": {}
+      }
+    },
+    {
+      "label": "seed_returned",
+      "monotonic_ns": 2748472608531265,
+      "port": 31642,
+      "tcp": {
+        "local": {},
+        "peer": {
+          "TIME_WAIT": 88
+        }
+      },
+      "tcp6": {
+        "local": {},
+        "peer": {}
+      }
+    },
+    {
+      "label": "after_cleanup",
+      "monotonic_ns": 2748477759630401,
+      "port": 31642,
+      "tcp": {
+        "local": {},
+        "peer": {
+          "TIME_WAIT": 88
+        }
+      },
+      "tcp6": {
+        "local": {},
+        "peer": {}
+      }
+    }
+  ]
+}

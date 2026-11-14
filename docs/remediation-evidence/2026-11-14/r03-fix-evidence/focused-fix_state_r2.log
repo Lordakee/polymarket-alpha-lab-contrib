@@ -1,0 +1,194 @@
+..s...............................................................FFFFFF [ 96%]
+F.F                                                                      [100%]
+=================================== FAILURES ===================================
+___________________ test_seed_wait_zero_proceeds_immediately ___________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f5380ed0200>
+capsys = <_pytest.capture.CaptureFixture object at 0x7f5380ed0950>
+
+    def test_seed_wait_zero_proceeds_immediately(monkeypatch, capsys):
+        _seed_wait_proc(monkeypatch, [('tcp', _seed_wait_clean()),
+                                      ('tcp6', _seed_wait_clean6())])
+        sleeps = []
+    
+        def fake_sleep(seconds):
+            sleeps.append(seconds)
+    
+>       _wait_for_seed_port_ready(_seed_wait_rig(), _clock=_FakeClock([0.0, 0.0]),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^
+                                  _sleep=fake_sleep)
+E       NameError: name '_wait_for_seed_port_ready' is not defined
+
+tests/test_project_postgres_version_switch_native.py:2243: NameError
+_____________________ test_seed_wait_clears_after_polling ______________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f5380ed0440>
+capsys = <_pytest.capture.CaptureFixture object at 0x7f5380ed1550>
+
+    def test_seed_wait_clears_after_polling(monkeypatch, capsys):
+        _seed_wait_proc(monkeypatch, [
+            ('tcp', _seed_wait_busy(1)), ('tcp6', _seed_wait_clean6()),
+            ('tcp', _seed_wait_busy(1)), ('tcp6', _seed_wait_clean6()),
+            ('tcp', _seed_wait_clean()), ('tcp6', _seed_wait_clean6()),
+        ])
+        sleeps = []
+    
+        def fake_sleep(seconds):
+            sleeps.append(seconds)
+    
+>       _wait_for_seed_port_ready(
+        ^^^^^^^^^^^^^^^^^^^^^^^^^
+            _seed_wait_rig(), _clock=_FakeClock([0.0, 1.0, 2.0, 3.0]),
+            _sleep=fake_sleep)
+E       NameError: name '_wait_for_seed_port_ready' is not defined
+
+tests/test_project_postgres_version_switch_native.py:2264: NameError
+________________ test_seed_wait_timeout_fails_with_diagnostics _________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f5380ed14f0>
+capsys = <_pytest.capture.CaptureFixture object at 0x7f5380ed1d00>
+
+    def test_seed_wait_timeout_fails_with_diagnostics(monkeypatch, capsys):
+        _seed_wait_proc(monkeypatch, [
+            ('tcp', _seed_wait_busy(3)), ('tcp6', _seed_wait_clean6()),
+        ])
+        sleeps = []
+    
+        def fake_sleep(seconds):
+            sleeps.append(seconds)
+    
+>       with pytest.raises(pytest.Failed, match='OLD_SEED_WAIT_TIMEOUT'):
+                           ^^^^^^^^^^^^^
+E       AttributeError: module 'pytest' has no attribute 'Failed'. Did you mean: 'File'?
+
+tests/test_project_postgres_version_switch_native.py:2284: AttributeError
+_____________ test_seed_wait_unavailable_initial_fails_never_zero ______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f5380ed1e50>
+capsys = <_pytest.capture.CaptureFixture object at 0x7f5380ed2660>
+
+    def test_seed_wait_unavailable_initial_fails_never_zero(monkeypatch, capsys):
+        _seed_wait_proc(monkeypatch, [('tcp', b'garbage\n'),
+                                      ('tcp6', _seed_wait_clean6())])
+>       with pytest.raises(pytest.Failed,
+                           ^^^^^^^^^^^^^
+                           match='OLD_SEED_WAIT_UNAVAILABLE'):
+E                          AttributeError: module 'pytest' has no attribute 'Failed'. Did you mean: 'File'?
+
+tests/test_project_postgres_version_switch_native.py:2296: AttributeError
+__________________ test_seed_wait_unavailable_mid_poll_fails ___________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f5380ed26c0>
+capsys = <_pytest.capture.CaptureFixture object at 0x7f5380ed2e40>
+
+    def test_seed_wait_unavailable_mid_poll_fails(monkeypatch, capsys):
+        _seed_wait_proc(monkeypatch, [
+            ('tcp', _seed_wait_busy(1)), ('tcp6', _seed_wait_clean6()),
+            ('tcp', b'partial'), ('tcp6', _seed_wait_clean6()),
+        ])
+>       with pytest.raises(pytest.Failed,
+                           ^^^^^^^^^^^^^
+                           match='OLD_SEED_WAIT_UNAVAILABLE'):
+E                          AttributeError: module 'pytest' has no attribute 'Failed'. Did you mean: 'File'?
+
+tests/test_project_postgres_version_switch_native.py:2310: AttributeError
+_______________ test_echo_seed_child_stderr_verbatim_on_failure ________________
+
+capsys = <_pytest.capture.CaptureFixture object at 0x7f5380ed3740>
+
+    def test_echo_seed_child_stderr_verbatim_on_failure(capsys):
+        import subprocess
+        result = subprocess.CompletedProcess(
+            [], 1, b'', b'OLD_SEED_FIRST_FAILURE_ERRNO=98\nsynthetic traceback')
+>       _echo_seed_child_stderr(result)
+        ^^^^^^^^^^^^^^^^^^^^^^^
+E       NameError: name '_echo_seed_child_stderr' is not defined
+
+tests/test_project_postgres_version_switch_native.py:2321: NameError
+_______________ test_old_payload_echoes_before_provenance_assert _______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f5380ed29c0>
+tmp_path = PosixPath('/tmp/pytest-of-ubuntu/pytest-42/test_old_payload_echoes_before0')
+capsys = <_pytest.capture.CaptureFixture object at 0x7f5380ed3920>
+
+    def test_old_payload_echoes_before_provenance_assert(monkeypatch, tmp_path,
+                                                         capsys):
+        import subprocess
+        calls = []
+    
+        def fake_payload_file(rig, name, text):
+            return tmp_path / name
+    
+        def fake_run(args, cwd, timeout=900):
+            calls.append('run')
+            return subprocess.CompletedProcess(
+                args, 1, b'',
+                b'OLD_SEED_FIRST_FAILURE_ERRNO=98\nrunner traceback detail')
+    
+        def fake_observe(rig):
+            calls.append('observe')
+    
+        monkeypatch.setattr(sys.modules[__name__], '_payload_file',
+                            fake_payload_file)
+        monkeypatch.setattr(sys.modules[__name__], '_run', fake_run)
+        monkeypatch.setattr(sys.modules[__name__], '_observe_old_seed_exit',
+                            fake_observe)
+        rig = _Rig(python='python3', old_source=tmp_path, payloads=tmp_path,
+                   neutral=tmp_path, base=tmp_path, original=tmp_path,
+                   port=40000)
+        with pytest.raises(AssertionError):
+            _old_payload(rig, 'seed.py', _SEED_PAYLOAD, str(tmp_path), '40000')
+        out = capsys.readouterr().out
+>       assert out.index('OLD_SEED_CHILD_STDERR_BEGIN') < out.index(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            'OLD_SEED_CHILD_STDERR_END')
+E       ValueError: substring not found
+
+tests/test_project_postgres_version_switch_native.py:2358: ValueError
+_________________ test_seed_diag_frames_keeps_innermost_eight __________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f5380ed2300>
+tmp_path = PosixPath('/tmp/pytest-of-ubuntu/pytest-42/test_seed_diag_frames_keeps_in0')
+
+    def test_seed_diag_frames_keeps_innermost_eight(monkeypatch, tmp_path):
+        monkeypatch.syspath_prepend(str(tmp_path))
+        server = str(tmp_path / 'src/polymarket_alpha_lab'
+                     '/project_postgres/server.py')
+        source = ('def _seed_raise_target(depth):\n'
+                  '    if depth <= 0:\n'
+                  '        raise OSError(98, "PRIVATE_SENTINEL")\n'
+                  '    return _seed_raise_target(depth - 1)\n')
+        namespace = {}
+        exec(compile(source, server, 'exec'), namespace)
+        try:
+            namespace['_seed_raise_target'](11)
+        except OSError as error:
+            failure = error
+        else:
+            raise AssertionError('deep synthetic chain did not raise')
+        depth = 0
+        traceback = failure.__traceback__
+        while traceback is not None:
+            depth += 1
+            traceback = traceback.tb_next
+        assert depth == 13  # 12 invocation frames plus this test frame
+        diag = _seed_diag_exec()
+        frames = diag['_seed_diag_frames'](failure.__traceback__, tmp_path)
+        assert len(frames) == 8
+>       assert frames[0][1] == '_seed_raise_target' and frames[0][2] == 3
+E       AssertionError: assert ('test_seed_di...nermost_eight' == '_seed_raise_target'
+E         
+E         - _seed_raise_target
+E         + test_seed_diag_frames_keeps_innermost_eight)
+
+tests/test_project_postgres_version_switch_native.py:2414: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_project_postgres_version_switch_native.py::test_seed_wait_zero_proceeds_immediately
+FAILED tests/test_project_postgres_version_switch_native.py::test_seed_wait_clears_after_polling
+FAILED tests/test_project_postgres_version_switch_native.py::test_seed_wait_timeout_fails_with_diagnostics
+FAILED tests/test_project_postgres_version_switch_native.py::test_seed_wait_unavailable_initial_fails_never_zero
+FAILED tests/test_project_postgres_version_switch_native.py::test_seed_wait_unavailable_mid_poll_fails
+FAILED tests/test_project_postgres_version_switch_native.py::test_echo_seed_child_stderr_verbatim_on_failure
+FAILED tests/test_project_postgres_version_switch_native.py::test_old_payload_echoes_before_provenance_assert
+FAILED tests/test_project_postgres_version_switch_native.py::test_seed_diag_frames_keeps_innermost_eight
+8 failed, 66 passed, 1 skipped in 7.14s

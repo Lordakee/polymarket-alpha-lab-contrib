@@ -1,0 +1,49 @@
+..version-switch fixture: candidate f5ca185a50ad6349275cd79dabd5b701b65a2548 b9c40393a2e2b9f3ad217b9f01545c7788a89b14 old-catalog-63 3e8c813dcb7ce238 candidate-catalog-70 4d57c7cda54cd712
+version-switch phase old-initialize: start
+OLD_SEED_WAIT_BEFORE port=29040 tcp={"local":{"TIME_WAIT":1},"peer":{"TIME_WAIT":72}} tcp6={"local":{},"peer":{}} monotonic_ns=160197992079
+OLD_SEED_WAIT_AFTER port=29040 tcp={"local":{},"peer":{}} tcp6={"local":{},"peer":{}} elapsed_s=59.099
+version-switch phase old-initialize: done in 74.4s
+version-switch phase lifecycle-backup: start
+version-switch phase lifecycle-backup: done in 12.9s
+version-switch phase current-selection: start
+version-switch phase current-selection: done in 11.2s
+version-switch phase old-rollback: start
+version-switch rollback: shared APIs admitted at 63/63; original rows intact
+version-switch phase old-rollback: done in 5.3s
+version-switch phase bundle-refusals: start
+version-switch kit admission contract: linux-x86_64 18.0
+version-switch phase bundle-refusals: done in 16.2s
+version-switch phase pending-backup-refusals: start
+version-switch pending/refusals: 70/63 refused; prefix extension exact
+version-switch phase pending-backup-refusals: done in 20.3s
+version-switch phase explicit-migration: start
+version-switch migration: seven appended; 70/70 admitted; 63 receipts preserved
+version-switch phase explicit-migration: done in 14.4s
+version-switch native: PASS; old-initialize:74.4s;lifecycle-backup:12.9s;current-selection:11.2s;old-rollback:5.3s;bundle-refusals:16.2s;pending-backup-refusals:20.3s;explicit-migration:14.4s
+version-switch cleanup: stopped
+................OLD_SEED_CHILD_STDERR_BEGIN
+
+OLD_SEED_CHILD_STDERR_END
+.OLD_SEED_CHILD_STDERR_BEGIN
+
+OLD_SEED_CHILD_STDERR_END
+.OLD_SEED_CHILD_STDERR_BEGIN
+PAYLOAD_SOURCE_OK
+
+OLD_SEED_CHILD_STDERR_END
+....OLD_SEED_CHILD_STDERR_BEGIN
+
+OLD_SEED_CHILD_STDERR_END
+.OLD_SEED_CHILD_STDERR_BEGIN
+
+OLD_SEED_CHILD_STDERR_END
+.OLD_SEED_CHILD_STDERR_BEGIN
+
+OLD_SEED_CHILD_STDERR_END
+............................................OLD_SEED_WAIT_BEFORE port=40000 tcp={"local":{"TIME_WAIT":1},"peer":{"TIME_WAIT":1}} tcp6={"local":{},"peer":{}} monotonic_ns=305687204506
+.....
+============================= slowest 20 durations =============================
+160.36s call     tests/test_project_postgres_version_switch_native.py::test_native_same_root_source_selection_rollback_and_refusals
+
+(19 durations < 0.005s hidden.  Use -vv to show these durations.)
+75 passed in 161.86s (0:02:41)
