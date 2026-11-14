@@ -132,9 +132,9 @@ E05/C 发布前 local-integration review PASS `agent_42ffdac5` 不覆盖其后 C
 | --- | --- | --- |
 | 1 线上两视图定义与来历 | R07 已完成 20 条只读 SQL（as-of 2026-11-13T05:01:34Z）；11-12 快照语义已核（16/16 复算） | 精确 DDL 时间／操作者 **unknown** 维持；`track_commit_timestamp=off`，11-07—11-12 区间 unverified；FX-09 受管流程后重新登记 |
 | 2 服务器运行库及扫描签到 | 服务器 checkout 曾于 2026-11-14 被 distribution 计划只读核对为 HEAD=C3/clean（时间切片，非签到） | **待下一轮扫描**的实际代码签到输出（含代码 SHA 与 clean 标记） |
-| 3 镜像清单来源 | **已闭合**：服务器现行树 414/415 逐字节一致（410 原样＋4 脱敏行按 REDACTIONS 原件 hash）；唯一差异＝`intl/wp_intl3/wp_intl_validate.py` 2026-11-14 已记录分页 limit 100→50 修复，差异恰 3 hunk 全为该修复，清单时点字节完整保留于 `.bak-20261114` | 历史 tarball `papersim_mirror.tgz`（`3fff2026…`，1,054,525B）本地与服务器常规路径未找到，**UNKNOWN 如实保留**；现行一致性结论不依赖 tarball（逐文件哈希比对） |
+| 3 镜像清单来源 | **已闭合**：服务器现行树 414/415 逐字节一致（410 原样＋4 脱敏行按 REDACTIONS 原件 hash）；唯一差异＝`intl/wp_intl3/wp_intl_validate.py` 2026-11-14 已记录分页 limit 100→50 修复，差异恰 3 hunk 全为该修复，清单时点字节完整保留于 `.bak-20261114` | 历史 tarball `papersim_mirror.tgz`（`3fff2026…`，1,054,525B）本地与服务器常规路径未定位，**不再作为开放项（2026-11-14 owner 清除）**：该缺口已由 2026-11-14 现行树逐文件验证等效闭合（415 条目中 414 字节一致，唯一差异＝已登记的 `wp_intl_validate.py` 分页修复，`.bak-20261114` 保留清单时点字节）；tarball 本体如日后重现仅作补充证据 |
 | 4 Windows 历史全量/selfcheck | **全部定位**：五件原件均在 `D:\Projects\pal-untracked-archive-20261112\`（基线 41,332/98 `b0cd56f6…`；合并节点同数 `fba3b1dd…`；基线 selfcheck 前缀 `1a5458b1…` 原件；M0 后 194-export `bd1cd4ec…`；**失败的 `m0_verify.log`（1 failed/41,431/98，exit 1）如实保留**） | 原件为库外 Windows 存档；不重跑 Windows 冒充旧证据，不代替 Linux 验收 |
-| 5 Lordakee 副本 tip | `GET repos/Lordakee/polymarket-alpha-lab/branches/main` 与仓库消歧查询均 **HTTP 404**（2026-11-14T08:43:29Z／08:43:55Z，wmqfl861 凭据） | 当前 tip **UNKNOWN**（已删除/转私有/改名不可区分）；历史值 `5bdae2e3`（2026-11-12）保留为时间切片 |
+| 5 Lordakee 副本 tip | `GET repos/Lordakee/polymarket-alpha-lab/branches/main` 与仓库消歧查询均 **HTTP 404**（2026-11-14T08:43:29Z／08:43:55Z，wmqfl861 凭据） | owner 2026-11-14 声明：仓库已不在 Lordakee 用户名下，origin=Lordakee 不再是有效远端引用；canonical＝`wmqfl861` 唯一正本（main=`268efa70` 已验证）；历史 tip `5bdae2e3`（2026-11-12）保留为历史记录，**不再作为待核验项（2026-11-14 owner 清除）** |
 | 6 storage 失败根因 | **已闭环**（相对此前"TIME_WAIT 为推断"）：机制实验 A 证明（服务端主动关闭→本端 local TIME_WAIT→无 reuse bind 精确 errno 98；带 reuse 则成功；客户端先关不产生）＋diag2 现场 local TIME_WAIT 证据＋B 决定性运行等待路径日志，三方一致 | 机制为"机制级证明"，失败当时的完整 OSError 栈在四次历史 run 中仍 NOT_EMITTED（pytest 截断，不可回溯）；本闭环不依赖补拍 |
 | 7 两份旧复审原文 | **已存证**：M0 批次（e45c 前身）／合并节点 9e761317／C2 三份全文字节级入库，哈希与覆盖 SHA／发现修复链齐备 | 第四份不存在（P1-4 定案，见 §4 末行） |
 
@@ -213,19 +213,24 @@ CI"不是偏差；A 泳道验证码中断与续跑；九文件脱敏与 REDACTIO
 **未完成项（移交清单）**：V-8／P3-10 四 PR 内容级核对（FX-23）；P2-9 win/loss
 标签入视图（FX-09）；P3-9 tools 连接守卫覆盖（FX-09）；P3-11 intl 读取上限
 （FX-15）；R04 纸面桥 Linux／直推 CI 通道（M3）；下一轮真实扫描及其 `cross_league_
-mw_check` 留证＋代码提交号（OD-F）；Lordakee tip UNKNOWN；历史 tarball UNKNOWN；
-DDL 时间 unknown；M1 计划复审确认（§9）；OD-B 归档节点（双绿＋增量复审后另开）；
-D 文档提交自身的 full/扫描/CI 由推送后回执承载。
+mw_check` 留证＋代码提交号（OD-F）；DDL 时间 unknown；OD-B 归档节点（双绿＋增量
+复审后另开）；D 文档提交自身的 full/扫描/CI 由推送后回执承载。Lordakee tip 与
+历史 tarball 两项 UNKNOWN 已于 2026-11-14 由 owner 清除（见 §5 #3／#5），不再
+列为未完成项；M1 计划复审确认亦已于 2026-11-14 补齐（见 §9 与
+`decision/m1-rereview-output-20261114.log`），从待办移除；其余未完成项不变。
 
 ## 9. M1 启动门状态
 
 `M1-next-nodes-plan.md`（28,092B，SHA256 `0a48b7bc…`）登记的启动门：R09/R10 正式
 handback 齐全、交还最终源 SHA、最终同一 SHA 双绿（四 Linux 分区＋storage 版本
-切换＋聚合）——**技术条件已随 B 双绿与本 handback 满足，启动门解锁**。两点如实
-保留：该计划文件头自记"首轮 reviewer FAIL 后修复五项发现，待同一 reviewer 复审"，
-其独立复审 PASS 与否须以复审回执为准（本交接书不代填）；实施由 owner／协调者
-派发，FX-18 归档须另有外部增量 review PASS，不搭双绿便车。真实资金、凭据、真实
-下单仍须 owner 单独明确确认。
+切换＋聚合）——**技术条件已随 B 双绿与本 handback 满足，启动门解锁**。该计划文件
+头自记"首轮 reviewer FAIL 后修复五项发现，待同一 reviewer 复审"——该复审回执
+**已补齐：2026-11-14 codex（gpt-6-astra/max）独立复审 VERDICT: PASS（五项发现＝
+3 CORRECT-AS-APPLIED＋2 NO-CHANGE-CONFIRMED，0 新发现；启动门与 B 双绿／
+R10 handback 核对一致）；回执入库 `decision/m1-rereview-output-20261114.log`
+（委派简报 `decision/m1-rereview-brief-20261114.md`）；M1 就绪待 owner 派发**。
+实施由 owner／协调者派发，FX-18 归档须另有外部增量 review PASS，不搭双绿便车。
+真实资金、凭据、真实下单仍须 owner 单独明确确认。
 
 ## 10. 证据入库与复核入口
 

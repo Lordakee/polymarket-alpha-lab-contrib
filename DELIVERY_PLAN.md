@@ -3894,6 +3894,6 @@ A≠B 已在 `r03-fix-evidence/final-registration.md` 登记：tree 校验为 ve
 
 **证据入库**：本节点把库外关键证据 33 文件复制入库 `docs/remediation-evidence/2026-11-14/`（决策记录、r03 三计划＋复审结论要点、实验报告、镜像验证报告、旧复审三份存证、CI 回执、r03-fix 证据 9 文件、Q 底稿与七项复核基础文件），逐文件 bytes/SHA256 与敏感扫描结论见其 `MANIFEST.md`（0 公网 IP、0 凭据值，无脱敏改写）。正式交接书为 `docs/handoffs/2026-11-13-m0-remediation.md`（D）：完整版本链、逐节点处置表、CI 失败史、独立复审链、七项本地复核终态、九出口、偏差与 M1 启动门状态。
 
-**M1 启动门**：R09 双绿与 R10 handback（本节点＋D 交付书）到达后，M1-next-nodes-plan 登记的启动条件已满足技术面；M1 计划自身的独立复审按其文件头仍待同一 reviewer 复审确认，实施由 owner／协调者派发，本节点不启动 M1。
+**M1 启动门**：R09 双绿与 R10 handback（本节点＋D 交付书）到达后，M1-next-nodes-plan 登记的启动条件已满足技术面；M1 计划复审回执**已补齐：2026-11-14 codex（gpt-6-astra/max）独立复审 VERDICT: PASS（五项发现＝3 CORRECT-AS-APPLIED＋2 NO-CHANGE-CONFIRMED，0 新发现；启动门与 B 双绿／R10 handback 核对一致）**，回执入库 `docs/remediation-evidence/2026-11-14/decision/m1-rereview-output-20261114.log`；M1 就绪待 owner 派发，实施由 owner／协调者派发，本节点不启动 M1。
 
 **自引用边界**：本段与 D、证据目录所在的文档提交，其自身 SHA 与其后发生的任何 CI/复审结果不在本文预写；由提交完成后的 Git 对象与最终交接回执给出。

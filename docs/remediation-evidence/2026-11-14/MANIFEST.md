@@ -20,7 +20,7 @@ R10 终局文档节点于 2026-11-14（UTC）建立。本目录把 2026-11-13—
 authorization，大小写不敏感）加 dotted-quad IPv4（八位组 0–255 校验，排除
 127.0.0.1 / 0.0.0.0 / 255.255.255.255）。
 
-结果（2026-11-14，扫描 33 文件）：
+结果（2026-11-14，扫描 35 文件）：
 
 - IPv4 命中：**0**（无公网 IP；唯一 IP 形态为回环 127.0.0.1，已按规则排除）。
 - 关键词命中：41 处，**逐条人工核对全部为过程性/否定性文本**——secret-scan
@@ -38,7 +38,7 @@ authorization，大小写不敏感）加 dotted-quad IPv4（八位组 0–255 �
   自写的三份文档（DELIVERY_PLAN 增量、D 交付书、本 MANIFEST）whitespace 检查为
   0 命中。
 
-## 2. 文件清单（33 文件；sha256 / bytes / 相对路径 / 库外原始位置）
+## 2. 文件清单（35 文件；sha256 / bytes / 相对路径 / 库外原始位置）
 
 ### ci-receipts/（CI 回执）
 
@@ -54,6 +54,8 @@ authorization，大小写不敏感）加 dotted-quad IPv4（八位组 0–255 �
 | --- | ---: | --- | --- |
 | `e688b67639ff99f36c5d770000d4978b40d451856fbc5d9be5feb74b1191de2f` | 7163 | `decision/codex-decision-brief-20261114.md` | `PAL-R\` |
 | `de726bea2190db7a271560914940f58a09ad57fc0fff1077cbd878008cc703db` | 67413 | `decision/decision-output.log` | `PAL-R\codex-decision-20261114\`（含 DECISION 1–4 与 RATIONALE 原文） |
+| `76c8da64feb9e29587b7c6a4392b357e1b5dc440a0c50121e215a2e8c7e75bd1` | 328417 | `decision/m1-rereview-output-20261114.log` | `PAL-R\`（M1 计划复审回执补齐：2026-11-14 codex gpt-6-astra/max 独立复审，VERDICT: PASS＝3 CORRECT-AS-APPLIED＋2 NO-CHANGE-CONFIRMED、0 新发现；原件 CRLF，同 decision-output.log 存证口径原样入库） |
+| `d693680ad272a50f20330a965bcdff49d3da15255102544e48894dc3f2251bba` | 2825 | `decision/m1-rereview-brief-20261114.md` | `PAL-R\`（该回执的 owner 委派简报：复审对象 SHA256 锚点、背景锚点与输出要求；原件 CRLF 原样入库） |
 
 ### plans/（r03 三计划 + 复审结论要点 + distribution 计划）
 
