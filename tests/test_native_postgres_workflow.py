@@ -20,6 +20,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
 
 import pytest
@@ -244,6 +245,226 @@ def test_linux_partitions_and_pg18_prefix_are_explicit():
     assert '    timeout-minutes: 2\n' in gate
     assert gate.count('run: |') == 1
     assert 'test "$NATIVE_RESULT" = success' in gate
+
+
+def linux_key_download_script():
+    worker = jobs(WORKFLOW.read_text())['linux-native-part']
+    step = worker.split('      - name: Assemble the qualified PG18 portable prefix\n', 1)[1]
+    step = step.split('\n      - name:', 1)[0]
+    body = step.split('        run: |\n', 1)[1]
+    script = '\n'.join(line[10:] for line in body.splitlines())
+    download, separator, _ = script.partition('\nPREFIX=')
+    assert separator
+    return download
+
+
+KEY_DOWNLOAD_ARGS = [
+    '--fail', '--show-error', '--no-progress-meter',
+    '--retry', '3', '--retry-all-errors', '--connect-timeout', '15',
+    '--max-time', '60', '--retry-max-time', '180',
+    '-o', '/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc',
+    'https://www.postgresql.org/media/keys/ACCC4CF8.asc',
+]
+
+
+def test_linux_signing_key_download_is_bounded_and_preserves_trust_order():
+    # curl owns the retries (at most the first attempt plus three retries).
+    # retry-max-time bounds retry starts, not the total wall-clock duration.
+    lines = linux_key_download_script().replace('\\\n', '').splitlines()
+    assert lines[:2] == [
+        'set -euo pipefail',
+        'sudo install -d /usr/share/postgresql-common/pgdg',
+    ]
+    assert shlex.split(lines[2]) == ['sudo', 'curl', *KEY_DOWNLOAD_ARGS]
+    assert lines[3:] == [
+        'echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] '
+        'https://apt.postgresql.org/pub/repos/apt noble-pgdg main" '
+        '| sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null',
+        'sudo apt-get update -qq',
+        'sudo apt-get install -y -qq postgresql-18',
+    ]
+
+
+@pytest.mark.parametrize('curl_exit', [0, 56, 22, 60])
+def test_linux_signing_key_download_shell_preserves_curl_result(tmp_path, curl_exit):
+    # Exercise the actual download/APT segment, never curl, sudo, or APT itself.
+    # The stub emits a completed curl result, NOT a simulation of retry logic.
+    # This proves argv, diagnostics and fail-closed shell wiring, not networking.
+    stubs = r"""
+curl() {
+    printf '%s\0' "$@" > "$CURL_ARGV"
+    printf 'curl: (%s) injected initial failure\n' "$FIRST_ERROR" >&2
+    printf 'Warning: injected retry diagnostic\n' >&2
+    return "$CURL_EXIT"
+}
+sudo() {
+    local command="$1"
+    shift
+    case "$command" in
+        install) ;;
+        curl) curl "$@" ;;
+        tee)
+            while IFS= read -r line; do :; done
+            printf 'KEY_SOURCE_REGISTERED\n' >&2
+            ;;
+        apt-get) printf 'apt-get %s\n' "$*" ;;
+        *) printf 'Unexpected privileged command\n' >&2; return 99 ;;
+    esac
+}
+"""
+    argv_file = tmp_path / 'curl.argv'
+    done = subprocess.run(
+        ['/bin/bash', '--noprofile', '--norc', '-c',
+         stubs + linux_key_download_script() + '\nprintf "ASSEMBLY_CONTINUES\n"'],
+        # No executable search path or inherited shell/auth environment. All
+        # permitted operations above are builtins; the real key path is unused.
+        env={'PATH': str(tmp_path), 'CURL_ARGV': str(argv_file),
+             'CURL_EXIT': str(curl_exit), 'FIRST_ERROR': str(curl_exit or 56)},
+        stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=5,
+    )
+    assert argv_file.read_bytes().decode().split('\0') == [*KEY_DOWNLOAD_ARGS, '']
+    assert done.returncode == curl_exit
+    diagnostics = (f'curl: ({curl_exit or 56}) injected initial failure\n'
+                   'Warning: injected retry diagnostic\n')
+    if curl_exit:
+        assert done.stdout == ''  # No APT call or continuation sentinel.
+        assert done.stderr == diagnostics  # No key registration either.
+    else:
+        assert done.stdout == ('apt-get update -qq\n'
+                               'apt-get install -y -qq postgresql-18\n'
+                               'ASSEMBLY_CONTINUES\n')
+        assert done.stderr == diagnostics + 'KEY_SOURCE_REGISTERED\n'
+
+
+# The pre-remediation download command, pinned verbatim from the parent of
+# the retry remediation (line 430 of that revision) for the before/after
+# recovery comparison in the test below.
+ORIGINAL_KEY_DOWNLOAD_COMMAND = (
+    'sudo curl --fail --silent --show-error'
+    ' -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc'
+    ' https://www.postgresql.org/media/keys/ACCC4CF8.asc'
+)
+
+
+def write_fake_curl_and_sudo(tmp_path):
+    """Install a fake curl/sudo pair as the only executables on PATH.
+
+    The fake curl is a retry engine driven purely by the argv it receives,
+    mirroring curl's documented semantics: ``--retry N`` allows N retries
+    after the first attempt, and only ``--retry-all-errors`` makes codes
+    outside the default transient set (timeouts) retryable at all. Besides
+    recording its argv and one line per transfer attempt it performs no I/O,
+    touches no real key path and never reaches the network. The fake sudo
+    dispatches the privileged commands of the segment without privilege.
+    """
+    (tmp_path / 'curl').write_text(r'''#!/bin/sh
+printf '%s\0' "$@" > "$CURL_ARGV"
+retry_count=0
+retry_all=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --retry) retry_count="$2"; shift ;;
+        --retry-all-errors) retry_all=1 ;;
+    esac
+    shift
+done
+code="$SCENARIO_CODE"
+attempt=1
+while :; do
+    printf '%s\n' "$attempt" >> "$CURL_ATTEMPTS"
+    if [ "$attempt" -gt "$FAILURES" ]; then
+        exit 0
+    fi
+    if [ "$retry_count" -lt 1 ] || { [ "$retry_all" -ne 1 ] && [ "$code" -ne 28 ]; }; then
+        printf 'curl: (%s) error not retryable with this argv\n' "$code" >&2
+        exit "$code"
+    fi
+    if [ "$attempt" -gt "$retry_count" ]; then
+        printf 'curl: (%s) retries exhausted\n' "$code" >&2
+        exit "$code"
+    fi
+    printf 'curl: (%s) transient error, retrying\n' "$code" >&2
+    attempt=$((attempt + 1))
+done
+''')
+    (tmp_path / 'sudo').write_text(r'''#!/bin/sh
+command="$1"
+shift
+case "$command" in
+    install) ;;
+    curl) exec curl "$@" ;;
+    tee)
+        while IFS= read -r line; do :; done
+        printf 'KEY_SOURCE_REGISTERED\n' >&2
+        ;;
+    apt-get) printf 'apt-get %s\n' "$*" ;;
+    *) printf 'Unexpected privileged command\n' >&2; exit 99 ;;
+esac
+''')
+    for fake in ('curl', 'sudo'):
+        (tmp_path / fake).chmod(0o755)
+
+
+def run_download_segment(tmp_path, script, scenario_code, failures):
+    """Run one download segment against the fakes; nothing else is reachable."""
+    write_fake_curl_and_sudo(tmp_path)
+    argv_file = tmp_path / 'curl.argv'
+    attempts_file = tmp_path / 'curl.attempts'
+    attempts_file.write_text('')  # each run records only its own attempts
+    done = subprocess.run(
+        ['/bin/bash', '--noprofile', '--norc', '-c',
+         script + '\nprintf "ASSEMBLY_CONTINUES\n"'],
+        # PATH holds only the two fakes and no environment is inherited, so
+        # every external operation resolves to an isolated stub. Fake tests
+        # prove wiring, bounded retry behavior and exit codes only: no
+        # network, no privilege, no real key download.
+        env={'PATH': str(tmp_path), 'CURL_ARGV': str(argv_file),
+             'CURL_ATTEMPTS': str(attempts_file),
+             'SCENARIO_CODE': str(scenario_code), 'FAILURES': str(failures)},
+        stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=5)
+    return done, argv_file, attempts_file
+
+
+def test_linux_signing_key_download_recovers_transient_56_the_original_command_could_not(tmp_path):
+    # A single mid-transfer CURLE_RECV_ERROR (56) followed by a good
+    # transfer: the remediated argv recovers inside curl and the step
+    # proceeds, while the pinned pre-remediation argv fails at the first
+    # attempt -- the original pattern would NOT recover.
+    done, argv_file, attempts_file = run_download_segment(
+        tmp_path, linux_key_download_script(), scenario_code=56, failures=1)
+    assert done.returncode == 0
+    assert attempts_file.read_text().splitlines() == ['1', '2']
+    assert argv_file.read_bytes().decode().split('\0') == [*KEY_DOWNLOAD_ARGS, '']
+    assert done.stdout == ('apt-get update -qq\n'
+                           'apt-get install -y -qq postgresql-18\n'
+                           'ASSEMBLY_CONTINUES\n')
+    assert done.stderr == ('curl: (56) transient error, retrying\n'
+                           'KEY_SOURCE_REGISTERED\n')
+    before, before_argv, before_attempts = run_download_segment(
+        tmp_path, 'set -euo pipefail\n' + ORIGINAL_KEY_DOWNLOAD_COMMAND,
+        scenario_code=56, failures=1)
+    assert before.returncode == 56
+    assert before_attempts.read_text().splitlines() == ['1']
+    assert before_argv.read_bytes().decode().split('\0') == [
+        *shlex.split(ORIGINAL_KEY_DOWNLOAD_COMMAND)[2:], '']
+    assert before.stdout == ''  # Fail-closed: no APT call, no sentinel.
+    assert before.stderr == 'curl: (56) error not retryable with this argv\n'
+
+
+@pytest.mark.parametrize('curl_exit', [56, 22, 60])
+def test_linux_signing_key_download_persistent_errors_exhaust_bounded_retries_and_fail_closed(
+        tmp_path, curl_exit):
+    # Persistent 56/22/60 stay fatal after the bounded retry budget (the
+    # first attempt plus the three retries the argv allows): APT and the
+    # continuation sentinel are never reached and diagnostics survive.
+    done, argv_file, attempts_file = run_download_segment(
+        tmp_path, linux_key_download_script(), scenario_code=curl_exit, failures=99)
+    assert done.returncode == curl_exit
+    assert attempts_file.read_text().splitlines() == ['1', '2', '3', '4']
+    assert argv_file.read_bytes().decode().split('\0') == [*KEY_DOWNLOAD_ARGS, '']
+    assert done.stdout == ''
+    assert done.stderr == (f'curl: ({curl_exit}) transient error, retrying\n' * 3
+                           + f'curl: ({curl_exit}) retries exhausted\n')
 
 
 def test_triggers_cover_manual_pr_weekly_push_and_papersim_paths():
