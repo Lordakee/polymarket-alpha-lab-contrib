@@ -69,6 +69,7 @@ from typing import Mapping
 from polymarket_alpha_lab.papersim.xg import pair_lambdas
 
 __all__ = [
+    "CandidateEnvelope",
     "DC_FLOOR",
     "GRID_MAX_GOALS",
     "LINEAGE_EPS",
@@ -80,6 +81,7 @@ __all__ = [
     "VariantResult",
     "VariantSpec",
     "both_teams_to_score",
+    "candidate_for_market",
     "candidate_from_variants",
     "cover_probability",
     "dixon_coles_tau",
@@ -542,4 +544,297 @@ def over_under_quote(
         lambda_home=lh,
         lambda_away=la,
         market_id=market_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# FX-10 (M1 plan §3): generic candidate construction across market kinds.
+#
+# Everything above this banner is the frozen WP-P1 surface: the bytes of
+# ``candidate_from_variants`` / ``fixture_variants`` / ``match_lambdas`` /
+# ``over_under_quote`` and the ``SoccerCandidate`` dataclass stay frozen.
+# The generic builder below only APPENDS to that surface: it re-derives the
+# ten variants through the same frozen ``fixture_variants`` call and quotes
+# every supported market per variant through the same frozen probability
+# helpers, so ``kind="total", side="over"`` reproduces the legacy builder's
+# candidate bit-for-bit while the remaining selections (O/U under, BTTS
+# yes/no, team totals both directions, 1X2 per outcome yes/no, spreads)
+# become constructible without touching any frozen function.
+
+
+@dataclass(frozen=True)
+class CandidateEnvelope:
+    """FX-10 envelope: a frozen :class:`SoccerCandidate` plus context.
+
+    ``SoccerCandidate``'s field contract is frozen (WP-P1), so the generic
+    builder's extra context rides in this envelope rather than in new
+    candidate fields:
+
+    - ``kind`` / ``side`` / ``line`` / ``team_side`` echo the exact lineage
+      selection vocabulary (the round-44 scan ``model_quote`` semantics):
+      ``total`` with side ``over``/``under``, ``btts`` with ``yes``/``no``,
+      ``team_total`` with ``over``/``under`` plus ``team_side``
+      ``home``/``away``, ``match_winner`` with ``home``/``draw``/``away``
+      or the ``*_no`` complements, and ``spread`` with ``cover``/``nocover``
+      plus ``team_side``. Registry aliases (``ml``, ``1x2``, ``handicap``)
+      are policy-layer lookups, not constructor inputs.
+    - ``quote_source`` names the frozen probability source that produced
+      the FORWARD per-variant quotes and ``complement`` records whether the
+      quoted side is the exact ``1 - p`` reverse direction, binding each
+      candidate to its actual computation source.
+    - ``bridge_consulted`` is True only when the two leagues differ AND a
+      bridge table was supplied — the only case in which
+      :func:`fixture_variants` -> ``pair_lambdas`` actually consults it;
+      ``bridge_source`` then keeps that exact table object for downstream
+      provenance hashing (FX-08 strict crossbridge). Same-league
+      constructions never consult a bridge and record ``None``.
+    """
+
+    candidate: SoccerCandidate
+    kind: str
+    side: str
+    line: float | None
+    team_side: str | None
+    quote_source: str
+    complement: bool
+    bridge_consulted: bool
+    bridge_source: Mapping[str, float] | None
+
+
+#: Market kinds constructible by :func:`candidate_for_market` and their
+#: valid side vocabulary (registry canonical names; the suspension-registry
+#: aliases ``ml``/``1x2``/``handicap`` are accepted by
+#: ``gates.suspension_policy`` but are not constructor inputs).
+_GENERIC_SIDES: dict[str, tuple[str, ...]] = {
+    "total": ("over", "under"),
+    "btts": ("yes", "no"),
+    "team_total": ("over", "under"),
+    "match_winner": ("home", "draw", "away", "home_no", "draw_no", "away_no"),
+    "spread": ("cover", "nocover"),
+}
+
+#: Constructible market kinds, in registry-canonical order.
+_GENERIC_KINDS: tuple[str, ...] = tuple(_GENERIC_SIDES)
+
+#: 1X2 outcome -> :class:`MatchOutputs` probability attribute.
+_MATCH_WINNER_ATTRS = {"home": "home_win", "draw": "draw", "away": "away_win"}
+
+#: Reverse-direction side ids (quoted as the exact ``1 - p`` complement).
+_COMPLEMENT_SIDES = frozenset(
+    {"under", "no", "home_no", "draw_no", "away_no", "nocover"}
+)
+
+
+def _half_ball_line(kind: str, line: object) -> float:
+    """Validate and return a half-ball ``line`` for the line-taking kinds.
+
+    Only half-ball lines are accepted (``2 * line`` an odd integer): an
+    integer line carries a push outcome that the frozen helpers exclude,
+    and a quarter line mixes two settlements — both are construction
+    errors that must fail loudly (for FX-08/FX-09 to record), never be
+    silently approximated. Non-finite (NaN/inf) and non-numeric values
+    are rejected the same way.
+    """
+    if isinstance(line, bool) or not isinstance(line, (int, float)):
+        raise ValueError(f"{kind} line must be a real number, got {line!r}")
+    value = float(line)
+    if not math.isfinite(value):
+        raise ValueError(f"{kind} line must be finite, got {line!r}")
+    doubled = value * 2.0
+    nearest = round(doubled)
+    if abs(doubled - nearest) > LINEAGE_EPS or int(nearest) % 2 == 0:
+        raise ValueError(
+            f"{kind} line must be a half-ball line (2*line an odd integer); "
+            f"integer and quarter lines are not quotable: got {line!r}"
+        )
+    return value
+
+
+def candidate_for_market(
+    xg_snapshot: Mapping[str, object],
+    home_team: str,
+    home_league: str,
+    away_team: str,
+    away_league: str,
+    market: str,
+    market_id: str,
+    entry_ask_vwap250: float,
+    *,
+    kind: str,
+    side: str,
+    line: float | None = None,
+    team_side: str | None = None,
+    season: str | None = None,
+    bridge: Mapping[str, float] | None = None,
+) -> CandidateEnvelope | None:
+    """Snapshot-driven candidate quote for one side of any supported market.
+
+    The FX-10 generic builder. Selects the market with the frozen lineage
+    vocabulary — ``kind`` plus ``side`` (plus ``line`` / ``team_side``
+    where the kind needs them) — and re-derives all ten sweep variants
+    through the same :func:`fixture_variants` call the frozen
+    :func:`candidate_from_variants` uses:
+
+    ================ ============================= =========================
+    kind             side                          forward per-variant source
+    ================ ============================= =========================
+    ``total``        ``over`` / ``under``          :func:`over_probability`
+    ``btts``         ``yes`` / ``no``              :func:`both_teams_to_score`
+    ``team_total``   ``over``/``under`` + side     :func:`team_total_over`
+    ``match_winner`` ``home``/``draw``/``away``    ``MatchOutputs`` fields
+                    (and the ``*_no`` complements)
+    ``spread``       ``cover``/``nocover`` + side  :func:`cover_probability`
+    ================ ============================= =========================
+
+    - ``kind="total", side="over"`` reproduces :func:`candidate_from_variants`
+      bit-for-bit (same variants, same per-variant calls, same aggregation),
+      so the frozen regression anchors apply unchanged.
+    - Reverse directions (``under``, ``no``, ``*_no``, ``nocover``) are the
+      exact per-variant complement ``1 - p`` of the forward quote — free of
+      residue because only half-ball lines are accepted (no pushes).
+    - Lines must be half-ball (``2 * line`` an odd integer): integer lines
+      carry pushes, quarter lines mix settlements, NaN/inf and non-numeric
+      values are garbage — every one raises :class:`ValueError`.
+      Construction failures are explicit exceptions so FX-08/FX-09 can
+      record them; this builder NEVER falls back to the NOT-gate-safe
+      :func:`over_under_quote` stub on any failure path.
+    - ``match_winner`` medians are per-outcome medians over the ten variants
+      and are NOT renormalized to sum to 1 — the existing aggregation the
+      WP-P4 report observed at 0.988-1.005 across real fixtures; this
+      builder keeps that convention unchanged.
+    - ``spread`` envelopes are quote-only: spreads stay FLAGGED_ONLY in the
+      gates suspension registry; an envelope is not entry authorization.
+    - Returns ``None`` exactly when :func:`fixture_variants` refuses the
+      fixture (banned cross-league pairing without a bridge, bridge missing
+      a league, unknown teams / missing season blocks) — the same refusal
+      semantics as the frozen builders.
+
+    Extra construction context (selection, quote source, bridge provenance)
+    rides in the returned :class:`CandidateEnvelope`; the inner
+    :class:`SoccerCandidate` keeps the frozen WP-P1 field contract, with
+    ``side`` the coarse direction code 0 = Over/Yes/cover forward and
+    1 = the complement (the frozen fixture label ``"Over/Yes(side0)"``).
+    """
+    normalized_kind = str(kind)
+    normalized_side = str(side)
+    if normalized_kind not in _GENERIC_KINDS:
+        raise ValueError(f"kind must be one of {_GENERIC_KINDS}, got {kind!r}")
+    valid_sides = _GENERIC_SIDES[normalized_kind]
+    if normalized_side not in valid_sides:
+        raise ValueError(
+            f"side for kind {normalized_kind!r} must be one of "
+            f"{valid_sides}, got {side!r}"
+        )
+    if normalized_kind in ("total", "team_total", "spread"):
+        if line is None:
+            raise ValueError(f"kind {normalized_kind!r} requires a line")
+        checked_line: float | None = _half_ball_line(normalized_kind, line)
+    else:
+        if line is not None:
+            raise ValueError(
+                f"kind {normalized_kind!r} takes no line, got {line!r}"
+            )
+        checked_line = None
+    if normalized_kind in ("team_total", "spread"):
+        if team_side not in ("home", "away"):
+            raise ValueError(
+                f"kind {normalized_kind!r} requires team_side 'home' or "
+                f"'away', got {team_side!r}"
+            )
+        checked_team_side: str | None = team_side
+    else:
+        if team_side is not None:
+            raise ValueError(
+                f"kind {normalized_kind!r} takes no team_side, got {team_side!r}"
+            )
+        checked_team_side = None
+    complement = normalized_side in _COMPLEMENT_SIDES
+
+    forward_attr = ""
+    if normalized_kind == "total":
+        quote_source = "over_probability"
+        question = f"{market}: O/U {checked_line:g}"
+    elif normalized_kind == "btts":
+        quote_source = "both_teams_to_score"
+        question = f"{market}: BTTS"
+    elif normalized_kind == "team_total":
+        quote_source = "team_total_over"
+        team = home_team if checked_team_side == "home" else away_team
+        question = f"{market}: {team} O/U {checked_line:g}"
+    elif normalized_kind == "match_winner":
+        forward_attr = _MATCH_WINNER_ATTRS[normalized_side.removesuffix("_no")]
+        quote_source = f"MatchOutputs.{forward_attr}"
+        label = {
+            "home": f"{home_team} to win",
+            "home_no": f"{home_team} not to win",
+            "draw": "draw",
+            "draw_no": "no draw",
+            "away": f"{away_team} to win",
+            "away_no": f"{away_team} not to win",
+        }[normalized_side]
+        question = f"{market}: {label}"
+    else:  # spread
+        quote_source = "cover_probability"
+        team = home_team if checked_team_side == "home" else away_team
+        question = f"{market}: {team} {checked_line:+g}"
+
+    variants = fixture_variants(
+        xg_snapshot,
+        home_team,
+        home_league,
+        away_team,
+        away_league,
+        season=season,
+        bridge=bridge,
+    )
+    if variants is None:
+        return None
+    if normalized_kind == "total":
+        forward = tuple(
+            over_probability(variant.outputs, checked_line) for variant in variants
+        )
+    elif normalized_kind == "btts":
+        forward = tuple(
+            both_teams_to_score(variant.outputs) for variant in variants
+        )
+    elif normalized_kind == "team_total":
+        forward = tuple(
+            team_total_over(variant.outputs, checked_team_side, checked_line)
+            for variant in variants
+        )
+    elif normalized_kind == "match_winner":
+        forward = tuple(
+            getattr(variant.outputs, forward_attr) for variant in variants
+        )
+    else:  # spread
+        forward = tuple(
+            cover_probability(variant.outputs, checked_team_side, checked_line)
+            for variant in variants
+        )
+    quotes = forward if not complement else tuple(1.0 - quote for quote in forward)
+
+    candidate = SoccerCandidate(
+        match=market,
+        question=question,
+        kind=normalized_kind,
+        side=1 if complement else 0,
+        entry_ask_vwap250=entry_ask_vwap250,
+        model_median=median(quotes),
+        model_range=(min(quotes), max(quotes)),
+        qs_variants=quotes,
+        lambda_home=median([variant.lambdas[0] for variant in variants]),
+        lambda_away=median([variant.lambdas[1] for variant in variants]),
+        market_id=market_id,
+    )
+    cross_league = home_league != away_league
+    return CandidateEnvelope(
+        candidate=candidate,
+        kind=normalized_kind,
+        side=normalized_side,
+        line=checked_line,
+        team_side=checked_team_side,
+        quote_source=quote_source,
+        complement=complement,
+        bridge_consulted=bool(cross_league and bridge is not None),
+        bridge_source=bridge if cross_league else None,
     )
