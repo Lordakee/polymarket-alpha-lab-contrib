@@ -107,7 +107,7 @@ CLAUDE_PROBE_FILES = ('tests/test_claude_cli_probe.py', 'tests/test_claude_cli_p
 # paths below mirror the fix-list exactly (audit handoff 03-fix-list.md).
 PAPERSIM_FILES = ('tests/test_papersim_ledger.py', 'tests/test_papersim_perf_view_fix.py',
                    'tests/test_papersim_store.py', 'tests/test_papersim_store_native.py',
-                   'tests/test_papersim_migrations.py')
+                   'tests/test_papersim_migrations.py', 'tests/test_papersim_import_legacy.py')
 WINDOWS_PARTITIONS = ('storage', 'research', 'dispatch')
 LINUX_PARTITIONS = ('storage', 'research', 'dispatch', 'papersim')
 PUSH_PATHS = (
@@ -536,6 +536,25 @@ def test_linux_papersim_partition_boots_throwaway_pg18_cluster():
     # Both opt-in gates receive their environment from the throwaway cluster
     # (the names deliberately survive the job's PG* environment scrub).
     assert 'PAPERSIM_PG_DSN=postgresql://paper_sim@127.0.0.1:55432/paper_sim' in worker
+    # FX-09L: the archived legacy history fixture is mounted into the
+    # throwaway legacy face (read-only repo CSV files in the checkout)
+    # for the importer's re-observation, baseline and fingerprint proofs.
+    # decisions needs the explicit legacy column list: the mirrored
+    # repo schema adds the three boundary columns the archived CSV
+    # predates.
+    decisions_copy = (
+        f'-c "\\copy public.decisions (id,ts,market_id,question,side,price,shares,stake,fair_low,fair_high,spot,vol,horizon_days,sizing,reason,team,model_prediction,market_type) from '
+        f"'docs/paper-sim/ledger-snapshots/2026-11-12/decisions.csv' "
+        'with (format csv, header true)"'
+    )
+    assert decisions_copy in worker
+    for relation in ('resolutions', 'bankroll'):
+        expected_copy = (
+            f'-c "\\copy public.{relation} from '
+            f"'docs/paper-sim/ledger-snapshots/2026-11-12/{relation}.csv' "
+            'with (format csv, header true)"'
+        )
+        assert expected_copy in worker
     assert 'WP_P4_READONLY_PG=1' in worker
     assert '>> "$GITHUB_ENV"' in worker
 

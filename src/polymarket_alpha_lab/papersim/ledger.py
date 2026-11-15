@@ -155,13 +155,62 @@ def record_entry(
     *,
     evidence: tuple[str, ...] = (),
 ) -> PaperLedgerEntry:
-    """Build an entry event for a newly gated paper position."""
-    raise NotImplementedError
+    """Build an entry event for a newly gated paper position.
+
+    FX-09L completion of the former P0 stub (design 2026-11-15 v2, section
+    5.9): PURE event construction — validation and assembly only. Zero I/O,
+    zero persistence, zero clock reads, no default fee category, no
+    rounding. The returned entry carries the fixed ``event='entry'`` and
+    ``evidence`` normalized to a tuple; durable persistence stays with the
+    store adapters elsewhere in this package.
+    """
+    for name, value in (
+        ("position_id", position_id),
+        ("fixture", fixture),
+        ("question", question),
+        ("side", side),
+    ):
+        if type(value) is not str or not value:
+            raise ValueError(f"{name} must be a non-empty string")
+    _require_finite(notional, "notional")
+    if notional <= 0:
+        raise ValueError("notional must be positive")
+    _require_finite(price, "price")
+    if not 0.0 < price < 1.0:
+        raise ValueError("price must be in the open interval (0, 1)")
+    for item in evidence:
+        if type(item) is not str:
+            raise ValueError("evidence items must be strings")
+    return PaperLedgerEntry(
+        position_id=position_id,
+        fixture=fixture,
+        question=question,
+        side=side,
+        notional=notional,
+        price=price,
+        event="entry",
+        evidence=tuple(evidence),
+    )
 
 
 def mark_to_market(entry_price: float, exit_bid: float) -> float:
-    """Mark-to-market delta of a paper position versus its entry price."""
-    raise NotImplementedError
+    """Per-share mark-to-market delta: ``exit_bid - entry_price``.
+
+    FX-09L completion of the former P0 stub (design section 5.9). The unit
+    is pinned to the DOLLAR PRICE DIFFERENCE PER SHARE of the held side's
+    same token: the raw float subtraction — no rounding, no share
+    multiplication. Position size lives in the ledger store
+    (``entries.shares``), so unrealized PnL composes as
+    ``shares * mark_to_market(entry_price, mark)`` with a mark quoted on
+    the entry's own side/token (0.56 -> 0.54 is -0.02 per share).
+    """
+    _require_finite(entry_price, "entry_price")
+    if not 0.0 < entry_price < 1.0:
+        raise ValueError("entry_price must be in the open interval (0, 1)")
+    _require_finite(exit_bid, "exit_bid")
+    if not 0.0 <= exit_bid <= 1.0:
+        raise ValueError("exit_bid must be in the closed interval [0, 1]")
+    return exit_bid - entry_price
 
 
 def papersim_dsn(env: Mapping[str, str] | None = None) -> str:

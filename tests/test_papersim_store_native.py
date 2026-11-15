@@ -11,8 +11,10 @@ DSN equivalence proof.
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from hashlib import sha256
+from hashlib import md5, sha256
+import importlib.util
 import os
+import sys
 from pathlib import Path
 import uuid
 
@@ -593,3 +595,312 @@ def test_single_direction_fk_and_min_evidence_id_decision_rule(managed_face):
                       ('ev-dangling-' + uuid.uuid4().hex[:6], at(5)))
     owner.close()
     app.close()
+
+
+# ---------------------------------------------------------------------------
+# FX-09L: legacy import DB proofs and settlement cash-ledger proofs
+# (design 8.3 items 3-10; the offline dry-run contracts live in
+# tests/test_papersim_import_legacy.py)
+# ---------------------------------------------------------------------------
+
+LEGACY_DSN = os.environ.get('PAPERSIM_PG_DSN', '')
+LEGACY_FACE = pytest.mark.skipif(
+    not ENABLED or not LEGACY_DSN,
+    reason='the legacy-face proofs need the fixture-loaded throwaway '
+           'paper_sim cluster (PAPERSIM_PG_DSN)')
+SNAPSHOT_DIR = ROOT / 'docs' / 'paper-sim' / 'ledger-snapshots' / '2026-11-12'
+IMPORT_TOOL = ROOT / 'tools' / 'papersim_import_legacy.py'
+
+
+@pytest.fixture(scope='module')
+def importer():
+    spec = importlib.util.spec_from_file_location(
+        'papersim_import_legacy_native', IMPORT_TOOL)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module  # dataclass annotation resolution
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture(scope='module')
+def imported_plan(importer):
+    return importer.build_import_plan(importer.load_snapshot(SNAPSHOT_DIR))
+
+
+@NATIVE
+def test_legacy_import_executes_idempotently_and_conserves(
+        managed_face, importer, imported_plan):
+    _, app_dsn = managed_face
+    # Target through the adapter's validated explicit-DSN door.
+    store_psycopg = adapter()
+    target = store_psycopg.connect_explicit(
+        app_dsn, label='PAPERSIM_MIGRATIONS_PG_DSN')
+    try:
+        first = importer.execute_import(target, imported_plan)
+    finally:
+        target.close()
+    assert first['inserted'] == {'scan_runs': 1, 'candidates': 71, 'entries': 71,
+                                 'cash_events': 67, 'market_outcomes': 60,
+                                 'settlements': 66}
+    owner = connect(OWNER_DSN, autocommit=True)
+    with owner.cursor() as cursor:
+        cursor.execute('SELECT count(*) FROM papersim.candidates '
+                       'WHERE is_legacy AND legacy_source_id IS NOT NULL')
+        assert cursor.fetchone()[0] == 71
+        cursor.execute('SELECT count(*) FROM papersim.entries WHERE is_legacy')
+        assert cursor.fetchone()[0] == 71
+        cursor.execute('SELECT count(*) FROM papersim.market_outcomes '
+                       "WHERE source_kind = 'legacy_import'")
+        assert cursor.fetchone()[0] == 60
+        cursor.execute('SELECT count(*) FROM papersim.settlements WHERE is_legacy')
+        assert cursor.fetchone()[0] == 66
+        # 8.3-4: per-cent conservation against the legacy resolutions.
+        cursor.execute('SELECT sum(pnl_gross) FROM papersim.settlements '
+                       'WHERE is_legacy')  # the 09S seeds are not legacy rows
+        assert cursor.fetchone()[0] == Decimal('3768.33')
+        cursor.execute('SELECT e.legacy_source_id, s.pnl_gross, s.fee_total, '
+                       's.pnl_net FROM papersim.settlements s '
+                       'JOIN papersim.entries e ON e.entry_id = s.entry_id '
+                       "WHERE e.legacy_source_id IN ('1','14') "
+                       'ORDER BY e.legacy_source_id')
+        rows = cursor.fetchall()
+        assert [(row[1], row[2], row[3]) for row in rows] == [
+            (Decimal('743.79'), Decimal('25.46'), Decimal('718.33')),
+            (Decimal('561.41'), Decimal('19.08'), Decimal('542.33'))]
+        # 8.3-6: label semantics survive the round trip through SQL.
+        cursor.execute('SELECT o.outcome, o.outcome_detail FROM papersim.market_outcomes o '
+                       'JOIN papersim.settlements s ON s.source_outcome_id = o.outcome_id '
+                       "WHERE s.outcome_label IN ('win','loss') LIMIT 1")
+        unknown_label = cursor.fetchone()
+        assert unknown_label[0] == 'UNKNOWN'
+        assert unknown_label[1] in ('recorded_label=win', 'recorded_label=loss')
+        cursor.execute('SELECT count(*) FROM papersim.settlements s '
+                       'LEFT JOIN papersim.market_outcomes o '
+                       'ON o.outcome_id = s.source_outcome_id '
+                       'WHERE s.classification = \'EXIT\' AND s.exit_price IS NOT NULL '
+                       'AND o.outcome_id IS NULL')
+        assert cursor.fetchone()[0] == 5  # exits never mint market rows
+        cursor.execute('SELECT count(*) FROM papersim.settlements s '
+                       'JOIN papersim.entries e ON e.entry_id = s.entry_id '
+                       "WHERE s.classification = 'VOIDED_REFUND' "
+                       'AND s.proceeds = e.stake AND s.pnl_gross = 0 '
+                       'AND s.fee_total = 0')
+        assert cursor.fetchone()[0] == 4
+        # The single INITIAL anchor plus per-settle events exist.
+        cursor.execute('SELECT count(*) FROM papersim.bankroll_events '
+                       "WHERE event_key = 'legacy:bankroll:initial'")
+        assert cursor.fetchone()[0] == 1
+        cursor.execute("SELECT count(*) FROM papersim.bankroll_events "
+                       "WHERE event_key LIKE 'legacy:settle:%'")
+        assert cursor.fetchone()[0] == 66
+        # Append-only holds for importer-written rows, not just seeds.
+        psycopg = pytest.importorskip('psycopg')
+        with pytest.raises(psycopg.errors.DatabaseError,
+                           match='papersim_mutation_rejected'):
+            owner.execute('UPDATE papersim.settlements SET pnl_net = pnl_net')
+    owner.close()
+    # Idempotent re-run: nothing new, same mapping (design 7.5).
+    target = store_psycopg.connect_explicit(
+        app_dsn, label='PAPERSIM_MIGRATIONS_PG_DSN')
+    try:
+        second = importer.execute_import(target, imported_plan)
+    finally:
+        target.close()
+    assert second['inserted'] == {'scan_runs': 0, 'candidates': 0, 'entries': 0,
+                                  'cash_events': 0, 'market_outcomes': 0,
+                                  'settlements': 0}
+    assert second['scan_id'] == first['scan_id']
+    assert second['entry_ids'] == first['entry_ids']
+    owner = connect(OWNER_DSN, autocommit=True)
+    with owner.cursor() as cursor:
+        cursor.execute('SELECT count(*) FROM papersim.settlements WHERE is_legacy')
+        assert cursor.fetchone()[0] == 66
+    owner.close()
+
+
+@NATIVE
+def test_importer_without_authorization_writes_nothing_on_a_writable_face(
+        managed_face, importer, imported_plan, capsys):
+    _, app_dsn = managed_face
+    owner = connect(OWNER_DSN, autocommit=True)
+    with owner.cursor() as cursor:
+        cursor.execute('SELECT count(*) FROM papersim.scan_runs WHERE scan_key = %s',
+                       (imported_plan.scan_key,))
+        before = cursor.fetchone()[0]
+    owner.close()
+    # The gate refuses BEFORE any connection: a dead port proves it.
+    code = importer.main(['--dsn', 'postgresql://paper_sim@127.0.0.1:1/paper_sim'])
+    assert code == 2
+    assert 'production insertion is not authorized' in capsys.readouterr().err
+    owner = connect(OWNER_DSN, autocommit=True)
+    with owner.cursor() as cursor:
+        cursor.execute('SELECT count(*) FROM papersim.scan_runs WHERE scan_key = %s',
+                       (imported_plan.scan_key,))
+        assert cursor.fetchone()[0] == before
+    owner.close()
+
+
+@NATIVE
+def test_settlement_net_identity_check_rejects_drift(managed_face):
+    psycopg = pytest.importorskip('psycopg')
+    owner = connect(OWNER_DSN, autocommit=True)
+    app = connect(APP_DSN)
+    store_psycopg = adapter()
+    slug = unique_slug()
+    result = store_psycopg.record_scan(app, store.ScanSubmission(
+        scan=scan_run(),
+        candidates=(candidate(candidate_key='net-check', conclusion='ACCEPTED',
+                              market_slug=slug,
+                              price_evidence=(evidence(market_ref=slug),),
+                              entry=entry()),)))
+    with owner.cursor() as cursor:
+        cursor.execute('SELECT entry_id FROM papersim.entries WHERE candidate_id = %s',
+                       (result['candidate_ids']['net-check'],))
+        entry_id = cursor.fetchone()[0]
+        # 8.3-5 CHECK proof: pnl_net must equal pnl_gross - fee_total.
+        with pytest.raises(psycopg.errors.CheckViolation):
+            cursor.execute(
+                'INSERT INTO papersim.settlements (entry_id, classification, '
+                'win_loss, proceeds, pnl_gross, fee_total, pnl_net, '
+                'confirmed_by, confirmed_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+                (entry_id, 'NATURAL', 'win', 300, 50, 1, 48, 'x', at(80)))
+    owner.close()
+    app.close()
+
+
+@NATIVE
+def test_reversal_cash_events_reverse_by_reference_only(managed_face):
+    psycopg = pytest.importorskip('psycopg')
+    owner = connect(OWNER_DSN, autocommit=True)
+    marker = uuid.uuid4().hex[:10]
+    with owner.cursor() as cursor:
+        cursor.execute('INSERT INTO papersim.bankroll_events (event_key, occurred_at, '
+                       'currency, amount, reason, note) VALUES (%s,%s,%s,%s,%s,%s) '
+                       'RETURNING event_id',
+                       ('reversal-src-' + marker, at(10), 'USD', Decimal('12.34'),
+                        'ADJUSTMENT', 'fx09l reversal proof'))
+        source_id = cursor.fetchone()[0]
+        cursor.execute('INSERT INTO papersim.bankroll_events (event_key, occurred_at, '
+                       'currency, amount, reason, reverses_event_id) '
+                       'VALUES (%s,%s,%s,%s,%s,%s) RETURNING event_id',
+                       ('reversal-of-' + marker, at(11), 'USD', Decimal('-12.34'),
+                        'REVERSAL', source_id))
+        reversal_id = cursor.fetchone()[0]
+        assert reversal_id != source_id
+        # A REVERSAL without a reference is structurally refused (5.7).
+        with pytest.raises(psycopg.errors.CheckViolation):
+            cursor.execute('INSERT INTO papersim.bankroll_events (event_key, '
+                           'occurred_at, currency, amount, reason) '
+                           'VALUES (%s,%s,%s,%s,%s)',
+                           ('reversal-dangling-' + marker, at(12), 'USD',
+                            Decimal('-1.00'), 'REVERSAL'))
+        # One reversal per reversed event (unique reverses_event_id).
+        with pytest.raises(psycopg.errors.UniqueViolation):
+            cursor.execute('INSERT INTO papersim.bankroll_events (event_key, '
+                           'occurred_at, currency, amount, reason, reverses_event_id) '
+                           'VALUES (%s,%s,%s,%s,%s,%s)',
+                           ('reversal-dup-' + marker, at(13), 'USD', Decimal('-1.00'),
+                            'REVERSAL', source_id))
+        cursor.execute('SELECT coalesce(sum(amount), 0) FROM papersim.bankroll_events '
+                       'WHERE event_id IN (%s, %s)', (source_id, reversal_id))
+        assert cursor.fetchone()[0] == Decimal('0.00')  # reversal nets to zero
+    owner.close()
+
+
+@LEGACY_FACE
+def test_register_baseline_appends_observed_evidence_and_stays_private(
+        managed_face, importer):
+    from polymarket_alpha_lab.papersim import ledger, store_psycopg
+    _, app_dsn = managed_face
+    legacy_dsn = ledger.papersim_dsn()
+    owner = connect(OWNER_DSN, autocommit=True)
+    with owner.cursor() as cursor:
+        cursor.execute('SELECT count(*) FROM papersim_private.observed_baseline')
+        before = cursor.fetchone()[0]
+    owner.close()
+
+    def connect_legacy():
+        return store_psycopg.connect_legacy_readonly(legacy_dsn)
+
+    owner = connect(OWNER_DSN, autocommit=True)
+    try:
+        result = importer.register_baseline(
+            owner, connect_legacy, registered_by='fx09l-native-proof',
+            registered_run='fx09l-run-1')
+    finally:
+        owner.close()
+    assert result['registered'] >= 5
+    assert {'decisions', 'resolutions', 'bankroll',
+            'model_performance', 'forecast_calibration'} <= set(result['relations'])
+    owner = connect(OWNER_DSN, autocommit=True)
+    with owner.cursor() as cursor:
+        cursor.execute('SELECT count(*) FROM papersim_private.observed_baseline')
+        after = cursor.fetchone()[0]
+        assert after == before + result['registered']
+        # Select THIS run's rows: the 09S seed rows carry fixed later
+        # timestamps and no row counts, so observed_at ordering must not
+        # decide which observation is inspected.
+        cursor.execute('SELECT row_count FROM papersim_private.observed_baseline '
+                       "WHERE relation_name = 'decisions' AND registered_run = %s",
+                       ('fx09l-run-1',))
+        assert cursor.fetchone()[0] == 71  # fixture-loaded throwaway face
+        cursor.execute('SELECT definition_md5 FROM papersim_private.observed_baseline '
+                       "WHERE relation_name = 'model_performance' "
+                       "AND registered_run = %s", ('fx09l-run-1',))
+        assert cursor.fetchone()[0] is not None
+    owner.close()
+    # The evidence table stays invisible to the application role.
+    app = connect(app_dsn)
+    psycopg = pytest.importorskip('psycopg')
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        with app.cursor() as cursor:
+            cursor.execute('SELECT count(*) FROM papersim_private.observed_baseline')
+    app.close()
+
+
+@LEGACY_FACE
+def test_legacy_face_is_unchanged_by_import_and_registration(
+        managed_face, importer, imported_plan):
+    from polymarket_alpha_lab.papersim import ledger
+    store_psycopg = adapter()
+    _, app_dsn = managed_face
+
+    def fingerprint(connection):
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT c.relname, c.relkind FROM pg_class c '
+                           'JOIN pg_namespace n ON n.oid = c.relnamespace '
+                           "WHERE n.nspname = 'public' AND c.relkind IN ('r','v') "
+                           "AND c.relname NOT LIKE 'pg_%' ORDER BY c.relname")
+            relations = cursor.fetchall()
+            parts = []
+            for name, kind in relations:
+                if kind == 'v':
+                    definition = cursor.execute(
+                        'SELECT pg_get_viewdef(%s::regclass, true)', (name,)
+                    ).fetchone()[0]
+                    parts.append((name, kind, md5(
+                        definition.encode('utf-8')).hexdigest()))
+                else:
+                    count = cursor.execute(
+                        'SELECT count(*) FROM public.' + name).fetchone()[0]
+                    parts.append((name, kind, int(count)))
+        return tuple(parts)
+
+    legacy_dsn = ledger.papersim_dsn()
+    read_only = store_psycopg.connect_legacy_readonly(legacy_dsn)
+    before = fingerprint(read_only)
+    read_only.close()
+    # A full import dry run (offline files), an authorized execution against
+    # the MANAGED face and a read-only re-observation pass through; the
+    # legacy face itself is only ever read (8.3 item 8).
+    assert importer.main([]) == 0
+    target = store_psycopg.connect_explicit(
+        app_dsn, label='PAPERSIM_MIGRATIONS_PG_DSN')
+    try:
+        importer.execute_import(target, imported_plan)
+    finally:
+        target.close()
+    read_only = store_psycopg.connect_legacy_readonly(legacy_dsn)
+    after = fingerprint(read_only)
+    read_only.close()
+    assert after == before
