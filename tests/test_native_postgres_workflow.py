@@ -105,9 +105,13 @@ CLAUDE_PROBE_FILES = ('tests/test_claude_cli_probe.py', 'tests/test_claude_cli_p
 # FX-07 (2026-11-12): the live Linux matrix gains a fourth DB-facing
 # partition; the retired Windows matrix stays frozen without it. The push
 # paths below mirror the fix-list exactly (audit handoff 03-fix-list.md).
+# Final CLI node (2026-11-15): test_papersim_cli.py joins the papersim
+# native partition (the evaluate/replay subcommands have opt-in real-
+# cluster assertions); the precise one-line matrix append is pinned here.
 PAPERSIM_FILES = ('tests/test_papersim_ledger.py', 'tests/test_papersim_perf_view_fix.py',
                    'tests/test_papersim_store.py', 'tests/test_papersim_store_native.py',
-                   'tests/test_papersim_migrations.py', 'tests/test_papersim_import_legacy.py')
+                   'tests/test_papersim_migrations.py', 'tests/test_papersim_import_legacy.py',
+                   'tests/test_papersim_cli.py')
 WINDOWS_PARTITIONS = ('storage', 'research', 'dispatch')
 LINUX_PARTITIONS = ('storage', 'research', 'dispatch', 'papersim')
 PUSH_PATHS = (

@@ -1,4 +1,5 @@
-"""WP-P1 W5 tests: papersim CLI (selfcheck / schema / validate-dsn).
+"""WP-P1 W5 tests: papersim CLI (selfcheck / schema / validate-dsn) plus
+the final CLI wiring (evaluate / replay, M1 final node).
 
 The selfcheck invariant suite must run green end-to-end both in-process
 (``cli.main``) and as a real subprocess (``python -m
@@ -6,22 +7,38 @@ polymarket_alpha_lab.papersim.cli``); the schema subcommand must emit the
 ledger migration text byte-identically; validate-dsn must accept local
 DSNs, reject hosted/file fallbacks, never print the DSN value, never
 read the password file and obtain env-source metadata only through the
-sanctioned ``supabase_papersim_config`` boundary (F9 static gate). Every
-test here is read-only: no network, no database connection, no writes
-outside a temp dir.
+sanctioned ``supabase_papersim_config`` boundary (F9 static gate). The
+evaluate/replay subcommands are driven offline against in-memory stubs
+(read-only SELECT surface only), through the explicit JSON candidate
+file, and through the argument/error boundary (missing source group,
+unauthorized DSN rejected by the single audited validator before any
+connection). Every test here is read-only: no network, no database
+connection, no writes outside a temp dir. The opt-in native lane at the
+bottom proves both subcommands against a real disposable cluster.
 """
 
 from __future__ import annotations
 
+import datetime
+import json
+import os
 import re
 import subprocess
 import sys
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 
 from polymarket_alpha_lab import papersim
 from polymarket_alpha_lab.papersim import cli, ledger
+
+ROOT = Path(__file__).resolve().parents[1]
+ENABLED = os.environ.get('POLYMARKET_ALPHA_LAB_RUN_NATIVE_PROJECT_POSTGRES') == '1'
+OWNER_DSN = os.environ.get('PAPERSIM_NATIVE_MANAGED_OWNER_DSN', '')
+APP_DSN = os.environ.get('PAPERSIM_NATIVE_MANAGED_APP_DSN', '')
+NATIVE = pytest.mark.skipif(not ENABLED or not OWNER_DSN or not APP_DSN,
+                            reason='explicit native papersim CLI proof is opt-in')
 
 SELFCHECK_CHECK_NAMES = (
     "module-imports",
@@ -245,3 +262,394 @@ def test_missing_command_exits_two() -> None:
 def test_cli_main_is_the_package_export() -> None:
     assert papersim.cli_main is cli.main
     assert callable(papersim.cli_main)
+
+
+# ---------------------------------------------------------------------------
+# evaluate / replay (final CLI wiring) -- offline stubs and boundaries
+# ---------------------------------------------------------------------------
+
+STUB_NOW = datetime.datetime(2026, 11, 15, 12, 0, tzinfo=datetime.timezone.utc)
+LOCAL_DSN = "host=127.0.0.1 port=55433 dbname=paper_sim user=paper_sim"
+
+
+class _StubColumn:
+    def __init__(self, name: str):
+        self.name = name
+
+
+class _StubCursor:
+    def __init__(self, conn: "_StubStoreConn"):
+        self._conn = conn
+        self._rows: list = []
+        self._columns: list[str] = []
+
+    def execute(self, sql, params=None):
+        sql = " ".join(sql.split())
+        self._conn.statements.append(sql)
+        self._rows, self._columns = self._conn._execute(sql)
+
+    def fetchone(self):
+        return self._rows[0] if self._rows else None
+
+    def fetchall(self):
+        return list(self._rows)
+
+    @property
+    def description(self):
+        return [_StubColumn(name) for name in self._columns]
+
+
+class _StubTx:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class _StubStoreConn:
+    """In-memory stand-in speaking only the evaluate SELECT surface."""
+
+    def __init__(self, candidates, evidence=(), outcomes=()):
+        self._candidates = candidates
+        self._evidence = evidence
+        self._outcomes = outcomes
+        self.statements: list[str] = []
+
+    def _execute(self, sql):
+        if sql.startswith("SELECT c.candidate_id"):
+            columns = ["candidate_id", "candidate_key", "conclusion", "side",
+                       "market_type", "market_kind", "model_name", "model_version",
+                       "evaluated_at", "condition_id", "market_id", "market_slug",
+                       "gate_version", "stake", "price", "fee_category"]
+            return [tuple(row[name] for name in columns) for row in self._candidates], columns
+        if sql.startswith("SELECT candidate_id, evidence_role"):
+            columns = ["candidate_id", "evidence_role", "model_probability", "mid",
+                       "bid", "ask", "last"]
+            return [tuple(row[name] for name in columns) for row in self._evidence], columns
+        if sql.startswith("SELECT outcome_id, condition_id"):
+            columns = ["outcome_id", "condition_id", "market_id", "market_slug",
+                       "outcome", "observed_at"]
+            return [tuple(row[name] for name in columns) for row in self._outcomes], columns
+        raise AssertionError(f"unexpected SQL reached the stub: {sql}")
+
+    def cursor(self):
+        return _StubCursor(self)
+
+    def transaction(self):
+        return _StubTx()
+
+    def close(self):
+        pass
+
+
+def _stub_store() -> _StubStoreConn:
+    candidates = [
+        {"candidate_id": 1, "candidate_key": "k-acc", "conclusion": "ACCEPTED",
+         "side": "YES", "market_type": "terminal", "market_kind": "terminal",
+         "model_name": "gbm", "model_version": "r19", "evaluated_at": STUB_NOW,
+         "condition_id": None, "market_id": "m-1", "market_slug": None,
+         "gate_version": "gates-2026-11-07", "stake": Decimal("250"),
+         "price": Decimal("0.56"), "fee_category": "crypto"},
+        {"candidate_id": 2, "candidate_key": "k-rej", "conclusion": "REJECTED",
+         "side": "NO", "market_type": None, "market_kind": "other",
+         "model_name": "soccer", "model_version": "r23", "evaluated_at": STUB_NOW,
+         "condition_id": None, "market_id": None, "market_slug": "m-2",
+         "gate_version": "gates-2026-11-07", "stake": None, "price": None,
+         "fee_category": None},
+    ]
+    evidence = [
+        {"candidate_id": 1, "evidence_role": "DECISION",
+         "model_probability": Decimal("0.62"), "mid": Decimal("0.5"),
+         "bid": None, "ask": None, "last": None},
+        {"candidate_id": 1, "evidence_role": "CLOSE", "model_probability": None,
+         "mid": None, "bid": None, "ask": None, "last": Decimal("0.9")},
+        {"candidate_id": 2, "evidence_role": "DECISION",
+         "model_probability": Decimal("0.4"), "mid": None,
+         "bid": Decimal("0.44"), "ask": Decimal("0.46"), "last": None},
+    ]
+    outcomes = [
+        {"outcome_id": 1, "condition_id": None, "market_id": "m-1",
+         "market_slug": None, "outcome": "YES",
+         "observed_at": STUB_NOW + datetime.timedelta(hours=2)},
+        {"outcome_id": 2, "condition_id": None, "market_id": None,
+         "market_slug": "m-2", "outcome": "NO",
+         "observed_at": STUB_NOW + datetime.timedelta(hours=2)},
+    ]
+    return _StubStoreConn(candidates, evidence, outcomes)
+
+
+def test_evaluate_and_replay_help_document_the_read_only_contract(capsys) -> None:
+    for command in ("evaluate", "replay"):
+        with pytest.raises(SystemExit) as excinfo:
+            cli.main([command, "--help"])
+        assert excinfo.value.code == 0
+        out = capsys.readouterr().out
+        assert "ead-only" in out
+        assert "--managed" in out and "--dsn" in out
+
+
+def test_evaluate_reads_the_store_with_selects_only(monkeypatch, capsys) -> None:
+    conn = _stub_store()
+    monkeypatch.setattr(cli, "_open_readonly_connection", lambda args, label: conn)
+    # The M1 store carries no recorded settlement PnL, so entered+settled
+    # rows evaluate under the recomputed basis.
+    code = cli.main(["evaluate", "--managed", "--pnl-basis", "recomputed"])
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert conn.statements and all(sql.startswith("SELECT") for sql in conn.statements)
+    report = json.loads(out)
+    from polymarket_alpha_lab.papersim import evaluation
+    assert report["algorithm_version"] == evaluation.ALGORITHM_VERSION
+    assert report["promotion_rules_version"] == evaluation.PROMOTION_RULES_VERSION
+    assert report["paper_only"] is True and report["readonly"] is True
+    assert len(report["queues"]) >= 1
+    # Deterministic: the same evidence evaluates to identical output bytes.
+    cli.main(["evaluate", "--managed", "--pnl-basis", "recomputed"])
+    assert capsys.readouterr().out == out
+
+
+def test_evaluate_json_input_runs_without_any_connection(monkeypatch, capsys, tmp_path) -> None:
+    def _forbidden(args, label):
+        raise AssertionError("no connection may be opened for --json-input")
+
+    monkeypatch.setattr(cli, "_open_readonly_connection", _forbidden)
+    document = {
+        "candidates": [
+            {"candidate_id": "j1", "model_key": "gbm:r19", "market_type": "terminal",
+             "gate_version": "gates-2026-11-07", "market_key": "m-1",
+             "model_probability": 0.62, "market_mid": 0.5, "accepted": True,
+             "stake": 250.0, "fill_price": 0.56, "side": "YES",
+             "fee_category": "crypto", "fill_provenance": "book_walk",
+             "outcome": "YES", "recorded_pnl": 194.4,
+             "decision_time": "2026-11-15T12:00:00+00:00",
+             "settled_time": "2026-11-15T14:00:00+00:00", "close_price": 0.9},
+            {"candidate_id": "j2", "model_key": "soccer:r23", "market_type": "other",
+             "gate_version": "gates-2026-11-07", "market_key": "m-2",
+             "model_probability": 0.4, "market_mid": 0.45, "accepted": False,
+             "side": "NO", "outcome": None, "decision_time": "2026-11-15T12:00:00+00:00"},
+        ]
+    }
+    path = tmp_path / "queue.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    code = cli.main(["evaluate", "--json-input", str(path)])
+    out = capsys.readouterr().out
+    assert code == 0, out
+    report = json.loads(out)
+    assert sum(queue["counts"]["candidates"] for queue in report["queues"]) == 2
+    cli.main(["evaluate", "--json-input", str(path)])
+    assert capsys.readouterr().out == out  # deterministic
+
+
+def test_evaluate_json_input_rejects_unknown_fields_and_garbage(capsys, tmp_path) -> None:
+    bad_fields = tmp_path / "bad-fields.json"
+    bad_fields.write_text(json.dumps([{"candidate_id": "x", "rogue": 1}]), encoding="utf-8")
+    code = cli.main(["evaluate", "--json-input", str(bad_fields)])
+    assert code == 1
+    assert "papersim_cli_json_field_unknown" in capsys.readouterr().err
+    garbage = tmp_path / "garbage.json"
+    garbage.write_text(json.dumps({"no_candidates": []}), encoding="utf-8")
+    code = cli.main(["evaluate", "--json-input", str(garbage)])
+    assert code == 1
+    assert "papersim_cli_json_input_invalid" in capsys.readouterr().err
+    missing = tmp_path / "absent.json"
+    code = cli.main(["evaluate", "--json-input", str(missing)])
+    assert code == 1
+    assert "evaluate: FAIL" in capsys.readouterr().err
+
+
+def test_evaluate_requires_exactly_one_source() -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["evaluate"])
+    assert excinfo.value.code == 2
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["evaluate", "--managed", "--json-input", "x.json"])
+    assert excinfo.value.code == 2
+
+
+def test_evaluate_rejects_unauthorized_dsn_before_any_connection() -> None:
+    # Subprocess isolation: the offline suite keeps the driver out of
+    # sys.modules; the validator path still runs for real in the child.
+    result = subprocess.run(
+        [sys.executable, "-m", "polymarket_alpha_lab.papersim.cli",
+         "evaluate", "--dsn", HOSTED_DSN],
+        capture_output=True, text=True, timeout=120,
+    )
+    assert result.returncode == 1
+    assert "evaluate: FAIL" in result.stderr
+    assert "must point to local Postgres" in result.stderr
+    # The rejected value is not leaked into the report.
+    assert "db.internal.example.com" not in result.stderr
+
+
+def test_replay_requires_candidate_trusted_commit_and_source() -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["replay"])
+    assert excinfo.value.code == 2
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["replay", "7", "--dsn", LOCAL_DSN])  # missing --trusted-commit
+    assert excinfo.value.code == 2
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["replay", "not-an-int", "--trusted-commit", "a" * 40, "--dsn", LOCAL_DSN])
+    assert excinfo.value.code == 2
+
+
+def test_replay_rejects_unauthorized_dsn_before_any_connection() -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "polymarket_alpha_lab.papersim.cli",
+         "replay", "7", "--trusted-commit", "a" * 40, "--dsn", HOSTED_DSN],
+        capture_output=True, text=True, timeout=120,
+    )
+    assert result.returncode == 1
+    assert "replay: FAIL" in result.stderr
+    assert "must point to local Postgres" in result.stderr
+    assert "db.internal.example.com" not in result.stderr
+
+
+class _ClosableConn:
+    """Adapter giving the in-memory record the connection's close face."""
+
+    def __init__(self, inner):
+        self._inner = inner
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    def close(self):
+        pass
+
+
+def test_replay_subcommand_end_to_end_on_the_in_memory_record(monkeypatch, capsys) -> None:
+    from tests.test_papersim_replay import COMMIT, FakePapersim, bound_set
+
+    db = _ClosableConn(FakePapersim())
+    ids = bound_set(db._inner)
+    db._inner.statements.clear()  # only the replay call's statements count
+    monkeypatch.setattr(cli, "_open_readonly_connection", lambda args, label: db)
+    code = cli.main(["replay", str(ids["k-soccer48-accepted"]),
+                     "--trusted-commit", COMMIT, "--dsn", LOCAL_DSN])
+    out = capsys.readouterr().out
+    assert code == 0, out
+    result = json.loads(out)
+    assert result["matched"] is True and result["mode"] == "entry_request"
+    assert result["code_commit"] == COMMIT
+    assert all(sql.startswith("SELECT") for sql in db.statements)
+
+    code = cli.main(["replay", str(ids["k-soccer48-accepted"]),
+                     "--trusted-commit", "b" * 40, "--dsn", LOCAL_DSN])
+    assert code == 1
+    assert "papersim_replay_code_commit_mismatch" in capsys.readouterr().err
+    code = cli.main(["replay", "999", "--trusted-commit", COMMIT, "--dsn", LOCAL_DSN])
+    assert code == 1
+    assert "papersim_replay_candidate_missing" in capsys.readouterr().err
+
+
+def test_cli_evaluate_replay_add_no_environment_reads() -> None:
+    """The F9 static gate covers the new subcommands too: no direct env reads."""
+    source = Path(cli.__file__).read_text(encoding="utf-8")
+    assert re.search(r"\benviron\b", source) is None
+    assert re.search(r"\bgetenv\b", source) is None
+
+
+# ---------------------------------------------------------------------------
+# evaluate / replay (final CLI wiring) -- opt-in native lane
+# ---------------------------------------------------------------------------
+
+def adapter():
+    if not ENABLED:
+        pytest.skip('the papersim connection adapter runs in the native lane only')
+    return pytest.importorskip('polymarket_alpha_lab.papersim.store_psycopg')
+
+
+def connect(dsn, *, autocommit=False):
+    psycopg = pytest.importorskip('psycopg')
+    connection = psycopg.connect(dsn)
+    connection.autocommit = autocommit
+    return connection
+
+
+@pytest.fixture(scope='module')
+def managed_face():
+    from polymarket_alpha_lab.papersim import migrations as pm
+    owner = connect(OWNER_DSN)
+    result = pm.apply_pending_migrations(owner, ROOT)
+    assert result['applied'] in (0, 1, 2)
+    assert pm.migration_status(owner, ROOT)['pending'] == []
+    owner.close()
+    return OWNER_DSN, APP_DSN
+
+
+@NATIVE
+def test_native_evaluate_and_replay_over_the_managed_store(managed_face, capsys) -> None:
+    store_psycopg = adapter()
+    import dataclasses
+
+    from polymarket_alpha_lab import replay
+    from polymarket_alpha_lab.papersim import gates, snapshots, store
+    from polymarket_alpha_lab.papersim.crypto_model import TerminalProbability
+    from polymarket_alpha_lab.papersim.pipeline import EntryRequest, decide_entry
+    from polymarket_alpha_lab.papersim.store import PriceEvidenceObservation
+
+    _, app_dsn = managed_face
+    app = connect(app_dsn)
+    scan = replay.bind_scan_run(team='crypto_eth',
+                                started_at=STUB_NOW - datetime.timedelta(minutes=10),
+                                finished_at=STUB_NOW + datetime.timedelta(minutes=5),
+                                code_commit='c' * 40)
+    request = EntryRequest(
+        market_id='m-native-cli', question='Ethereum below $2,000 on date',
+        fixture='ETH-2000', market_kind='crypto_terminal', side='yes',
+        book=[(0.15, 5000.0)], fee_category='crypto',
+        probability=TerminalProbability(asset='ETH', barrier=2000.0,
+                                        horizon_hours=1595.12,
+                                        convention_a=0.2224, convention_b=0.2531),
+        yes_when='below', buy_side='yes', yes_ask=0.15, no_ask=0.80,
+        gamma_liquidity=6000.0,
+        news=gates.check_news('ETH-2000', 'recheck T-1d', news_delta='unchanged'),
+        bankroll=10_000.0, cash=10_000.0, reserved=0.0,
+        book_time=STUB_NOW, now=STUB_NOW, max_book_age_seconds=300.0)
+    decision = decide_entry(request)
+    digest = snapshots.register_snapshot(app, snapshots.SnapshotRegistration(
+        content=replay.bound_book_bytes(request), kind='clob_book',
+        source='clob:m-native-cli', fetched_at=request.book_time))['content_sha256']
+    accepted = replay.bind_candidate(
+        request, decision, team='crypto_eth', candidate_key='n-cli-accepted',
+        side='YES', market_kind='terminal', evaluated_at=STUB_NOW,
+        market_ref_kind='market_id', market_id='m-native-cli',
+        median_probability=replay.bound_median_probability(request, decision),
+        snapshot_refs=[digest], book_snapshot_sha256=digest,
+        entry=replay.bind_entry(decision, entered_at=STUB_NOW) if decision.accepted else None)
+    close = PriceEvidenceObservation(
+        observed_at=STUB_NOW + datetime.timedelta(hours=1), evidence_role='CLOSE',
+        market_ref_kind='market_id', market_ref='m-native-cli', side='YES',
+        last=Decimal('0.9'), source_kind='gamma_close', source_ref='close-m-native-cli')
+    accepted = dataclasses.replace(accepted, price_evidence=accepted.price_evidence + (close,))
+    stale = dataclasses.replace(
+        request, book_time=STUB_NOW - datetime.timedelta(seconds=900))
+    rejected = replay.bind_candidate(
+        stale, decide_entry(stale), team='crypto_eth', candidate_key='n-cli-rejected',
+        side='NO', market_kind='terminal', evaluated_at=STUB_NOW,
+        market_ref_kind='market_id', market_id='m-native-cli',
+        snapshot_refs=[digest], book_snapshot_sha256=digest)
+    written = store_psycopg.record_scan(
+        app, store.ScanSubmission(scan=scan, candidates=(accepted, rejected)))
+    store_psycopg.record_market_outcome(app, store.MarketOutcomeObservation(
+        market_id='m-native-cli', outcome='YES',
+        observed_at=STUB_NOW + datetime.timedelta(hours=2),
+        source_kind='gamma_close', source_ref='close-m-native-cli'))
+    app.commit()
+    app.close()
+
+    code = cli.main(['evaluate', '--dsn', app_dsn, '--pnl-basis', 'recomputed'])
+    out = capsys.readouterr().out
+    assert code == 0, out
+    report = json.loads(out)
+    assert report['queues'], 'the recorded scan must feed the evaluation queue'
+    assert report['readonly'] is True
+
+    candidate_id = written['candidate_ids']['n-cli-accepted']
+    code = cli.main(['replay', str(candidate_id), '--trusted-commit', 'c' * 40,
+                     '--dsn', app_dsn])
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert json.loads(out)['matched'] is True

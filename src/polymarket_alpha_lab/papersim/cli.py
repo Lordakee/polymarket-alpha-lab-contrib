@@ -40,14 +40,30 @@ Subcommands (WP-P1 final commit):
   environment. Never opens a connection, never reads
   ``PAPERSIM_PG_PASSWORD_FILE`` and never prints the DSN value (repo
   redaction discipline).
+- ``evaluate`` (final CLI wiring, M1): FX-11 queue evaluation over
+  recorded paper evidence. The candidate queue comes from the managed
+  papersim store (read-only SELECTs through the reviewed connection
+  adapter), an explicit isolated-cluster DSN validated by the single
+  audited local validator, or an explicit JSON candidate file. Prints
+  one JSON :class:`~polymarket_alpha_lab.papersim.evaluation.EvaluationReport`;
+  paper-only / report-only / readonly.
+- ``replay`` (final CLI wiring, M1): FX-12 forensic replay of one
+  recorded candidate by id. Requires the operator's
+  ``--trusted-commit`` (the recorded code commit is compared against
+  it, never against the ambient HEAD); read-only SELECTs through the
+  reviewed connection adapter; prints the replay match summary as
+  JSON. No network, no code execution from the record.
 """
 
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import datetime
 import json
-from collections.abc import Callable, Sequence
+import sys
+from collections.abc import Callable, Mapping, Sequence
+from decimal import Decimal
 from pathlib import Path
 
 from polymarket_alpha_lab.papersim import (
@@ -512,6 +528,226 @@ def _cmd_validate_dsn() -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------
+# evaluate / replay (final CLI wiring: FX-11 evaluation, FX-12 replay)
+# ---------------------------------------------------------------------------
+
+#: Read-only candidate/evidence/outcome SELECTs for ``evaluate``. The
+#: decision-time observation is the DECISION row with the smallest
+#: evidence_id (design P3-8 derived rule); the close mark is the latest
+#: CLOSE row; the effective market outcome reuses the pure FX-09S
+#: selection (latest non-UNKNOWN observation, tie-break outcome_id DESC).
+_EVAL_CANDIDATES_SQL = (
+    "SELECT c.candidate_id, c.candidate_key, c.conclusion, c.side, c.market_type, "
+    "c.market_kind, c.model_name, c.model_version, c.evaluated_at, c.condition_id, "
+    "c.market_id, c.market_slug, s.gate_version, e.stake, e.price, e.fee_category "
+    "FROM papersim.candidates c JOIN papersim.scan_runs s ON s.scan_id = c.scan_id "
+    "LEFT JOIN papersim.entries e ON e.candidate_id = c.candidate_id "
+    "ORDER BY c.candidate_id"
+)
+_EVAL_EVIDENCE_SQL = (
+    "SELECT candidate_id, evidence_role, model_probability, mid, bid, ask, last "
+    "FROM papersim.candidate_price_evidence ORDER BY evidence_id"
+)
+_EVAL_OUTCOMES_SQL = (
+    "SELECT outcome_id, condition_id, market_id, market_slug, outcome, observed_at "
+    "FROM papersim.market_outcomes ORDER BY outcome_id"
+)
+
+
+def _jsonify(value):
+    """Recursive JSON-ready conversion of the frozen report dataclasses."""
+    if value is None or isinstance(value, (bool, str, int)):
+        return value
+    if isinstance(value, float):
+        return value
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, datetime.datetime):
+        return value.isoformat()
+    if isinstance(value, (list, tuple)):
+        return [_jsonify(item) for item in value]
+    if isinstance(value, Mapping):
+        return {str(key): _jsonify(item) for key, item in value.items()}
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return {field.name: _jsonify(getattr(value, field.name))
+                for field in dataclasses.fields(value)}
+    raise ValueError(
+        f"papersim_cli_output_unserializable: {type(value).__qualname__}")
+
+
+def _open_readonly_connection(args, *, label: str):
+    """Read-only source connection through the reviewed papersim adapter.
+
+    ``--managed`` opens the project-private managed application face
+    (its DSN already passed the single audited local validator inside
+    the adapter, before any connection is constructed); ``--dsn`` is an
+    explicit DSN for an isolated/throwaway cluster validated by the
+    same single audited validator. This module opens no connection
+    itself and never reads the process environment.
+    """
+    from polymarket_alpha_lab.papersim import store_psycopg
+    if args.managed:
+        return store_psycopg.connect_managed(Path(args.repo_root))
+    return store_psycopg.connect_explicit(args.dsn, label=label)
+
+
+def _fetch_rows(conn, sql: str) -> list[dict]:
+    with conn.transaction():
+        cursor = conn.cursor()
+        cursor.execute(sql)
+        columns = [description.name for description in cursor.description]
+        rows = cursor.fetchall()
+    return [dict(zip(columns, row, strict=True)) for row in rows]
+
+
+def _number(value):
+    return None if value is None else float(value)
+
+
+def _decision_mid(evidence) -> float | None:
+    if evidence is None:
+        return None
+    if evidence["mid"] is not None:
+        return _number(evidence["mid"])
+    if evidence["bid"] is not None and evidence["ask"] is not None:
+        return (_number(evidence["bid"]) + _number(evidence["ask"])) / 2.0
+    return None
+
+
+def _evaluation_candidates_from_store(conn) -> tuple:
+    """Build the FX-11 evaluation queue from the managed store (read-only).
+
+    Every statement is a SELECT. Rejected candidates keep their decision
+    probabilities and never carry entry fields; construction-failed
+    candidates fall back to their candidate key as the market key (no
+    market identity was ever bound); an UNKNOWN effective outcome stays
+    ``None`` (coverage gap), never a filled value.
+    """
+    from polymarket_alpha_lab.papersim import evaluation, store
+
+    candidate_rows = _fetch_rows(conn, _EVAL_CANDIDATES_SQL)
+    decision_evidence: dict[int, dict] = {}
+    close_evidence: dict[int, dict] = {}
+    for row in _fetch_rows(conn, _EVAL_EVIDENCE_SQL):
+        candidate_id = int(row["candidate_id"])
+        if row["evidence_role"] == "DECISION":
+            decision_evidence.setdefault(candidate_id, row)
+        elif row["evidence_role"] == "CLOSE":
+            close_evidence[candidate_id] = row
+    observations: dict[str, list[dict]] = {}
+    for row in _fetch_rows(conn, _EVAL_OUTCOMES_SQL):
+        for column in ("condition_id", "market_id", "market_slug"):
+            identity = row[column]
+            if identity is not None:
+                observations.setdefault(identity, []).append(row)
+    built = []
+    for row in candidate_rows:
+        candidate_id = int(row["candidate_id"])
+        decision = decision_evidence.get(candidate_id)
+        close = close_evidence.get(candidate_id)
+        identity = row["condition_id"] or row["market_id"] or row["market_slug"]
+        outcome, settled_at = None, None
+        if identity is not None:
+            effective = store.select_effective_outcome(observations.get(identity, ()))
+            if effective.is_effective:
+                outcome, settled_at = effective.outcome, effective.observed_at
+        close_price = None
+        if close is not None:
+            close_price = _number(close["last"] if close["last"] is not None
+                                  else close["mid"])
+        entered = row["stake"] is not None
+        built.append(evaluation.EvaluationCandidate(
+            candidate_id=str(candidate_id),
+            model_key=f"{row['model_name']}:{row['model_version']}",
+            market_type=row["market_type"] or row["market_kind"],
+            gate_version=row["gate_version"],
+            market_key=identity or row["candidate_key"],
+            model_probability=None if decision is None
+            else _number(decision["model_probability"]),
+            market_mid=_decision_mid(decision),
+            accepted=row["conclusion"] == "ACCEPTED",
+            stake=_number(row["stake"]) if entered else None,
+            fill_price=_number(row["price"]) if entered else None,
+            side=row["side"],
+            fee_category=row["fee_category"] if entered else None,
+            fill_provenance="book_walk" if entered else None,
+            outcome=outcome,
+            recorded_pnl=None,
+            decision_time=row["evaluated_at"],
+            settled_time=settled_at,
+            close_price=close_price,
+            match_key=None,
+        ))
+    return tuple(built)
+
+
+def _evaluation_candidates_from_json(path: Path) -> tuple:
+    """The explicit JSON candidate file (no connection is opened at all)."""
+    from polymarket_alpha_lab.papersim import evaluation
+
+    document = json.loads(path.read_text(encoding="utf-8"))
+    rows = document.get("candidates") if isinstance(document, dict) else document
+    if not isinstance(rows, list):
+        raise ValueError(
+            "papersim_cli_json_input_invalid: expected a list of candidates "
+            "or an object with a 'candidates' list")
+    fields = {field.name for field in dataclasses.fields(evaluation.EvaluationCandidate)}
+    candidates = []
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError("papersim_cli_json_input_invalid: rows must be objects")
+        unknown = set(row) - fields
+        if unknown:
+            raise ValueError("papersim_cli_json_field_unknown: "
+                             + ",".join(sorted(unknown)))
+        kwargs = dict(row)
+        for name in ("decision_time", "settled_time"):
+            if isinstance(kwargs.get(name), str):
+                kwargs[name] = datetime.datetime.fromisoformat(kwargs[name])
+        candidates.append(evaluation.EvaluationCandidate(**kwargs))
+    return tuple(candidates)
+
+
+def _cmd_evaluate(args) -> int:
+    from polymarket_alpha_lab.papersim import evaluation
+
+    try:
+        if args.json_input is not None:
+            candidates = _evaluation_candidates_from_json(Path(args.json_input))
+        else:
+            connection = _open_readonly_connection(args, label="PAPERSIM_EVALUATION_PG_DSN")
+            try:
+                candidates = _evaluation_candidates_from_store(connection)
+            finally:
+                connection.close()
+        report = evaluation.evaluate_queues(candidates, pnl_basis=args.pnl_basis)
+        payload = _jsonify(report)
+    except (ValueError, OSError) as error:
+        print(f"evaluate: FAIL: {error}", file=sys.stderr)
+        return 1
+    print(json.dumps(payload, sort_keys=True, allow_nan=False))
+    return 0
+
+
+def _cmd_replay(args) -> int:
+    from polymarket_alpha_lab import replay as replay_engine
+
+    try:
+        connection = _open_readonly_connection(args, label="PAPERSIM_REPLAY_PG_DSN")
+        try:
+            result = replay_engine.replay(connection, args.candidate_id,
+                                          trusted_code_commit=args.trusted_commit)
+        finally:
+            connection.close()
+        payload = _jsonify(result)
+    except (ValueError, OSError) as error:
+        print(f"replay: FAIL: {error}", file=sys.stderr)
+        return 1
+    print(json.dumps(payload, sort_keys=True, allow_nan=False))
+    return 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="papersim",
@@ -533,6 +769,75 @@ def _build_parser() -> argparse.ArgumentParser:
         "validate-dsn",
         help="report-only validation of the ledger DSN environment variable (never connects)",
     )
+    evaluate_parser = subparsers.add_parser(
+        "evaluate",
+        help="FX-11 queue evaluation over recorded paper evidence (read-only)",
+        description=(
+            "Evaluate paper-sim queues (scoring, OD-G promotion verdicts, "
+            "pause suggestions) from the managed papersim store, an explicit "
+            "isolated-cluster DSN, or an explicit JSON candidate file. "
+            "Read-only: no order, account or credential surface."
+        ),
+    )
+    evaluate_parser.add_argument(
+        "--pnl-basis", choices=("recorded", "recomputed"), default="recorded",
+        help="gross-PnL basis for ROI metrics (default: recorded; store reads "
+             "carry no recorded settlement PnL yet, so entered+settled rows "
+             "evaluate under 'recomputed')",
+    )
+    evaluate_source = evaluate_parser.add_mutually_exclusive_group(required=True)
+    evaluate_source.add_argument(
+        "--managed", action="store_true",
+        help="read through the project-private managed application instance",
+    )
+    evaluate_source.add_argument(
+        "--dsn",
+        help="explicit DSN for an isolated/throwaway cluster "
+             "(validated by the single audited local DSN validator)",
+    )
+    evaluate_source.add_argument(
+        "--json-input",
+        help="explicit JSON candidate file (list or {'candidates': [...]}; "
+             "no connection is opened)",
+    )
+    evaluate_parser.add_argument(
+        "--repo-root", default=".",
+        help="repository root of the managed instance (default: .)",
+    )
+    replay_parser = subparsers.add_parser(
+        "replay",
+        help="FX-12 forensic replay of one recorded candidate (read-only)",
+        description=(
+            "Re-read one recorded candidate, verify its snapshots, code "
+            "commit, policy fingerprint and decision-time evidence, recompute "
+            "decide_entry in this reviewed environment and compare every "
+            "field. The recorded code commit is compared against the "
+            "operator-supplied --trusted-commit, never the ambient HEAD. "
+            "Read-only: no order, account or credential surface."
+        ),
+    )
+    replay_parser.add_argument(
+        "candidate_id", type=int,
+        help="candidate_id of the recorded candidate to replay",
+    )
+    replay_parser.add_argument(
+        "--trusted-commit", required=True,
+        help="the reviewed 40-hex code commit the record must match",
+    )
+    replay_source = replay_parser.add_mutually_exclusive_group(required=True)
+    replay_source.add_argument(
+        "--managed", action="store_true",
+        help="read through the project-private managed application instance",
+    )
+    replay_source.add_argument(
+        "--dsn",
+        help="explicit DSN for an isolated/throwaway cluster "
+             "(validated by the single audited local DSN validator)",
+    )
+    replay_parser.add_argument(
+        "--repo-root", default=".",
+        help="repository root of the managed instance (default: .)",
+    )
     return parser
 
 
@@ -546,6 +851,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _cmd_schema()
     if args.command == "validate-dsn":
         return _cmd_validate_dsn()
+    if args.command == "evaluate":
+        return _cmd_evaluate(args)
+    if args.command == "replay":
+        return _cmd_replay(args)
     parser.error(f"unknown command {args.command!r}")  # pragma: no cover
     raise AssertionError("unreachable")  # pragma: no cover
 
