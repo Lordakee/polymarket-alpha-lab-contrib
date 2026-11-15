@@ -1051,15 +1051,16 @@ def _seed_wait_local_time_wait(value):
     return json.loads(value).get('local', {}).get('TIME_WAIT', 0)
 
 
-def _wait_for_seed_port_ready(rig, *, budget_s=90.0, interval_s=1.0,
-                              _clock=None, _sleep=None):
-    """Bounded readiness wait (codex DECISION 4): proceed with the one
-    original seed run only once the task port has no local TIME_WAIT.
+def _wait_for_old_port_ready(rig, *, budget_s=90.0, interval_s=1.0,
+                             _clock=None, _sleep=None):
+    """Bounded readiness wait (codex DECISION 4): proceed with the next
+    OLD engine bind — any session-opening OLD payload, seed included —
+    only once the task port has no local TIME_WAIT.
 
     UNKNOWN ('UNAVAILABLE') is never treated as zero; timeout and
     indeterminate /proc input fail honestly via pytest.fail before any
-    seed child is started.  Only the task port is queried; the two
-    snapshot lines are whitelisted evidence (counts, port, elapsed)."""
+    bind payload child is started.  Only the task port is queried; the
+    two snapshot lines are whitelisted evidence (counts, port, elapsed)."""
     clock = _clock or time.monotonic
     sleep = _sleep or time.sleep
     port = rig['port']
@@ -1080,8 +1081,8 @@ def _wait_for_seed_port_ready(rig, *, budget_s=90.0, interval_s=1.0,
             pytest.fail('OLD_SEED_WAIT_UNAVAILABLE port=' + str(port)
                         + ' waited_s=' + format(clock() - started, '.3f')
                         + ' tcp=' + str(tcp) + ' tcp6=' + str(tcp6)
-                        + ' (UNKNOWN is never treated as zero; seed not '
-                          'started)')
+                        + ' (UNKNOWN is never treated as zero; bind payload '
+                          'not started)')
         if left == 0 and left6 == 0:
             break
         if clock() >= deadline:
@@ -1089,8 +1090,8 @@ def _wait_for_seed_port_ready(rig, *, budget_s=90.0, interval_s=1.0,
                         + ' budget_s=' + str(budget_s)
                         + ' waited_s=' + format(clock() - started, '.3f')
                         + ' tcp=' + str(tcp) + ' tcp6=' + str(tcp6)
-                        + ' (local TIME_WAIT did not clear; seed not '
-                          'started)')
+                        + ' (local TIME_WAIT did not clear; bind payload '
+                          'not started)')
         sleep(interval_s)
         tcp, tcp6 = snapshot()
     print(f'OLD_SEED_WAIT_AFTER port={port} tcp={tcp} tcp6={tcp6} '
@@ -1123,6 +1124,20 @@ def _old_payload(rig, name: str, text: str, *arguments, timeout: int = 900):
             pass  # Observation cannot replace the existing provenance assertion.
     assert 'PAYLOAD_SOURCE_OK' in _stderr_text(result)
     return result
+
+
+def _old_bind_payload(rig, name: str, text: str, *arguments, timeout: int = 900,
+                      _clock=None, _sleep=None):
+    """`_old_payload` for payloads that open a session and therefore bind
+    the frozen OLD engine (session()/up() both reach _start's no-reuse
+    port precheck): the same bounded readiness wait (codex DECISION 4,
+    R03-fix semantics) runs first, so a lingering local TIME_WAIT from an
+    earlier phase is waited out instead of mis-refused as
+    project_postgres_port_in_use (errno 98).  Production callers use the
+    real clock/sleep defaults; the injectable pair exists only for the
+    offline synthetic probes."""
+    _wait_for_old_port_ready(rig, _clock=_clock, _sleep=_sleep)
+    return _old_payload(rig, name, text, *arguments, timeout=timeout)
 
 
 def _current_cli(rig, script: str, *arguments, source=None,
@@ -1158,7 +1173,7 @@ def initialize_and_seed_with_old_source(rig) -> None:
     assert _blocked_reason(refused) == 'project_postgres_existing_data_not_reinitialized'
     status = _old_cli(rig, '--root', str(original), 'status')
     assert _json_stdout(status)['status'] == 'stopped'
-    _wait_for_seed_port_ready(rig)
+    _wait_for_old_port_ready(rig)
     seeded = _old_payload(rig, 'seed.py', _SEED_PAYLOAD, str(original), str(rig['port']))
     assert seeded.returncode == 0, _stderr_text(seeded)
     records = _json_stdout(seeded)
@@ -1181,8 +1196,8 @@ def initialize_and_seed_with_old_source(rig) -> None:
     # Later phases compare the INSPECTION view keyed by record id; it is the
     # stable cross-source shape for both OLD and CURRENT readers.
     rig['records'] = records['inspections']
-    snapshot = _old_payload(rig, 'snapshot-old.py', _SNAPSHOT_PAYLOAD, str(original),
-                            json.dumps(_SNAPSHOT_SQL), _LEDGER_SQL)
+    snapshot = _old_bind_payload(rig, 'snapshot-old.py', _SNAPSHOT_PAYLOAD, str(original),
+                                 json.dumps(_SNAPSHOT_SQL), _LEDGER_SQL)
     assert snapshot.returncode == 0, _stderr_text(snapshot)
     old_view = _json_stdout(snapshot)
     assert old_view['status_after'] == 'stopped'
@@ -1294,7 +1309,8 @@ def prove_stopped_selection_and_current_common_reads(rig) -> None:
     readback = _current_payload(rig, 'readback.py', _READBACK_PAYLOAD, str(original), *RECORD_IDS)
     assert readback.returncode == 0, readback.stdout.decode('utf-8', 'replace')
     current_view = _json_stdout(readback)
-    assert current_view['admitted'] is True and current_view['code'] is None
+    assert current_view['admitted'] is True and current_view['code'] is None, \
+        'current readback view: ' + json.dumps(current_view, sort_keys=True)
     assert current_view['records'] == rig['records']
     assert 'research_execution_history_incomplete' in current_view['evaluation']
     assert current_view['status_after'] == 'stopped'
@@ -1307,15 +1323,17 @@ def prove_stopped_selection_and_current_common_reads(rig) -> None:
 
 def prove_compatible_old_source_rollback(rig) -> None:
     original = rig['original']
-    rolled = _old_payload(rig, 'rollback.py', _READBACK_PAYLOAD, str(original), *RECORD_IDS)
+    rolled = _old_bind_payload(rig, 'rollback.py', _READBACK_PAYLOAD, str(original),
+                               *RECORD_IDS)
     assert rolled.returncode == 0, rolled.stdout.decode('utf-8', 'replace')
     view = _json_stdout(rolled)
-    assert view['admitted'] is True and view['code'] is None
+    assert view['admitted'] is True and view['code'] is None, \
+        'old rollback readback view: ' + json.dumps(view, sort_keys=True)
     assert view['records'] == rig['records']
     assert 'research_execution_history_incomplete' in view['evaluation']
     assert view['status_after'] == 'stopped'
-    snapshot = _old_payload(rig, 'snapshot-rollback.py', _SNAPSHOT_PAYLOAD, str(original),
-                            json.dumps(_SNAPSHOT_SQL), _LEDGER_SQL)
+    snapshot = _old_bind_payload(rig, 'snapshot-rollback.py', _SNAPSHOT_PAYLOAD,
+                                 str(original), json.dumps(_SNAPSHOT_SQL), _LEDGER_SQL)
     old_view = _json_stdout(snapshot)
     assert old_view['snapshot'] == rig['snapshot']
     assert old_view['instance'] == rig['identity']
@@ -1336,7 +1354,8 @@ def prove_bundle_integrity_refusals(rig) -> None:
         victim_bytes = victim.read_bytes()
         probe = _current_payload(rig, 'bundle-source.py', _BUNDLE_PROBE_PAYLOAD, str(original),
                                  source=candidate_damaged)
-        assert _json_stdout(probe)['code'] == 'admitted'
+        assert _json_stdout(probe)['code'] == 'admitted', \
+            'bundle source probe view: ' + json.dumps(_json_stdout(probe), sort_keys=True)
         with victim.open('ab') as stream:
             stream.write(b'\n# changed fixture\n')
         probe = _current_payload(rig, 'bundle-source-damaged.py', _BUNDLE_PROBE_PAYLOAD,
@@ -1352,7 +1371,8 @@ def prove_bundle_integrity_refusals(rig) -> None:
         migration = original / 'supabase/migrations' / INSIDE_OLD_MIGRATION
         migration_bytes = migration.read_bytes()
         probe = _current_payload(rig, 'bundle-data.py', _BUNDLE_PROBE_PAYLOAD, str(original))
-        assert _json_stdout(probe)['code'] == 'admitted'
+        assert _json_stdout(probe)['code'] == 'admitted', \
+            'bundle data probe view: ' + json.dumps(_json_stdout(probe), sort_keys=True)
         with migration.open('ab') as stream:
             stream.write(b'\n-- changed fixture\n')
         probe = _current_payload(rig, 'bundle-data-damaged.py', _BUNDLE_PROBE_PAYLOAD,
@@ -1498,7 +1518,8 @@ def prove_explicit_migration_and_old_catalog_refusal(rig) -> None:
     assert _json_stdout(again)['migrations_applied'] == 0
     readback = _current_payload(rig, 'readback-70.py', _READBACK_PAYLOAD, str(original), *RECORD_IDS)
     view = _json_stdout(readback)
-    assert view['admitted'] is True and view['records'] == rig['records']
+    assert view['admitted'] is True and view['records'] == rig['records'], \
+        'readback-70 view: ' + json.dumps(view, sort_keys=True)
     assert 'research_execution_history_incomplete' in view['evaluation']
     assert view['status_after'] == 'stopped'
     missing = _current_cli(rig, 'manage_research_tasks.py', '--root', str(original),
@@ -2312,7 +2333,7 @@ def test_seed_wait_zero_proceeds_immediately(monkeypatch, capsys):
     def fake_sleep(seconds):
         sleeps.append(seconds)
 
-    _wait_for_seed_port_ready(_seed_wait_rig(), _clock=_FakeClock([0.0, 0.0]),
+    _wait_for_old_port_ready(_seed_wait_rig(), _clock=_FakeClock([0.0, 0.0]),
                               _sleep=fake_sleep)
     assert sleeps == []
     out = capsys.readouterr().out
@@ -2333,7 +2354,7 @@ def test_seed_wait_clears_after_polling(monkeypatch, capsys):
     def fake_sleep(seconds):
         sleeps.append(seconds)
 
-    _wait_for_seed_port_ready(
+    _wait_for_old_port_ready(
         _seed_wait_rig(), _clock=_FakeClock([0.0, 1.0, 2.0, 3.0]),
         _sleep=fake_sleep)
     assert sleeps == [1.0, 1.0]
@@ -2354,7 +2375,7 @@ def test_seed_wait_timeout_fails_with_diagnostics(monkeypatch, capsys):
         sleeps.append(seconds)
 
     with pytest.raises(pytest.fail.Exception, match='OLD_SEED_WAIT_TIMEOUT'):
-        _wait_for_seed_port_ready(
+        _wait_for_old_port_ready(
             _seed_wait_rig(), _clock=_FakeClock([0.0, 100.0, 100.0]),
             _sleep=fake_sleep)
     assert sleeps == []
@@ -2367,7 +2388,7 @@ def test_seed_wait_unavailable_initial_fails_never_zero(monkeypatch, capsys):
                                   ('tcp6', _seed_wait_clean6())])
     with pytest.raises(pytest.fail.Exception,
                        match='OLD_SEED_WAIT_UNAVAILABLE'):
-        _wait_for_seed_port_ready(
+        _wait_for_old_port_ready(
             _seed_wait_rig(), _clock=_FakeClock([0.0, 0.0]),
             _sleep=lambda seconds: None)
     out = capsys.readouterr().out
@@ -2381,9 +2402,136 @@ def test_seed_wait_unavailable_mid_poll_fails(monkeypatch, capsys):
     ])
     with pytest.raises(pytest.fail.Exception,
                        match='OLD_SEED_WAIT_UNAVAILABLE'):
-        _wait_for_seed_port_ready(
+        _wait_for_old_port_ready(
             _seed_wait_rig(), _clock=_FakeClock([0.0, 1.0, 1.0]),
             _sleep=lambda seconds: None)
+
+
+# ----------------------------------------------------------------------------
+# M1 hardening (post-R03, same CI mechanism): the bounded readiness wait now
+# guards EVERY OLD payload that opens a session — seed, both snapshots and
+# the old-rollback readback all bind the frozen OLD engine — not only the
+# seed.  Offline probes only: synthetic /proc rows, fake clock/sleep, fake
+# child; no native bind, no SQL, no PG.
+# ----------------------------------------------------------------------------
+
+
+def _old_bind_proc(monkeypatch, script):
+    """Serve scripted /proc/net/tcp{,6} contents to Path.open in order.
+
+    Same contract as _seed_wait_proc, matched via as_posix so the synthetic
+    path resolves identically on POSIX and on non-POSIX local runs."""
+    import io
+    served = iter(script)
+    real_open = Path.open
+
+    def opened(path, mode='rb', *args, **kwargs):
+        if path.as_posix().startswith('/proc/net/tcp'):
+            suffix, content = next(served)
+            assert path.as_posix() == '/proc/net/' + suffix, path.as_posix()
+            return io.BytesIO(content)
+        return real_open(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, 'open', opened)
+
+
+def _old_bind_rig(tmp_path):
+    return _Rig(python='synthetic-python', old_source=tmp_path / 'old',
+                neutral=tmp_path, payloads=tmp_path, base=tmp_path,
+                original=tmp_path, port=40000)
+
+
+def _old_bind_children(monkeypatch, tmp_path, events):
+    """Fake payload plumbing: _payload_file plus a recording _run child."""
+    monkeypatch.setitem(globals(), '_payload_file',
+                        lambda *args: tmp_path / 'rollback.py')
+
+    def run(*args, **kwargs):
+        events.append('run')
+        return subprocess.CompletedProcess([], 0, b'{"admitted": true}',
+                                           b'PAYLOAD_SOURCE_OK\n')
+
+    monkeypatch.setitem(globals(), '_run', run)
+
+
+def test_old_bind_payload_zero_time_wait_runs_payload_immediately(
+        monkeypatch, tmp_path, capsys):
+    _old_bind_proc(monkeypatch, [('tcp', _seed_wait_clean()),
+                                 ('tcp6', _seed_wait_clean6())])
+    events = []
+    _old_bind_children(monkeypatch, tmp_path, events)
+    sleeps = []
+
+    def fake_sleep(seconds):
+        sleeps.append(seconds)
+
+    result = _old_bind_payload(_old_bind_rig(tmp_path), 'rollback.py',
+                               'synthetic', 'synthetic-root', 'vs-record-1',
+                               _clock=_FakeClock([0.0, 0.0]), _sleep=fake_sleep)
+    assert result.returncode == 0 and events == ['run'] and sleeps == []
+    out = capsys.readouterr().out
+    assert out.count('OLD_SEED_WAIT_BEFORE') == 1
+    assert out.count('OLD_SEED_WAIT_AFTER') == 1
+    assert 'elapsed_s=0.000' in out
+    assert 'tcp={"local":{},"peer":{}}' in out
+
+
+def test_old_bind_payload_waits_until_local_time_wait_clears(
+        monkeypatch, tmp_path, capsys):
+    _old_bind_proc(monkeypatch, [
+        ('tcp', _seed_wait_busy(1)), ('tcp6', _seed_wait_clean6()),
+        ('tcp', _seed_wait_busy(1)), ('tcp6', _seed_wait_clean6()),
+        ('tcp', _seed_wait_clean()), ('tcp6', _seed_wait_clean6()),
+    ])
+    events = []
+    _old_bind_children(monkeypatch, tmp_path, events)
+
+    def fake_sleep(seconds):
+        events.append(('sleep', seconds))
+
+    result = _old_bind_payload(_old_bind_rig(tmp_path), 'rollback.py',
+                               'synthetic', 'synthetic-root',
+                               _clock=_FakeClock([0.0, 1.0, 2.0, 3.0]),
+                               _sleep=fake_sleep)
+    assert result.returncode == 0
+    # Both polls ran strictly before the payload child started.
+    assert events == [('sleep', 1.0), ('sleep', 1.0), 'run']
+    out = capsys.readouterr().out
+    assert out.count('OLD_SEED_WAIT_BEFORE') == 1
+    assert 'OLD_SEED_WAIT_AFTER' in out and 'elapsed_s=3.000' in out
+    assert 'PRIVATE_SENTINEL' not in out
+
+
+def test_old_bind_payload_timeout_fails_without_starting_payload(
+        monkeypatch, tmp_path, capsys):
+    _old_bind_proc(monkeypatch, [('tcp', _seed_wait_busy(3)),
+                                 ('tcp6', _seed_wait_clean6())])
+    events = []
+    _old_bind_children(monkeypatch, tmp_path, events)
+
+    with pytest.raises(pytest.fail.Exception, match='OLD_SEED_WAIT_TIMEOUT'):
+        _old_bind_payload(_old_bind_rig(tmp_path), 'rollback.py', 'synthetic',
+                          'synthetic-root', _clock=_FakeClock([0.0, 100.0, 100.0]),
+                          _sleep=lambda seconds: None)
+    assert events == []
+    out = capsys.readouterr().out
+    assert 'OLD_SEED_WAIT_BEFORE' in out and 'OLD_SEED_WAIT_AFTER' not in out
+
+
+def test_old_bind_payload_unavailable_fails_without_starting_payload(
+        monkeypatch, tmp_path, capsys):
+    _old_bind_proc(monkeypatch, [('tcp', b'garbage\n'),
+                                 ('tcp6', _seed_wait_clean6())])
+    events = []
+    _old_bind_children(monkeypatch, tmp_path, events)
+
+    with pytest.raises(pytest.fail.Exception, match='OLD_SEED_WAIT_UNAVAILABLE'):
+        _old_bind_payload(_old_bind_rig(tmp_path), 'rollback.py', 'synthetic',
+                          'synthetic-root', _clock=_FakeClock([0.0, 0.0]),
+                          _sleep=lambda seconds: None)
+    assert events == []
+    out = capsys.readouterr().out
+    assert 'tcp=UNAVAILABLE' in out
 
 
 def test_echo_seed_child_stderr_verbatim_on_failure(capsys):
