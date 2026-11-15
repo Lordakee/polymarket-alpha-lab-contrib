@@ -3897,3 +3897,79 @@ A≠B 已在 `r03-fix-evidence/final-registration.md` 登记：tree 校验为 ve
 **M1 启动门**：R09 双绿与 R10 handback（本节点＋D 交付书）到达后，M1-next-nodes-plan 登记的启动条件已满足技术面；M1 计划复审回执**已补齐：2026-11-14 codex（gpt-6-astra/max）独立复审 VERDICT: PASS（五项发现＝3 CORRECT-AS-APPLIED＋2 NO-CHANGE-CONFIRMED，0 新发现；启动门与 B 双绿／R10 handback 核对一致）**，回执入库 `docs/remediation-evidence/2026-11-14/decision/m1-rereview-output-20261114.log`；M1 就绪待 owner 派发，实施由 owner／协调者派发，本节点不启动 M1。
 
 **自引用边界**：本段与 D、证据目录所在的文档提交，其自身 SHA 与其后发生的任何 CI/复审结果不在本文预写；由提交完成后的 Git 对象与最终交接回执给出。
+
+## 78. M1 合成章：九节点版本链、合成出口核对与未决缺口（2026-11-15）
+
+本段由 M1 合成节点写入（协调者单写文档域；一次性合成验证运行由 ZCode worker 执行）。两部分：其一，按 M1 计划 §6「M1 合成出口」在一次性隔离 Linux PG 上的端到端合成验证（证据留存在 m0 startup 工作区 M1 证据目录 `evidence/m1-synthesis/`，服务器侧库外；胶水脚本与日志另存 `/tmp/m1-synth-glue/`，均不进 repo）；其二，九节点版本链与缺口登记。本段不宣告 M1 完成（见 78.4）。
+
+**合成验证运行事实**：基线 main=ebe542e0（服务器主 checkout 与 m0 checkout 同 SHA 核对）；一次性 PG18 集群（端口 28079，随机端口＋socket trust DSN，全部经唯一 audited `validate_local_postgres_dsn` 后连接；55432 业务库未触碰；运行结束停库删目录，回执 `cleanup.json`）。共 3 次尝试：前两次为胶水脚本自身缺陷（第 1 次 replay 模块导入路径写错、第 2 次 09L 报表分配行解析把右括号并入 Decimal），首错保留（`attempts.txt`＋`attempt2-*.log`），均非 M1 组件失败；第 3 次全链 PASS（`synthesis-evidence.json`，五步全 PASS）。
+
+### 78.1 九节点版本链（全 SHA）与 fresh 复审结论一览
+
+版本链（`git log --format='%H %p'` 逐提交核对）：
+
+```text
+ca16ac4773feec22736c5f955583663c67770a7d  M1 启动基线（canonical main，M0 R10 handback 后）
+09D 设计（外部文档 m1-09d-design-20261114.md v2）
+  SHA256 b88161a12925dce18b91157d7f3734c54276c2b3638efbd0ff5f2f1ee4e310c8
+  （设计先行：v1 fresh 复审 FAIL＝P1-1 阻断＋P3-2..P3-10 → v2 修订 → v2 重审 PASS；09S 硬前置）
+FX-08 0198af163d903c5cf478edc701a786f34191113b  decide_entry 统一入口（自 ca16ac47）
+FX-10 304a241a32e89c346f146bd4854d08f2b3984c6a  通用候选构造（自 ca16ac47）
+FX-11 2713c6ca0caf6a61b5683859193ed332e62a9f8c  评估模块（自 ca16ac47）
+09S  32f98ee1bf9d0b8a0540043e095926268fe25c09  受管 schema/store/迁移目录（自 ca16ac47）
+71320c9eedf07364d9b29ca1bdce83a8f93f997d  merge(FX-08 0198af16, FX-10 304a241a) → m1/fx12
+a9976f699124d2018d3ab4dec6cc2f195fda6951  merge(71320c9e, 09S 32f98ee1) → m1/fx12
+FX-12 a3fdc10a5bc3fd4c3667c76b14d5abe267798e44  快照登记/候选绑定/forensic replay（自 a9976f69）
+3685745cc3e2b35747e03da01ecfd8b10ff8b735  merge(FX-12 a3fdc10a, FX-11 2713c6ca)
+09L  795ceb58945b4cc1d6d6f24f42e97fb50f8f935d  桩补全/历史导入/CI 接线（自 09S 32f98ee1）
+4ec70bacf8f818fc4943c219a030d22020a1298b  merge(3685745c, 09L 795ceb58)
+final CLI ebe542e0b07ac255fd5800e841418f1f8bc2070c  evaluate/replay 接线（自 4ec70bac；即当前 main）
+```
+
+fresh 复审结论一览（每节点为独立、未参与实施的只读复审者；除下列库外证据文件外，回执为协调者会话记录、未作为 repo 文件存档——如实登记于 78.3⑦）：
+
+| 节点 | fresh 复审结论与修复链 |
+| --- | --- |
+| FX-08 | 复审提出 P2（bridge 表非数值额外键可在 fingerprint 的 float() 处抛出异常逃逸 decide_entry）→ 修复并入 0198af16 → delta 复审 PASS（delta 证据 `evidence/m1-fx08/p2-1-delta.diff`） |
+| FX-10 | PASS（冻结面 18 个原定义 AST/源 bytes 不变、四冻结 fixture 逐位一致、无 over_under_quote fallback；实施者自评单列 `evidence/m1-fx10/selfreview.txt`，准确标注为 self-review 非独立复审） |
+| FX-11 | PASS（历史兼容数字与 OD-G 阈值逐字复核；未另记未决项） |
+| 09D | v1 FAIL（P1-1＋P3-2..P3-10）→ v2 修订 → v2 重审 PASS（设计文档 §0R 逐项处置表） |
+| 09S | PASS，附 P2＝CodeGraph 推送门欠账（由本合成节点补，见 78.3⑤⑥） |
+| 09L | PASS（有条件接受：§7.5 新 schema 视图缺口延后，见 78.3①） |
+| FX-12 | PASS（快照登记/绑定/replay/防篡改面复核；未另记未决项） |
+| 四个 merge | 无独立代码复审（树内容＝两侧已复审节点；SHA/父代如上核对） |
+| final CLI | PASS，附 P2-1 计数口径注记（见 78.3④） |
+
+### 78.2 合成出口逐项核对表（M1 计划 §6 原文条目 → 本轮证据指针/状态）
+
+M1 计划 §6 原文：「M1 合成出口：隔离 Linux 私有 PG 一次扫描全部候选/entry 原子写读；每候选包括拒绝可 replay 且篡改失败；评估复现历史兼容数字并区别 v2 校正/估算口径；历史转换在一次性库幂等/分币守恒；构造器冻结回归；DB tests 在 native papersim 分区真实通过；独立 review 无未解决阻塞项。真实历史导入/连续运行若未执行，明确留缺口，不拿合成验收冒充。」
+
+| §6 条目 | 本轮状态 | 证据指针（`evidence/m1-synthesis/`，库外服务器侧；逐键值见 synthesis-evidence.json） |
+| --- | --- | --- |
+| 隔离 Linux 私有 PG 一次扫描全部候选/entry 原子写读 | ✓ | s1_scan_record：FX-10 `candidate_for_market` 构造（total/over/2.5，中位数 0.6342013609573762 与冻结 #48 案例一致）→ FX-08 `decide_entry` 决策（7 候选：3 接受/2 拒绝/2 构造失败；含 crypto terminal 拒绝例与 crypto touch 接受例）→ FX-12 快照登记（原始 bytes＋SHA256，5 行；#48 与 stale 共用同一 ladder，digest 幂等再登记读回原行）→ 09S `record_scan` 单事务写入（scan_id=1；快照引用核验＋未注册引用负例 `papersim_snapshot_ref_missing` 整体回滚）→ 读回一致（7 候选结论逐键符合；3 entry：sports 250@0.56 FULL_EDGE、crypto 250@0.3649 FULL_EDGE、cross-league 150@0.52 MARGINAL——严格 crossbridge 恒 150 生效；3 笔 SCAN_ENTRY 现金事件金额＝−(stake＋entry_fee)） |
+| 每候选包括拒绝可 replay 且篡改失败 | ✓ | s2_replay：7/7 候选 replay matched=True（拒绝与构造失败同结果重放）；两例一字节篡改（#48 与 touch 的 book 快照第 4 字节 xor 0x20，owner 面临时摘 CHECK 与触发器→UPDATE→复原触发器）均以 `papersim_snapshot_digest_mismatch` 失败；replay 前后九表 count 完全不变（零写），篡改提交后 row count 仍不变 |
+| 评估复现历史兼容数字并区别 v2 校正/估算口径 | ✓ | s3_evaluation：冻结 10-30 快照经 `candidates_from_ledger_rows`＋`evaluate_queues` 复现 gross ROI 23.30%（0.23301）、Brier 0.1873 vs 0.2082、top-market 占比 51.1%（0.51136）、剔最大市场 12.22%（0.12223）；回推费＝estimated 口径由模块自身标注（历史回归不包装为 v2 校正净业绩）；另全拒绝零 entry 队列（3 候选、0 entry、0 accepted）仍出模型 vs 市场对比（Brier 0.2018 vs 0.1972，log-loss 差 +0.00324），UNKNOWN/覆盖数显式（markets_scored=2、missing_outcome=1）；全库 5 队列输出均带覆盖计数 |
+| 历史转换在一次性库幂等/分币守恒 | ✓ | s5_import_dryrun：一次性 legacy face 上 `papersim_import_legacy.py --from-legacy-db` 双跑逐字节相同，content sha256 `6345eaddc917d23c7bf5fc1990f2e984c6f9bd8897cc0042f26750a8d0dfc414`；3866000 按份额分摊 743.79＋561.41＝1305.20（计划 §6「分币守恒」登记数字，和守恒）；net identity OK；65 结算市场逐市场和守恒 OK（总额 3768.33） |
+| 构造器冻结回归 | ✓（节点级＋本轮连线） | 节点级：`evidence/m1-fx10/`（frozen-bytes.out、四 fixture 逐位一致、selfcheck bytes 前后 cmp 相等）；本轮：s1 经 FX-10 构造的 #48 候选中位数与冻结案例一致（见首行） |
+| DB tests 在 native papersim 分区真实通过 | **待 GitHub 推送后双 CI 真实执行（占位，不预填绿）** | 节点级一次性集群 native 矩阵已跑（09S/09L：`evidence/m1-09l/native-run-rerun.log` 及 m1-fx08/… 系列日志）；GitHub Actions Offline＋Native 双 CI 须待 docs/m1-synthesis 推送后在新 HEAD 真实执行并回执，届时回填本行 |
+| 独立 review 无未解决阻塞项 | **待合成复审** | 本节为实施者自记；M1 合成出口的独立只读复审尚未运行，运行给出 VERDICT 前 M1 不宣告完成 |
+| 真实历史导入/连续运行若未执行，明确留缺口 | 留缺口（78.3②③） | dry-run 已证（s5）；生产导入与连续运行未执行、不冒充 |
+
+final CLI 端到端（计划 Z2，s4_cli）：`papersim.cli evaluate --dsn`（同一隔离库 socket trust DSN）输出 EvaluationReport JSON（5 队列，paper_only=true，stdout SHA256 `baca61616d31d1068978a872d60c0050c5b509e606fddd06b5372e48cfde76ae`）；`papersim.cli replay <candidate_id> --trusted-commit ebe542e0b07ac255fd5800e841418f1f8bc2070c`（真实 40-hex commit）对接受候选（cross-league bridged）与构造失败候选各一例 matched=True；CLI 子进程运行前后九表计数不变（读只增于 s3 的合法写入，CLI 自身零写）。
+
+### 78.3 显式未决与缺口登记（诚实边界）
+
+① §7.5 新 schema 视图未交付：09L 复审有条件接受，延至 FX-11 接线/后续迁移节点，未从清单删除。
+② 真实历史导入生产执行未做：本轮仅 dry-run（一次性 legacy face）证明幂等与守恒；生产插入另需操作授权（`--execute-production` 单独授权门），未申请、未执行。
+③ 连续运行/M2 FX-17 未做：无人值守连续扫描与自动暂停接线属 M2；OD-G F 项运行证据不可在 M1 虚报。
+④ final CLI 复审 P2-1 计数口径注记：实施者自聚口径 428/12、480/13 与复审者独立口径（25 文件组 903/42 等）并记在案；两口径均为测试收集清单核对，不是测试通过数，后续以双 CI 实际收集执行为准。
+⑤ CodeGraph 状态（如实）：服务器主 repo 索引构建 COMPLETE（codegraph status：6,167 文件/295,771 节点/803,570 边；上次 daemon 自动同步 2026-11-07，落后 M1 各节点提交）。本节点执行一次 `codegraph sync`：exit 0，同步 478 个变更文件（448 增/30 改）、14,737 节点、2m42s，解析 2,780 个挂起引用（26 个未解析）——索引已同步至 ebe542e0（回执 `evidence/m1-synthesis/codegraph.txt`）。§77.9 的「CodeGraph＝N/A」为 2026-09-12 owner override 时点记录，与本次实测并存、互不改写。
+⑥ 09S P2 CodeGraph 推送门：由⑤的本次 sync 补记 discharged（与⑤合并处理）。
+⑦ M1 各节点 fresh 复审回执未作为 repo 文件存档（协调者会话记录；库外证据现存 FX-08 delta diff、FX-10 自评单、09L native 重跑日志等）：登记为证据留痕缺口；后续如需重核，以会话回执与 git 历史（上述全 SHA 链）为准。
+
+### 78.4 M1 出口声明（严格措辞）
+
+- 本段完成 M1 计划 §6 合成出口的**一次性合成验证演示**：五步（扫描原子写读／全候选重放＋篡改／评估含历史兼容／CLI 端到端／导入 dry-run 幂等守恒）全部 PASS，一次性隔离库执行，证据指针见 78.2。
+- **M1 不在此宣告完成**：在「docs/m1-synthesis 推送后同 HEAD 双 CI（Offline＋Native，papersim 分区真实收集执行）绿」与「fresh 独立合成复审 VERDICT: PASS、无未解决阻断项」两者到达之前，M1 保持进行中；到达后仍受下条约束。
+- 真实历史导入生产执行与连续运行（M2/FX-17）留缺口、不冒充（78.3②③）；软件验收不等于统计策略验证，不构成晋级或任何真实资金/凭据/订单授权；OD-G A–F 与暂停规则照旧。
+- 本段为合成节点实施者按协调者指令写入的自记内容，自身未经独立复审（78.2 末行状态＝待合成复审）；本段所在文档提交自身 SHA 与其后任何 CI/复审结果不在本文预写，由提交后的 Git 对象与回执给出。
