@@ -401,7 +401,10 @@ jobs:
             "partition": "papersim",
             "files": [
               "tests/test_papersim_ledger.py",
-              "tests/test_papersim_perf_view_fix.py"
+              "tests/test_papersim_perf_view_fix.py",
+              "tests/test_papersim_store.py",
+              "tests/test_papersim_store_native.py",
+              "tests/test_papersim_migrations.py"
             ]
           }
         ]
@@ -463,6 +466,25 @@ jobs:
           "$PREFIX/bin/psql" -h 127.0.0.1 -p 55432 -U paper_sim -d paper_sim -v ON_ERROR_STOP=1 -q -f supabase/migrations/20261101000000_papersim_ledger.sql
           printf 'PAPERSIM_PG_DSN=postgresql://paper_sim@127.0.0.1:55432/paper_sim\n' >> "$GITHUB_ENV"
           printf 'WP_P4_READONLY_PG=1\n' >> "$GITHUB_ENV"
+          # FX-09S: assemble the papersim MANAGED face on the same throwaway
+          # cluster: dedicated roles, the project database and the V1
+          # bootstrap (identity + migration ledger) generated via python.
+          # The papersim catalog itself is applied by the tests through the
+          # applier with the validated socket trust DSNs exported below.
+          "$PREFIX/bin/createuser" -h 127.0.0.1 -p 55432 -U paper_sim pal_owner
+          "$PREFIX/bin/createuser" -h 127.0.0.1 -p 55432 -U paper_sim pal_app
+          "$PREFIX/bin/createdb" -h 127.0.0.1 -p 55432 -U paper_sim -O pal_owner polymarket_alpha_lab
+          SYSTEM_ID="$("$PREFIX/bin/psql" -h 127.0.0.1 -p 55432 -U paper_sim -d paper_sim -tA -c "SELECT system_identifier FROM pg_control_system()")"
+          .venv/bin/python - "$SYSTEM_ID" <<'PY' | "$PREFIX/bin/psql" -h 127.0.0.1 -p 55432 -U pal_owner -d polymarket_alpha_lab -v ON_ERROR_STOP=1 -q -f -
+          import sys, uuid
+          from pathlib import Path
+          from polymarket_alpha_lab.project_postgres import sql
+          from polymarket_alpha_lab.project_postgres.files import Layout
+          layout = Layout(Path(".").resolve())
+          print(sql.bootstrap_sql(uuid.uuid4().hex, layout.root_hash, sys.argv[1]), end="")
+          PY
+          printf 'PAPERSIM_NATIVE_MANAGED_OWNER_DSN=host=%s port=55432 dbname=polymarket_alpha_lab user=pal_owner\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          printf 'PAPERSIM_NATIVE_MANAGED_APP_DSN=host=%s port=55432 dbname=polymarket_alpha_lab user=pal_app\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - name: Prove isolated native partition
         env:
           NATIVE_TEST_FILES: ${{ join(matrix.files, ' ') }}

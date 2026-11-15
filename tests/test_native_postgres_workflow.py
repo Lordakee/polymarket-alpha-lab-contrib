@@ -105,7 +105,9 @@ CLAUDE_PROBE_FILES = ('tests/test_claude_cli_probe.py', 'tests/test_claude_cli_p
 # FX-07 (2026-11-12): the live Linux matrix gains a fourth DB-facing
 # partition; the retired Windows matrix stays frozen without it. The push
 # paths below mirror the fix-list exactly (audit handoff 03-fix-list.md).
-PAPERSIM_FILES = ('tests/test_papersim_ledger.py', 'tests/test_papersim_perf_view_fix.py')
+PAPERSIM_FILES = ('tests/test_papersim_ledger.py', 'tests/test_papersim_perf_view_fix.py',
+                   'tests/test_papersim_store.py', 'tests/test_papersim_store_native.py',
+                   'tests/test_papersim_migrations.py')
 WINDOWS_PARTITIONS = ('storage', 'research', 'dispatch')
 LINUX_PARTITIONS = ('storage', 'research', 'dispatch', 'papersim')
 PUSH_PATHS = (
@@ -517,6 +519,20 @@ def test_linux_papersim_partition_boots_throwaway_pg18_cluster():
     # verbatim checked-in ledger migration is applied, loudly.
     assert 'ON_ERROR_STOP=1' in worker
     assert '-f supabase/migrations/20261101000000_papersim_ledger.sql' in worker
+    # FX-09S: alongside the legacy face, the step assembles the papersim
+    # MANAGED face (roles, project database, python-generated V1 bootstrap)
+    # and exports validated socket trust DSNs; the papersim catalog itself
+    # is applied inside the tests through the applier.
+    assert 'createuser" -h 127.0.0.1 -p 55432 -U paper_sim pal_owner' in worker
+    assert 'createuser" -h 127.0.0.1 -p 55432 -U paper_sim pal_app' in worker
+    assert 'createdb" -h 127.0.0.1 -p 55432 -U paper_sim -O pal_owner polymarket_alpha_lab' in worker
+    assert 'from polymarket_alpha_lab.project_postgres import sql' in worker
+    assert 'sql.bootstrap_sql(' in worker
+    assert '-U pal_owner -d polymarket_alpha_lab' in worker
+    assert 'PAPERSIM_NATIVE_MANAGED_OWNER_DSN=host=%s port=55432 '
+    'dbname=polymarket_alpha_lab user=pal_owner' in worker
+    assert 'PAPERSIM_NATIVE_MANAGED_APP_DSN=host=%s port=55432 '
+    'dbname=polymarket_alpha_lab user=pal_app' in worker
     # Both opt-in gates receive their environment from the throwaway cluster
     # (the names deliberately survive the job's PG* environment scrub).
     assert 'PAPERSIM_PG_DSN=postgresql://paper_sim@127.0.0.1:55432/paper_sim' in worker

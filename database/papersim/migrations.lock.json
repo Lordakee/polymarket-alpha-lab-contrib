@@ -1,0 +1,15 @@
+{
+  "format": "papersim-migrations-v1",
+  "migrations": [
+    {
+      "name": "20261115000000_papersim_bootstrap.sql",
+      "sha256": "ef0efa36b4fee775473611f5b73f1d34fe20cb4f13c26608a2aac562d9dcc74c",
+      "transaction_wrapper": true
+    },
+    {
+      "name": "20261115000100_papersim_v2_core.sql",
+      "sha256": "2d5b4f4407d59189d7cfa896c45884efc0c88a24bc3fee403cd18fb070b94945",
+      "transaction_wrapper": true
+    }
+  ]
+}
