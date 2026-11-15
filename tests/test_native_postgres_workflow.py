@@ -529,6 +529,10 @@ def test_linux_papersim_partition_boots_throwaway_pg18_cluster():
     # is applied inside the tests through the applier.
     assert 'createuser" -h 127.0.0.1 -p 55432 -U paper_sim pal_owner' in worker
     assert 'createuser" -h 127.0.0.1 -p 55432 -U paper_sim pal_app' in worker
+    # M1 CI fix (native run 43741792178): the migration proofs create one
+    # throwaway database per test as pal_owner, so the CI role needs
+    # CREATEDB (the dev-server face connects as socket-trust superuser).
+    assert 'ALTER ROLE pal_owner CREATEDB' in worker
     assert 'createdb" -h 127.0.0.1 -p 55432 -U paper_sim -O pal_owner polymarket_alpha_lab' in worker
     assert 'from polymarket_alpha_lab.project_postgres import sql' in worker
     assert 'sql.bootstrap_sql(' in worker

@@ -430,14 +430,27 @@ def test_single_initial_event_anchors_the_book(plan):
 # ---------------------------------------------------------------------------
 
 
+def _loaded_driver_modules() -> set[str]:
+    """The psycopg distribution modules currently in ``sys.modules``.
+
+    M1 CI fix (native run 43741792178): the native papersim lane runs the
+    earlier native test files in one pytest process, so the driver may
+    already be imported here. The offline proof becomes order-independent
+    by comparing the loaded-driver delta across the call instead of
+    requiring an empty ``sys.modules``.
+    """
+    return {name for name in sys.modules
+            if name == "psycopg" or name.startswith("psycopg.")}
+
+
 def test_cli_default_is_a_dry_run_that_never_loads_a_driver(importer, capsys):
-    assert "psycopg" not in sys.modules  # offline precondition
+    before = _loaded_driver_modules()  # empty offline; native may differ
     code = importer.main([])
     assert code == 0
     out = capsys.readouterr().out
     assert out.startswith("papersim legacy import - DRY RUN")
     assert "total 3768.33" in out
-    assert "psycopg" not in sys.modules  # the dry run stayed offline
+    assert _loaded_driver_modules() == before  # the dry run loaded no driver
 
 
 def test_cli_refuses_production_insertion_without_authorization(
@@ -445,13 +458,14 @@ def test_cli_refuses_production_insertion_without_authorization(
 ):
     # A target DSN without --execute-production is refused BEFORE any
     # connection is attempted (a dead port proves no connect happened).
+    before = _loaded_driver_modules()
     dead = "postgresql://paper_sim@127.0.0.1:1/paper_sim"
     code = importer.main(["--dsn", dead])
     assert code == 2
     err = capsys.readouterr().err
     assert "production insertion is not authorized" in err
     assert "--execute-production" in err
-    assert "psycopg" not in sys.modules
+    assert _loaded_driver_modules() == before  # no driver load on refusal
 
 
 def test_cli_execute_production_requires_a_target(importer, capsys):

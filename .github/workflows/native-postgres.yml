@@ -483,6 +483,12 @@ jobs:
           # applier with the validated socket trust DSNs exported below.
           "$PREFIX/bin/createuser" -h 127.0.0.1 -p 55432 -U paper_sim pal_owner
           "$PREFIX/bin/createuser" -h 127.0.0.1 -p 55432 -U paper_sim pal_app
+          # M1 CI fix (native run 43741792178): the opt-in migration proofs
+          # create one throwaway database per test (CREATE DATABASE ...
+          # OWNER pal_owner); without CREATEDB the CI cluster rejects them
+          # with InsufficientPrivilege (the dev-server face reaches its
+          # cluster as a socket-trust superuser, which masked this).
+          "$PREFIX/bin/psql" -h 127.0.0.1 -p 55432 -U paper_sim -d paper_sim -v ON_ERROR_STOP=1 -q -c "ALTER ROLE pal_owner CREATEDB"
           "$PREFIX/bin/createdb" -h 127.0.0.1 -p 55432 -U paper_sim -O pal_owner polymarket_alpha_lab
           SYSTEM_ID="$("$PREFIX/bin/psql" -h 127.0.0.1 -p 55432 -U paper_sim -d paper_sim -tA -c "SELECT system_identifier FROM pg_control_system()")"
           .venv/bin/python - "$SYSTEM_ID" <<'PY' | "$PREFIX/bin/psql" -h 127.0.0.1 -p 55432 -U pal_owner -d polymarket_alpha_lab -v ON_ERROR_STOP=1 -q -f -

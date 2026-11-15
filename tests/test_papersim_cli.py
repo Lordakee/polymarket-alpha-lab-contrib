@@ -506,6 +506,38 @@ def test_replay_rejects_unauthorized_dsn_before_any_connection() -> None:
     assert "db.internal.example.com" not in result.stderr
 
 
+def test_connect_explicit_rejects_unauthorized_dsn_without_the_driver() -> None:
+    # M1 CI fix (offline run 43741792290): importing the connection adapter
+    # must not require the driver, and the audited validator must reject an
+    # unauthorized DSN before psycopg is ever imported. The child simulates
+    # the driverless offline lane by blocking the import via sys.modules.
+    child = (
+        "import sys\n"
+        "from polymarket_alpha_lab.papersim import store_psycopg\n"
+        "print('import-loaded-driver', 'psycopg' in sys.modules)\n"
+        "sys.modules['psycopg'] = None  # simulate the offline lane\n"
+        "try:\n"
+        "    store_psycopg.connect_explicit(sys.argv[1])\n"
+        "except ValueError as error:\n"
+        "    print('rejected', error)\n"
+        "else:\n"
+        "    print('accepted')\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", child, HOSTED_DSN],
+        capture_output=True, text=True, timeout=120,
+    )
+    assert result.returncode == 0, result.stderr
+    # The module imported cleanly without loading the driver, the validator
+    # (not an ImportError) produced the rejection, and the DSN value itself
+    # never appears in the child's output.
+    assert "import-loaded-driver False" in result.stdout
+    assert "rejected " in result.stdout
+    assert "must point to local Postgres" in result.stdout
+    assert "accepted" not in result.stdout
+    assert "db.internal.example.com" not in result.stdout
+
+
 class _ClosableConn:
     """Adapter giving the in-memory record the connection's close face."""
 

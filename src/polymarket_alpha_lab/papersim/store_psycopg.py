@@ -10,6 +10,11 @@ Contract (design 2026-11-15 v2, sections 3.3/3.4 and 5.8):
 - Every raw DSN passes the single audited ``validate_local_postgres_dsn``
   (canonical import ``local_postgres_dsn``) BEFORE any connection, wrapper
   or callback is constructed; SQL is fully parameterized.
+- The driver import is lazy (a function-body ``import psycopg`` placed
+  after the audited validation) so a driverless offline environment still
+  gets the validator's rejection instead of ``ImportError`` at module
+  import time; the four connection entrypoints keep their signatures and
+  behavior (M1 CI fix: offline run 43741792290).
 - ``managed_dsn(info, owner=...)`` reproduces the V1 ``ProjectPostgres``
   DSN construction parameter-for-parameter (byte-equal; pinned by an
   equivalence test against ``ProjectPostgres._dsn`` so a V1 change turns
@@ -34,8 +39,6 @@ from datetime import datetime
 from decimal import Decimal
 import json
 from pathlib import Path
-
-import psycopg
 
 from polymarket_alpha_lab.local_postgres_dsn import validate_local_postgres_dsn
 from polymarket_alpha_lab.papersim.store import (
@@ -89,6 +92,7 @@ def connect_managed(repo_root: Path, *, info: dict | None = None):
     if info is None:
         info = read_instance(repo_root)
     dsn = managed_dsn(info, owner=False, repo_root=repo_root)
+    import psycopg  # lazy: the audited validation already ran in managed_dsn
     with binding.bound(info['instance_id'], info['root_sha256'], info['system_identifier']):
         connection = psycopg.connect(dsn)
         binding.verify_connection(connection.cursor())
@@ -100,12 +104,16 @@ def connect_owner(repo_root: Path, *, info: dict | None = None):
     repo_root = Path(repo_root)
     if info is None:
         info = read_instance(repo_root)
-    return psycopg.connect(managed_dsn(info, owner=True, repo_root=repo_root))
+    dsn = managed_dsn(info, owner=True, repo_root=repo_root)
+    import psycopg  # lazy: the audited validation already ran in managed_dsn
+    return psycopg.connect(dsn)
 
 
 def connect_explicit(dsn: str, *, label: str = EXPLICIT_DSN_LABEL):
     """Validated explicit DSN connection (isolated/throwaway clusters only)."""
-    return psycopg.connect(_validated(dsn, label))
+    dsn = _validated(dsn, label)  # pure Python: rejects before any driver import
+    import psycopg  # lazy: only a validated DSN may load the driver
+    return psycopg.connect(dsn)
 
 
 def connect_legacy_readonly(dsn: str, *, password_file: str | None = None):
@@ -121,7 +129,9 @@ def connect_legacy_readonly(dsn: str, *, password_file: str | None = None):
         path = Path(password_file)
         no_links(path)
         kwargs['password'] = path.read_text(encoding='utf-8').splitlines()[0]
-    return psycopg.connect(_validated(dsn, LEGACY_DSN_LABEL), **kwargs)
+    dsn = _validated(dsn, LEGACY_DSN_LABEL)  # pure Python, before any driver import
+    import psycopg  # lazy: only a validated DSN may load the driver
+    return psycopg.connect(dsn, **kwargs)
 
 
 _OUTCOME_COLUMNS = ('evidence_key, condition_id, market_id, market_slug, yes_token_id, no_token_id, '
@@ -147,6 +157,7 @@ def record_market_outcome(conn, observation: MarketOutcomeObservation) -> dict:
     returns the original outcome_id; any difference raises
     ``papersim_outcome_evidence_conflict`` without overwriting the stored row.
     """
+    import psycopg  # lazy: a live connection implies the native lane
     observation.validate()
     params = (observation.evidence_key(), observation.condition_id, observation.market_id,
               observation.market_slug, observation.yes_token_id, observation.no_token_id,
