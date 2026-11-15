@@ -404,7 +404,8 @@ jobs:
               "tests/test_papersim_perf_view_fix.py",
               "tests/test_papersim_store.py",
               "tests/test_papersim_store_native.py",
-              "tests/test_papersim_migrations.py"
+              "tests/test_papersim_migrations.py",
+              "tests/test_papersim_import_legacy.py"
             ]
           }
         ]
@@ -464,6 +465,14 @@ jobs:
           "$PREFIX/bin/pg_ctl" -D "$DATA" -l "$RUNNER_TEMP/papersim-pg.log" start -o "-p 55432 -h 127.0.0.1 -k $RUNNER_TEMP"
           "$PREFIX/bin/createdb" -h 127.0.0.1 -p 55432 -U paper_sim paper_sim
           "$PREFIX/bin/psql" -h 127.0.0.1 -p 55432 -U paper_sim -d paper_sim -v ON_ERROR_STOP=1 -q -f supabase/migrations/20261101000000_papersim_ledger.sql
+          # FX-09L: mount the archived legacy history fixture into the
+          # throwaway legacy face (the source CSVs are read-only repo
+          # files) so the importer's read-only re-observation, baseline
+          # registration and catalog-fingerprint proofs run on the same
+          # data as the offline dry-run contracts.
+          "$PREFIX/bin/psql" -h 127.0.0.1 -p 55432 -U paper_sim -d paper_sim -v ON_ERROR_STOP=1 -c "\copy public.decisions (id,ts,market_id,question,side,price,shares,stake,fair_low,fair_high,spot,vol,horizon_days,sizing,reason,team,model_prediction,market_type) from 'docs/paper-sim/ledger-snapshots/2026-11-12/decisions.csv' with (format csv, header true)"
+          "$PREFIX/bin/psql" -h 127.0.0.1 -p 55432 -U paper_sim -d paper_sim -v ON_ERROR_STOP=1 -c "\copy public.resolutions from 'docs/paper-sim/ledger-snapshots/2026-11-12/resolutions.csv' with (format csv, header true)"
+          "$PREFIX/bin/psql" -h 127.0.0.1 -p 55432 -U paper_sim -d paper_sim -v ON_ERROR_STOP=1 -c "\copy public.bankroll from 'docs/paper-sim/ledger-snapshots/2026-11-12/bankroll.csv' with (format csv, header true)"
           printf 'PAPERSIM_PG_DSN=postgresql://paper_sim@127.0.0.1:55432/paper_sim\n' >> "$GITHUB_ENV"
           printf 'WP_P4_READONLY_PG=1\n' >> "$GITHUB_ENV"
           # FX-09S: assemble the papersim MANAGED face on the same throwaway

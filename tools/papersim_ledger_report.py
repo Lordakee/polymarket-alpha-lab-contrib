@@ -161,22 +161,41 @@ def load_rows_pg(connect: Callable[..., Any]) -> list[dict[str, Any]]:
 
 
 def _build_connect() -> Callable[..., Any]:
-    """Build the production psycopg connect (password file honored)."""
+    """Build the production connect through the single papersim adapter.
+
+    FX-09L convergence (design 2026-11-15 v2, section 6.2 L3): the
+    production ``--from-pg`` path no longer hand-rolls a ``psycopg``
+    connect or a password-file read. It delegates to
+    ``papersim.store_psycopg.connect_legacy_readonly`` — the one
+    allowlisted connector — which validates the DSN through the single
+    audited validator before connecting, forces the read-only session flag
+    itself and applies the operator password-file convention with its
+    no-symlink guard. The injected-callable contract of
+    :func:`load_rows_pg` (``connect(dsn, connect_timeout=5, options=...)``)
+    is unchanged; test fakes never pass through this builder, and nothing
+    but this builder can bypass the adapter on the production path.
+    """
     try:
-        import psycopg
+        from polymarket_alpha_lab.papersim import store_psycopg
     except ImportError as error:  # pragma: no cover - env-dependent
         raise SystemExit(
             "the --from-pg mode requires psycopg (not installed)"
         ) from error
     import os
 
-    kwargs: dict[str, Any] = {}
-    password_file = os.environ.get(ledger.PAPERSIM_PG_PASSWORD_FILE_ENV_VAR)
-    if password_file:
-        kwargs["password"] = Path(password_file).read_text(
-            encoding="utf-8"
-        ).strip()
-    return lambda dsn, **extra: psycopg.connect(dsn, **extra, **kwargs)
+    password_file = os.environ.get(ledger.PAPERSIM_PG_PASSWORD_FILE_ENV_VAR) or None
+
+    def _connect(dsn: str, **kwargs: Any):
+        if kwargs != {"connect_timeout": 5, "options": _PG_READONLY_OPTIONS}:
+            raise ValueError(
+                "unexpected load_rows_pg connect kwargs: "
+                f"{sorted(kwargs)!r}"
+            )
+        return store_psycopg.connect_legacy_readonly(
+            dsn, password_file=password_file
+        )
+
+    return _connect
 
 
 def _percent(value: float | None) -> str:

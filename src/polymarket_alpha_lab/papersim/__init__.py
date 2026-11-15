@@ -29,11 +29,12 @@ modules are re-exported here — ``xg`` (snapshot loading and ratings),
 (entry gates, book walk, suspension registry), ``risk_policy`` (paper
 sizing, caps, correlation and bankroll arithmetic) and ``ledger``
 (settlement arithmetic, DSN boundary and DDL), plus the CLI entry point
-as :func:`cli_main`. Two frozen P0 stub interfaces remain by design:
-``record_entry`` and ``mark_to_market`` still raise ``NotImplementedError``
-(pinned by tests) until the ledger store-adapter commit lands; everything
-else in this surface is implemented and regression-anchored against the
-frozen fixtures in ``tests/fixtures/papersim/``.
+as :func:`cli_main`. The two former P0 stub interfaces,
+``record_entry`` and ``mark_to_market``, were completed by the FX-09L
+store-adapter node (pure entry-event construction and the per-share mark
+delta, pinned by tests); everything else in this surface is implemented
+and regression-anchored against the frozen fixtures in
+``tests/fixtures/papersim/``.
 """
 
 from polymarket_alpha_lab.papersim.crypto_model import (

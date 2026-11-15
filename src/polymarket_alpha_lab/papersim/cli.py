@@ -154,7 +154,8 @@ def _check_module_imports() -> tuple[str, bool, str]:
         True,
         f"6 modules imported ({', '.join(m.__name__.rpartition('.')[2] for m in modules)}); "
         f"{len(package.__all__)} package exports resolve "
-        "(ledger.record_entry/mark_to_market remain frozen stubs by design)",
+        "(ledger.record_entry/mark_to_market completed by FX-09L; pure event "
+        "construction and per-share mark delta)",
     )
 
 

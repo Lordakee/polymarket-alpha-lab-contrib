@@ -410,7 +410,11 @@ def test_papersim_dsn_never_reads_or_creates_password_file(monkeypatch, tmp_path
     assert "PAPERSIM_PG_PASSWORD_FILE" in ledger.papersim_dsn.__doc__
 
 
-def test_p0_stub_surface_unchanged():
+def test_record_entry_builds_pure_entry_event():
+    # FX-09L (design section 5.9): the former P0 stub is completed as a
+    # PURE contract. The frozen field order stays asserted and construction
+    # adds no I/O, no persistence, no clock read, no default fee category
+    # and no rounding.
     assert tuple(field.name for field in fields(ledger.PaperLedgerEntry)) == (
         "position_id",
         "fixture",
@@ -421,17 +425,94 @@ def test_p0_stub_surface_unchanged():
         "event",
         "evidence",
     )
-    with pytest.raises(NotImplementedError):
-        ledger.record_entry(
+    entry = ledger.record_entry(
+        position_id="#48",
+        fixture="Brentford FC vs. Nottingham Forest FC",
+        question="Over 2.5",
+        side="Over",
+        notional=250.0,
+        price=0.56,
+        evidence=["book walk ok", "gate pass"],
+    )
+    assert entry == ledger.PaperLedgerEntry(
+        position_id="#48",
+        fixture="Brentford FC vs. Nottingham Forest FC",
+        question="Over 2.5",
+        side="Over",
+        notional=250.0,
+        price=0.56,
+        event="entry",
+        evidence=("book walk ok", "gate pass"),
+    )
+    assert entry.event == "entry"
+    assert isinstance(entry.evidence, tuple)
+    # Default evidence is the empty tuple (no hidden defaults anywhere else).
+    assert ledger.record_entry("p", "f", "q", "YES", 10.0, 0.5).evidence == ()
+
+    def call(**overrides):
+        kwargs = dict(
             position_id="#48",
-            fixture="Brentford FC vs. Nottingham Forest FC",
+            fixture="BRE-FOR",
             question="Over 2.5",
             side="Over",
             notional=250.0,
             price=0.56,
+            evidence=(),
         )
-    with pytest.raises(NotImplementedError):
-        ledger.mark_to_market(entry_price=0.56, exit_bid=0.54)
+        kwargs.update(overrides)
+        return ledger.record_entry(**kwargs)
+
+    # ValueError family: non-empty string fields, finite positive notional,
+    # open-interval price, string evidence items only.
+    for overrides in (
+        {"position_id": ""},
+        {"position_id": 48},
+        {"fixture": ""},
+        {"fixture": None},
+        {"question": ""},
+        {"side": ""},
+        {"evidence": ("ok", 7)},
+        {"evidence": (b"ok",)},
+        {"notional": 0.0},
+        {"notional": -250.0},
+        {"notional": float("nan")},
+        {"notional": float("inf")},
+        {"notional": "250"},
+        {"price": 0.0},
+        {"price": 1.0},
+        {"price": 1.5},
+        {"price": -0.1},
+        {"price": float("nan")},
+        {"price": float("inf")},
+    ):
+        with pytest.raises(ValueError):
+            call(**overrides)
+
+
+def test_mark_to_market_is_the_raw_per_share_delta():
+    # FX-09L (design section 5.9): delta = exit_bid - entry_price, per
+    # share of the held side, raw float subtraction (no rounding, no share
+    # multiplication); the entry price keeps the open interval (0, 1) and
+    # the mark/exit bid uses the CLOSED interval [0, 1] (settle_exit rule).
+    assert ledger.mark_to_market(entry_price=0.56, exit_bid=0.54) == 0.54 - 0.56
+    assert ledger.mark_to_market(0.56, 0.54) == pytest.approx(-0.02)
+    assert ledger.mark_to_market(0.30, 0.30) == 0.0
+    assert ledger.mark_to_market(0.25, 1.0) == pytest.approx(0.75)
+    assert ledger.mark_to_market(0.25, 0.0) == pytest.approx(-0.25)
+    for bad_entry, bad_bid in (
+        (0.0, 0.5),
+        (1.0, 0.5),
+        (-0.1, 0.5),
+        (1.5, 0.5),
+        (float("nan"), 0.5),
+        (float("inf"), 0.5),
+        (0.5, -0.1),
+        (0.5, 1.5),
+        (0.5, float("nan")),
+        (0.5, float("inf")),
+    ):
+        with pytest.raises(ValueError):
+            ledger.mark_to_market(bad_entry, bad_bid)
 
 
 @pytest.mark.skipif(
@@ -884,3 +965,62 @@ def test_report_tool_requires_exactly_one_source(report_tool):
         )
     with pytest.raises(SystemExit, match="resolutions-csv"):
         report_tool.main(["--decisions-csv", "decisions.csv"])
+
+
+def test_report_tool_production_connect_routes_through_the_adapter(
+    report_tool, monkeypatch,
+):
+    # FX-09L (design 6.2 L3): the production --from-pg connect is built by
+    # the single allowlisted adapter; a fake injected into sys.modules keeps
+    # this an offline proof (the real adapter imports psycopg at module
+    # level, which must never happen in the offline suite).
+    import sys
+    import types
+
+    calls: list[tuple[str, str | None]] = []
+
+    def fake_connect_legacy_readonly(dsn, *, password_file=None):
+        calls.append((dsn, password_file))
+        sentinel = object()
+        return sentinel
+
+    fake_module = types.ModuleType(
+        "polymarket_alpha_lab.papersim.store_psycopg"
+    )
+    fake_module.connect_legacy_readonly = fake_connect_legacy_readonly
+    monkeypatch.setitem(
+        sys.modules,
+        "polymarket_alpha_lab.papersim.store_psycopg",
+        fake_module,
+    )
+    dsn = "postgresql://paper_sim@127.0.0.1:55432/paper_sim"
+
+    monkeypatch.setenv(ledger.PAPERSIM_PG_PASSWORD_FILE_ENV_VAR, "/tmp/ops-pw")
+    connect = report_tool._build_connect()
+    connection = connect(
+        dsn,
+        connect_timeout=5,
+        options="-c default_transaction_read_only=on",
+    )
+    assert connection is not None
+    assert calls == [(dsn, "/tmp/ops-pw")]
+
+    monkeypatch.delenv(ledger.PAPERSIM_PG_PASSWORD_FILE_ENV_VAR, raising=False)
+    calls.clear()
+    connect = report_tool._build_connect()
+    connect(
+        dsn,
+        connect_timeout=5,
+        options="-c default_transaction_read_only=on",
+    )
+    assert calls == [(dsn, None)]
+
+    # The contract kwargs are checked, not silently swallowed: any drift of
+    # the load_rows_pg callback shape fails loudly instead of bypassing the
+    # adapter's read-only forcing.
+    with pytest.raises(ValueError, match="unexpected load_rows_pg connect kwargs"):
+        connect(dsn, connect_timeout=9, options="-c default_transaction_read_only=on")
+    with pytest.raises(ValueError, match="unexpected load_rows_pg connect kwargs"):
+        connect(dsn)
+    # No fake adapter call happened for the rejected shapes.
+    assert calls == [(dsn, None)]
