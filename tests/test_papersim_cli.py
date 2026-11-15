@@ -308,7 +308,13 @@ class _StubTx:
 
 
 class _StubStoreConn:
-    """In-memory stand-in speaking only the evaluate SELECT surface."""
+    """In-memory stand-in speaking only the evaluate SELECT surface.
+
+    Candidate rows carry the settlement-join columns of the fixed
+    candidates query (``has_order_book`` plus the ``papersim.settlements``
+    fields; ``None`` when no entry/settlement row exists) so one stub
+    serves the whole evaluate surface.
+    """
 
     def __init__(self, candidates, evidence=(), outcomes=()):
         self._candidates = candidates
@@ -321,8 +327,11 @@ class _StubStoreConn:
             columns = ["candidate_id", "candidate_key", "conclusion", "side",
                        "market_type", "market_kind", "model_name", "model_version",
                        "evaluated_at", "condition_id", "market_id", "market_slug",
-                       "gate_version", "stake", "price", "fee_category"]
-            return [tuple(row[name] for name in columns) for row in self._candidates], columns
+                       "gate_version", "stake", "price", "fee_category",
+                       "has_order_book", "classification", "win_loss",
+                       "exit_price", "proceeds", "pnl_gross", "fee_total",
+                       "pnl_net", "confirmed_at"]
+            return [tuple(row.get(name) for name in columns) for row in self._candidates], columns
         if sql.startswith("SELECT candidate_id, evidence_role"):
             columns = ["candidate_id", "evidence_role", "model_probability", "mid",
                        "bid", "ask", "last"]
@@ -350,7 +359,8 @@ def _stub_store() -> _StubStoreConn:
          "model_name": "gbm", "model_version": "r19", "evaluated_at": STUB_NOW,
          "condition_id": None, "market_id": "m-1", "market_slug": None,
          "gate_version": "gates-2026-11-07", "stake": Decimal("250"),
-         "price": Decimal("0.56"), "fee_category": "crypto"},
+         "price": Decimal("0.56"), "fee_category": "crypto",
+         "has_order_book": True},
         {"candidate_id": 2, "candidate_key": "k-rej", "conclusion": "REJECTED",
          "side": "NO", "market_type": None, "market_kind": "other",
          "model_name": "soccer", "model_version": "r23", "evaluated_at": STUB_NOW,
@@ -392,8 +402,8 @@ def test_evaluate_and_replay_help_document_the_read_only_contract(capsys) -> Non
 def test_evaluate_reads_the_store_with_selects_only(monkeypatch, capsys) -> None:
     conn = _stub_store()
     monkeypatch.setattr(cli, "_open_readonly_connection", lambda args, label: conn)
-    # The M1 store carries no recorded settlement PnL, so entered+settled
-    # rows evaluate under the recomputed basis.
+    # Unsettled rows carry no recorded settlement PnL, so they evaluate
+    # under the recomputed basis (recorded basis fails loudly on them).
     code = cli.main(["evaluate", "--managed", "--pnl-basis", "recomputed"])
     out = capsys.readouterr().out
     assert code == 0, out
@@ -407,6 +417,306 @@ def test_evaluate_reads_the_store_with_selects_only(monkeypatch, capsys) -> None
     # Deterministic: the same evidence evaluates to identical output bytes.
     cli.main(["evaluate", "--managed", "--pnl-basis", "recomputed"])
     assert capsys.readouterr().out == out
+
+
+# ---------------------------------------------------------------------------
+# evaluate / replay -- settlement-ledger wiring (M1 final review P2-01)
+# ---------------------------------------------------------------------------
+
+
+def _decision_evidence(candidate_id: int, probability, mid):
+    return {"candidate_id": candidate_id, "evidence_role": "DECISION",
+            "model_probability": Decimal(str(probability)),
+            "mid": Decimal(str(mid)), "bid": None, "ask": None, "last": None}
+
+
+def _market_outcome(market_id: str, outcome: str, hours: float):
+    return {"outcome_id": abs(hash(market_id)) % 1000, "condition_id": None,
+            "market_id": market_id, "market_slug": None, "outcome": outcome,
+            "observed_at": STUB_NOW + datetime.timedelta(hours=hours)}
+
+
+def _entered_candidate(candidate_id: int, market_id: str, *, side: str,
+                       stake: str, price: str, has_order_book: bool,
+                       settlement: dict | None = None) -> dict:
+    row = {"candidate_id": candidate_id, "candidate_key": f"k-{market_id}",
+           "conclusion": "ACCEPTED", "side": side, "market_type": "terminal",
+           "market_kind": "terminal", "model_name": "gbm",
+           "model_version": "r19", "evaluated_at": STUB_NOW,
+           "condition_id": None, "market_id": market_id, "market_slug": None,
+           "gate_version": "gates-2026-11-07", "stake": Decimal(stake),
+           "price": Decimal(price), "fee_category": "sports",
+           "has_order_book": has_order_book}
+    if settlement is not None:
+        row.update(settlement)
+    return row
+
+
+def _exit_settlement(**overrides) -> dict:
+    """The final-review repro settlement: 250 @ 0.50 exited at 0.30.
+
+    Gross -100.00 (proceeds 150 on 500 shares); sports-rate two-sided fees
+    6.25 + 5.25 = 11.50; net -111.50.
+    """
+    row = {"classification": "EXIT", "win_loss": None,
+           "exit_price": Decimal("0.30"), "proceeds": Decimal("150.00"),
+           "pnl_gross": Decimal("-100.00"), "fee_total": Decimal("11.50"),
+           "pnl_net": Decimal("-111.50"),
+           "confirmed_at": STUB_NOW + datetime.timedelta(hours=3)}
+    row.update(overrides)
+    return row
+
+
+def test_evaluate_wires_settlement_ledger_for_exit_trades(
+    monkeypatch, capsys
+) -> None:
+    """M1 final review P2-01: an early-exited trade must keep the ledger's
+    realization (gross -100 / net -111.50 / exits 1) instead of being
+    recomputed as held-to-natural-settlement (+250 / +243.75 / 0), and the
+    candidates query must actually read ``papersim.settlements``."""
+    from polymarket_alpha_lab.papersim import fees
+
+    conn = _StubStoreConn(
+        candidates=[_entered_candidate(
+            11, "m-exit", side="YES", stake="250", price="0.50",
+            has_order_book=True, settlement=_exit_settlement())],
+        evidence=[_decision_evidence(11, "0.60", "0.50")],
+        outcomes=[_market_outcome("m-exit", "YES", 6)],
+    )
+    monkeypatch.setattr(cli, "_open_readonly_connection", lambda args, label: conn)
+    # Default recorded basis: the settlement ledger supplies the PnL.
+    code = cli.main(["evaluate", "--managed"])
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert any("papersim.settlements" in sql for sql in conn.statements), (
+        "the evaluate store read must join papersim.settlements"
+    )
+    report = json.loads(out)
+    queue = report["queues"][0]
+    assert queue["counts"]["entered"] == 1
+    assert queue["counts"]["exited"] == 1
+    assert queue["counts"]["settled"] == 1
+    assert queue["roi"]["gross_pnl"] == pytest.approx(-100.0)
+    assert queue["roi"]["net_pnl"] == pytest.approx(-111.50)
+    # Fee-implementation consistency: entry 250*0.05*0.5 = 6.25, exit
+    # 500 shares * 0.05 * 0.3 * 0.7 = 5.25 (the same single schedule the
+    # settlement worker charged; fee_total 11.50 == pnl_gross - pnl_net).
+    assert queue["roi"]["entry_fees"] == pytest.approx(
+        fees.entry_fee(250.0, 0.50, 0.05))
+    assert queue["roi"]["exit_fees"] == pytest.approx(
+        fees.exit_fee(250.0 / 0.50, 0.30, 0.05))
+    assert queue["roi"]["entry_fees"] + queue["roi"]["exit_fees"] == (
+        pytest.approx(11.50)
+    )
+    # The market's later natural YES stays an independent whole-market
+    # scoring input; it must NOT turn the trade into a natural settlement.
+    assert queue["scoring"]["markets_scored"] == 1
+    assert queue["scoring"]["missing_outcome"] == 0
+    # EXITED rows keep the recorded realization under the recomputed
+    # basis too (the exit price is not recomputed from the natural result).
+    code = cli.main(["evaluate", "--managed", "--pnl-basis", "recomputed"])
+    recomputed = json.loads(capsys.readouterr().out)
+    rqueue = recomputed["queues"][0]
+    assert rqueue["roi"]["gross_pnl"] == pytest.approx(-100.0)
+    assert rqueue["roi"]["net_pnl"] == pytest.approx(-111.50)
+    assert rqueue["counts"]["exited"] == 1
+
+
+def test_evaluate_recorded_basis_reads_settlements_and_fails_without_them(
+    monkeypatch, capsys
+) -> None:
+    """recorded basis: settlements supply recorded PnL when present; an
+    entered row WITHOUT a settlement record fails loudly instead of being
+    silently recomputed or zero-filled."""
+    settled = _StubStoreConn(
+        candidates=[_entered_candidate(
+            12, "m-win", side="YES", stake="250", price="0.50",
+            has_order_book=True,
+            settlement={"classification": "NATURAL", "win_loss": "win",
+                        "exit_price": None, "proceeds": Decimal("500.00"),
+                        "pnl_gross": Decimal("250.00"),
+                        "fee_total": Decimal("6.25"),
+                        "pnl_net": Decimal("243.75"),
+                        "confirmed_at": STUB_NOW + datetime.timedelta(hours=6)})],
+        evidence=[_decision_evidence(12, "0.60", "0.50")],
+        outcomes=[_market_outcome("m-win", "YES", 7)],
+    )
+    monkeypatch.setattr(
+        cli, "_open_readonly_connection", lambda args, label: settled)
+    code = cli.main(["evaluate", "--managed"])  # default recorded basis
+    out = capsys.readouterr().out
+    assert code == 0, out
+    queue = json.loads(out)["queues"][0]
+    assert queue["roi"]["gross_pnl"] == pytest.approx(250.0)
+    assert queue["roi"]["net_pnl"] == pytest.approx(243.75)
+    assert queue["counts"]["exited"] == 0
+
+    unsettled = _StubStoreConn(
+        candidates=[_entered_candidate(
+            14, "m-open", side="YES", stake="250", price="0.56",
+            has_order_book=True)],
+        evidence=[_decision_evidence(14, "0.62", "0.56")],
+        outcomes=[_market_outcome("m-open", "YES", 6)],
+    )
+    monkeypatch.setattr(
+        cli, "_open_readonly_connection", lambda args, label: unsettled)
+    code = cli.main(["evaluate", "--managed"])
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "evaluate: FAIL" in err
+    assert "recorded mode" in err and "pnl" in err
+
+
+def test_evaluate_win_loss_labels_and_natural_outcome_stay_separate(
+    monkeypatch, capsys
+) -> None:
+    """A NATURAL settlement carries its post-audit win/loss label into the
+    trade outcome while the market-level natural result keeps feeding
+    whole-market scoring (it is not duplicated into trade PnL)."""
+    conn = _StubStoreConn(
+        candidates=[
+            _entered_candidate(
+                15, "m-label", side="YES", stake="250", price="0.50",
+                has_order_book=True,
+                settlement={"classification": "NATURAL", "win_loss": "win",
+                            "exit_price": None, "proceeds": Decimal("500.00"),
+                            "pnl_gross": Decimal("250.00"),
+                            "fee_total": Decimal("6.25"),
+                            "pnl_net": Decimal("243.75"),
+                            "confirmed_at": STUB_NOW + datetime.timedelta(hours=6)}),
+            _entered_candidate(
+                16, "m-label-loss", side="YES", stake="250", price="0.50",
+                has_order_book=True,
+                settlement={"classification": "NATURAL", "win_loss": "loss",
+                            "exit_price": None, "proceeds": Decimal("0.00"),
+                            "pnl_gross": Decimal("-250.00"),
+                            "fee_total": Decimal("6.25"),
+                            "pnl_net": Decimal("-256.25"),
+                            "confirmed_at": STUB_NOW + datetime.timedelta(hours=6)}),
+        ],
+        evidence=[_decision_evidence(15, "0.60", "0.50"),
+                  _decision_evidence(16, "0.60", "0.50")],
+        outcomes=[_market_outcome("m-label", "YES", 7),
+                  _market_outcome("m-label-loss", "NO", 7)],
+    )
+    monkeypatch.setattr(cli, "_open_readonly_connection", lambda args, label: conn)
+    code = cli.main(["evaluate", "--managed"])
+    out = capsys.readouterr().out
+    assert code == 0, out
+    queue = json.loads(out)["queues"][0]
+    assert queue["counts"]["settled"] == 2
+    assert queue["counts"]["exited"] == 0
+    # recorded basis: one win (+250) and one loss (-250) gross, net of the
+    # two 6.25 entry fees.
+    assert queue["roi"]["gross_pnl"] == pytest.approx(0.0)
+    assert queue["roi"]["net_pnl"] == pytest.approx(-12.50)
+    # Both markets keep their natural results for model-vs-market scoring.
+    assert queue["scoring"]["markets_scored"] == 2
+    assert queue["scoring"]["missing_outcome"] == 0
+
+
+def test_evaluate_voided_settlement_excludes_the_trade_from_roi(
+    monkeypatch, capsys
+) -> None:
+    """A VOIDED_REFUND settlement voids the trade even when the market
+    later recorded a natural result: stake refunded, excluded from ROI."""
+    conn = _StubStoreConn(
+        candidates=[
+            _entered_candidate(
+                17, "m-void", side="YES", stake="250", price="0.50",
+                has_order_book=True,
+                settlement={"classification": "VOIDED_REFUND", "win_loss": None,
+                            "exit_price": None, "proceeds": Decimal("250.00"),
+                            "pnl_gross": Decimal("0.00"),
+                            "fee_total": Decimal("0.00"),
+                            "pnl_net": Decimal("0.00"),
+                            "confirmed_at": STUB_NOW + datetime.timedelta(hours=6)}),
+            _entered_candidate(
+                18, "m-win2", side="YES", stake="250", price="0.50",
+                has_order_book=True,
+                settlement={"classification": "NATURAL", "win_loss": "win",
+                            "exit_price": None, "proceeds": Decimal("500.00"),
+                            "pnl_gross": Decimal("250.00"),
+                            "fee_total": Decimal("6.25"),
+                            "pnl_net": Decimal("243.75"),
+                            "confirmed_at": STUB_NOW + datetime.timedelta(hours=6)}),
+        ],
+        evidence=[_decision_evidence(17, "0.60", "0.50"),
+                  _decision_evidence(18, "0.60", "0.50")],
+        outcomes=[_market_outcome("m-void", "YES", 7),
+                  _market_outcome("m-win2", "YES", 7)],
+    )
+    monkeypatch.setattr(cli, "_open_readonly_connection", lambda args, label: conn)
+    code = cli.main(["evaluate", "--managed"])
+    out = capsys.readouterr().out
+    assert code == 0, out
+    queue = json.loads(out)["queues"][0]
+    assert queue["counts"]["voided"] == 1
+    assert queue["counts"]["settled"] == 1
+    assert queue["roi"]["counted"] == 1  # only the win row carries stake
+    assert queue["roi"]["stake"] == pytest.approx(250.0)
+    assert queue["roi"]["gross_pnl"] == pytest.approx(250.0)
+
+
+def test_evaluate_fill_provenance_requires_a_recorded_order_book(
+    monkeypatch, capsys
+) -> None:
+    """book_walk provenance needs the recorded walked book; a legacy
+    import (no order book on the candidate) must stay recorded_price and
+    surface as a criterion-B provenance gap, never as a silent book walk."""
+    def store(legacy: bool) -> _StubStoreConn:
+        rows = [
+            _entered_candidate(
+                21, "m-v2", side="YES", stake="250", price="0.50",
+                has_order_book=True,
+                settlement={"classification": "NATURAL", "win_loss": "win",
+                            "exit_price": None, "proceeds": Decimal("500.00"),
+                            "pnl_gross": Decimal("250.00"),
+                            "fee_total": Decimal("6.25"),
+                            "pnl_net": Decimal("243.75"),
+                            "confirmed_at": STUB_NOW + datetime.timedelta(hours=6)}),
+        ]
+        if legacy:
+            rows.append(_entered_candidate(
+                22, "m-leg", side="NO", stake="400", price="0.69",
+                has_order_book=False,
+                settlement={"classification": "NATURAL", "win_loss": "loss",
+                            "exit_price": None, "proceeds": Decimal("0.00"),
+                            "pnl_gross": Decimal("-400.00"),
+                            "fee_total": Decimal("6.20"),
+                            "pnl_net": Decimal("-406.20"),
+                            "confirmed_at": STUB_NOW + datetime.timedelta(hours=6)}))
+        return _StubStoreConn(
+            candidates=rows,
+            evidence=[_decision_evidence(row["candidate_id"], "0.60", "0.50")
+                      for row in rows],
+            outcomes=[_market_outcome("m-v2", "YES", 7),
+                      _market_outcome("m-leg", "YES", 7)])
+
+    monkeypatch.setattr(cli, "_open_readonly_connection",
+                        lambda args, label: store(legacy=False))
+    code = cli.main(["evaluate", "--managed"])
+    out = capsys.readouterr().out
+    assert code == 0, out
+    verdicts = {
+        criterion["key"]: criterion
+        for criterion in json.loads(out)["queues"][0]["promotion"]
+    }
+    assert not any("book-walk" in reason
+                   for reason in verdicts["B"]["reasons"])
+
+    monkeypatch.setattr(cli, "_open_readonly_connection",
+                        lambda args, label: store(legacy=True))
+    code = cli.main(["evaluate", "--managed"])
+    out = capsys.readouterr().out
+    assert code == 0, out
+    verdicts = {
+        criterion["key"]: criterion
+        for criterion in json.loads(out)["queues"][0]["promotion"]
+    }
+    assert verdicts["B"]["verdict"] == "NOT_ASSESSABLE"
+    assert any("book-walk" in reason and "1 of 2" in reason
+               for reason in verdicts["B"]["reasons"])
 
 
 def test_evaluate_json_input_runs_without_any_connection(monkeypatch, capsys, tmp_path) -> None:

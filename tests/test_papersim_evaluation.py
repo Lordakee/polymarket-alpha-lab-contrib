@@ -413,6 +413,46 @@ def test_repeated_market_observations_dedup_for_scoring_not_for_roi():
     assert q.roi.gross_pnl == pytest.approx(200.0)
 
 
+def test_natural_outcome_feeds_scoring_independently_of_trade_labels():
+    """M1 final review P2-01: trade outcomes (win/loss labels, EXITED) and
+    the market-level natural result are separate inputs. A settled book
+    whose rows carry trade labels keeps whole-market scoring alive through
+    ``natural_outcome``; without it every settled market would silently
+    lose its scoring pair."""
+    rows = [
+        # A win-labelled trade on a YES market and an EXITED trade on a NO
+        # market: both markets stay scored through natural_outcome.
+        mk(candidate_id="t1", market_key="mk-t1", outcome="win",
+           recorded_pnl=100.0, natural_outcome="YES"),
+        mk(candidate_id="t2", market_key="mk-t2", outcome="EXITED",
+           recorded_pnl=-60.70, natural_outcome="NO"),
+        # A trade row without any natural result still leaves the market
+        # unscored (honest UNKNOWN), and a later observation of the same
+        # market can supply the natural result.
+        mk(candidate_id="t3a", market_key="mk-t3", outcome="EXITED",
+           recorded_pnl=-10.0, decision_time=_T0),
+        mk(candidate_id="t3b", market_key="mk-t3", outcome="loss",
+           recorded_pnl=-100.0, decision_time=_T0 + timedelta(days=1),
+           natural_outcome="NO"),
+    ]
+    q = ev.evaluate_queues(rows).queues[0]
+    assert q.scoring.markets_total == 3
+    assert q.scoring.markets_scored == 3
+    assert q.scoring.missing_outcome == 0
+    # Trade semantics stay trade-side: win/loss labels and both exits are
+    # all counted ROI rows; exits stay excluded from natural hit counts.
+    assert q.roi.counted == 4
+    assert q.counts.exited == 2
+    assert q.fills.natural_settled == 0
+
+
+def test_natural_outcome_must_be_a_natural_resolution():
+    with pytest.raises(ValueError, match="natural_outcome"):
+        mk(natural_outcome="win")
+    with pytest.raises(ValueError, match="natural_outcome"):
+        mk(natural_outcome="VOIDED")
+
+
 def test_probability_endpoints_keep_infinite_log_loss_visible():
     # A wrong certain model forecast (p=1.0 on a NO) must surface as an
     # infinite log loss, not be clipped away.
@@ -550,6 +590,51 @@ def test_concentration_groups_by_market_key():
     assert q.concentration.top_market_key == "same"
     assert q.concentration.top_market_pnl == pytest.approx(120.0)
     assert q.concentration.top_market_share == pytest.approx(120.0 / 150.0)
+    # Net-of-fees concentration: each row pays a 2.5 entry fee (stake 100
+    # @ 0.50, sports), so "same" nets 115 of a 142.5 total.
+    assert q.concentration.net_total_pnl == pytest.approx(142.5)
+    assert q.concentration.top_market_net_pnl == pytest.approx(115.0)
+    assert q.concentration.top_market_net_share == pytest.approx(115.0 / 142.5)
+    assert q.concentration.top_market_net_key == "same"
+
+
+def test_criterion_e_concentration_uses_net_of_fees_basis():
+    """M1 final review P2-02: the OD-G E concentration verdict must use
+    the net-of-fees PnL basis (plan section 5 B-condition semantics:
+    every PnL is after fees), not the gross basis. The reviewer's
+    four-market
+    construction: stakes 150/250/250/250, entries 0.50 and 3x
+    0.6817148572467722, all natural YES at the sports rate — gross
+    concentration 29.9900% (below the 30% bar) but net concentration
+    30.1869404845% (at/above it). Gross keeps its historical-report
+    role; the promotion verdict reads the net share."""
+    p = 0.6817148572467722
+    rows = [
+        mk(candidate_id="net1", market_key="mkt-top", stake=150.0,
+           fill_price=0.50, fee_category="sports", outcome="YES",
+           recorded_pnl=150.0 / 0.50 - 150.0),
+    ] + [
+        mk(candidate_id=f"net{i}", market_key=f"mkt-{i}", stake=250.0,
+           fill_price=p, market_mid=p, fee_category="sports", outcome="YES",
+           recorded_pnl=250.0 / p - 250.0)
+        for i in (2, 3, 4)
+    ]
+    q = ev.evaluate_queues(rows).queues[0]
+    # Historical gross metric is still reported (10-30 anchors unchanged).
+    assert q.concentration.top_market_key == "mkt-top"
+    assert q.concentration.top_market_share == pytest.approx(0.299900, abs=5e-6)
+    # The promotion basis is net of fees: 30.1869404845% >= 30% -> FAIL.
+    assert q.concentration.net_total_pnl == pytest.approx(
+        146.25 + 3 * (250.0 / p - 250.0 - 250.0 * 0.05 * (1.0 - p)),
+        rel=1e-12,
+    )
+    assert q.concentration.top_market_net_pnl == pytest.approx(146.25)
+    assert q.concentration.top_market_net_share == pytest.approx(
+        0.301869404845, abs=1e-10
+    )
+    verdicts = {c.key: c for c in q.promotion}
+    assert verdicts["E"].verdict == ev.VERDICT_FAIL
+    assert any("30.2% of total" in reason for reason in verdicts["E"].reasons)
 
 
 def test_max_drawdown_on_net_pnl_series():
@@ -684,16 +769,16 @@ def test_criterion_d_boundaries():
 
 
 def test_criterion_e_boundaries():
-    ok = dict(net_roi=0.01, top_market_share=0.20, max_drawdown=1000.0,
+    ok = dict(net_roi=0.01, top_market_net_share=0.20, max_drawdown=1000.0,
               stake=5000.0)
     assert ev.criterion_e(**ok).verdict == ev.VERDICT_PASS
     cases = [
         ("net_roi", -0.001, ev.VERDICT_FAIL),
         ("net_roi", 0.0, ev.VERDICT_FAIL),  # strict > 0
         ("net_roi", 0.001, ev.VERDICT_PASS),
-        ("top_market_share", 0.299, ev.VERDICT_PASS),
-        ("top_market_share", 0.300, ev.VERDICT_FAIL),  # strict < 30%
-        ("top_market_share", 0.301, ev.VERDICT_FAIL),
+        ("top_market_net_share", 0.299, ev.VERDICT_PASS),
+        ("top_market_net_share", 0.300, ev.VERDICT_FAIL),  # strict < 30%
+        ("top_market_net_share", 0.301, ev.VERDICT_FAIL),
         ("max_drawdown", 2499.99, ev.VERDICT_PASS),
         ("max_drawdown", 2500.00, ev.VERDICT_PASS),  # inclusive <= 2500
         ("max_drawdown", 2500.01, ev.VERDICT_FAIL),
@@ -702,13 +787,13 @@ def test_criterion_e_boundaries():
         assert ev.criterion_e(**{**ok, field: value}).verdict == expected, (
             field, value
         )
-    # Undefined share (non-positive total pnl) reported, not zero.
-    result = ev.criterion_e(net_roi=-0.05, top_market_share=None,
+    # Undefined share (non-positive total net pnl) reported, not zero.
+    result = ev.criterion_e(net_roi=-0.05, top_market_net_share=None,
                             max_drawdown=100.0, stake=5000.0)
     assert result.verdict == ev.VERDICT_FAIL
     assert any("undefined" in r for r in result.reasons)
     # No stake -> not assessable.
-    assert ev.criterion_e(net_roi=None, top_market_share=None,
+    assert ev.criterion_e(net_roi=None, top_market_net_share=None,
                           max_drawdown=None,
                           stake=0.0).verdict == ev.VERDICT_NOT_ASSESSABLE
 

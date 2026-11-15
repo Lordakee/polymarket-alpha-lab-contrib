@@ -108,10 +108,15 @@ CLAUDE_PROBE_FILES = ('tests/test_claude_cli_probe.py', 'tests/test_claude_cli_p
 # Final CLI node (2026-11-15): test_papersim_cli.py joins the papersim
 # native partition (the evaluate/replay subcommands have opt-in real-
 # cluster assertions); the precise one-line matrix append is pinned here.
+# M1 final review P2-03 (2026-11-15): the two FX-12 native proof files
+# join the same partition (register/verify+append-only guard and the
+# full record/replay round trip incl. tampered-snapshot rejection) so
+# the four native proofs actually execute on the Linux matrix.
 PAPERSIM_FILES = ('tests/test_papersim_ledger.py', 'tests/test_papersim_perf_view_fix.py',
                    'tests/test_papersim_store.py', 'tests/test_papersim_store_native.py',
                    'tests/test_papersim_migrations.py', 'tests/test_papersim_import_legacy.py',
-                   'tests/test_papersim_cli.py')
+                   'tests/test_papersim_cli.py', 'tests/test_papersim_snapshots.py',
+                   'tests/test_papersim_replay.py')
 WINDOWS_PARTITIONS = ('storage', 'research', 'dispatch')
 LINUX_PARTITIONS = ('storage', 'research', 'dispatch', 'papersim')
 PUSH_PATHS = (

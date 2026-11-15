@@ -23,7 +23,11 @@ created here):
   (``YES``/``NO``/``YES-basket``), the post-audit ``win``/``loss`` labels,
   ``EXITED``, ``VOIDED`` or ``None`` (unknown). ``EXITED`` is never treated
   as a natural result: exits realize PnL for ROI but are excluded from
-  forecast scoring and hit counts.
+  forecast scoring and hit counts. ``natural_outcome`` (M1 final review
+  P2-01) is the independent market-level natural result a settled trade
+  row keeps for whole-market scoring while its ``outcome`` carries the
+  trade-side label (``win``/``loss``/``EXITED``/``VOIDED``) from the
+  settlement ledger; scoring accepts either field, trade PnL never does.
 
 Scoring reuse (no fifth implementation): Brier, log loss, infinite-loss
 status and calibration come from
@@ -187,6 +191,7 @@ class EvaluationCandidate:
     fee_category: str | None = None  # fees.taker_fee_rate category
     fill_provenance: str | None = None
     outcome: str | None = None
+    natural_outcome: str | None = None  # market natural result, scoring-only
     recorded_pnl: float | None = None
     decision_time: datetime | None = None
     settled_time: datetime | None = None
@@ -218,6 +223,14 @@ class EvaluationCandidate:
             _require_finite(self.recorded_pnl, "recorded_pnl")
         if self.outcome not in _ALLOWED_OUTCOMES:
             raise ValueError(f"unknown resolution outcome: {self.outcome!r}")
+        if self.natural_outcome is not None and (
+            self.natural_outcome not in ledger.NATURAL_OUTCOMES
+        ):
+            raise ValueError(
+                "natural_outcome must be one of "
+                f"{ledger.NATURAL_OUTCOMES} or None; got "
+                f"{self.natural_outcome!r}"
+            )
         if self.side is not None and self.side not in _ALLOWED_SIDES:
             raise ValueError(f"unknown side: {self.side!r}")
         if self.outcome in ledger.NATURAL_OUTCOMES and self.side is None:
@@ -405,10 +418,23 @@ class MarketScoring:
 
 @dataclass(frozen=True)
 class ConcentrationMetrics:
+    """Profit concentration of one queue, gross AND net of fees.
+
+    The gross fields keep their historical-report role (the frozen 10-30
+    regression anchors: total 2552.43 / top 1305.20 / share 51.1%). The
+    ``*net*`` fields (M1 final review P2-02) are the net-of-fees numbers
+    the OD-G criterion E verdict reads: plan section 5 B-condition
+    semantics make every PnL used for promotion net of fees.
+    """
+
     total_pnl: float
     top_market_key: str | None
     top_market_pnl: float | None
     top_market_share: float | None  # None/UNDEFINED when total pnl <= 0
+    net_total_pnl: float
+    top_market_net_key: str | None
+    top_market_net_pnl: float | None
+    top_market_net_share: float | None  # None when net total pnl <= 0
     status: str
 
 
@@ -601,14 +627,20 @@ def criterion_d(
 
 def criterion_e(
     net_roi: float | None,
-    top_market_share: float | None,
+    top_market_net_share: float | None,
     max_drawdown: float | None,
     stake: float,
 ) -> CriterionResult:
     """E outcome: net-of-fees ROI point estimate > 0 (strict), the most
-    profitable single market < 30% of the queue's total gross PnL (strict;
-    UNDEFINED when total PnL is not positive), and max drawdown <= 10
-    standard units of $250 (inclusive)."""
+    profitable single market < 30% of the queue's total NET-of-fees PnL
+    (strict; UNDEFINED when the total net PnL is not positive), and max
+    drawdown <= 10 standard units of $250 (inclusive).
+
+    M1 final review P2-02: the concentration input is the net-of-fees
+    share (``ConcentrationMetrics.top_market_net_share``) per the plan
+    section 5 B-condition semantics — every PnL used for the promotion
+    verdict is after fees. The gross share stays a reported historical
+    metric only and must never gate this criterion."""
     if stake <= 0 or net_roi is None or max_drawdown is None:
         return CriterionResult(
             "E", VERDICT_NOT_ASSESSABLE,
@@ -617,13 +649,13 @@ def criterion_e(
     failures = []
     if net_roi <= PROMOTION_NET_ROI_MIN:
         failures.append(f"net ROI {net_roi:.4f} <= 0")
-    if top_market_share is None:
+    if top_market_net_share is None:
         failures.append(
-            "profit concentration undefined (total gross pnl not positive)"
+            "profit concentration undefined (total net pnl not positive)"
         )
-    elif top_market_share >= PROMOTION_TOP_MARKET_SHARE_MAX:
+    elif top_market_net_share >= PROMOTION_TOP_MARKET_SHARE_MAX:
         failures.append(
-            f"top market {top_market_share:.1%} of total pnl >= "
+            f"top market {top_market_net_share:.1%} of total net pnl >= "
             f"{PROMOTION_TOP_MARKET_SHARE_MAX:.0%}"
         )
     if max_drawdown > PROMOTION_MAX_DRAWDOWN_USD:
@@ -960,11 +992,19 @@ def _market_scoring(
     for group in groups.values():
         ordered = sorted(group, key=_representative_order)
         representative = ordered[0]
+        # The market's natural result: the earliest row exposing one,
+        # either directly through its outcome or — for rows whose outcome
+        # carries a trade label (win/loss/EXITED/VOIDED) — through the
+        # independent natural_outcome field (M1 final review P2-01).
         outcome = next(
             (
-                row.outcome
-                for row in ordered
-                if row.outcome in ledger.NATURAL_OUTCOMES
+                token
+                for token in (
+                    row.outcome if row.outcome in ledger.NATURAL_OUTCOMES
+                    else row.natural_outcome
+                    for row in ordered
+                )
+                if token is not None
             ),
             None,
         )
@@ -1192,6 +1232,10 @@ def _evaluate_queue(
     by_market: dict[str, list[_RoiRow]] = {}
     for row in roi_rows:
         by_market.setdefault(row.candidate.market_key, []).append(row)
+    # Gross concentration stays the historical-report block (the 10-30
+    # anchors: 51.1% top-market share). The OD-G criterion E verdict
+    # reads the net-of-fees concentration (M1 final review P2-02): the
+    # most profitable market by net PnL over the queue's total net PnL.
     total_pnl = sum(row.gross for row in roi_rows)
     if by_market and total_pnl > 0:
         top_key = max(
@@ -1208,11 +1252,27 @@ def _evaluate_queue(
         concentration_status = (
             STATUS_UNDEFINED if roi_rows else STATUS_INSUFFICIENT
         )
+    net_total_pnl = sum(row.net for row in roi_rows)
+    if by_market and net_total_pnl > 0:
+        net_top_key = max(
+            by_market,
+            key=lambda market: sum(row.net for row in by_market[market]),
+        )
+        net_top_pnl = sum(row.net for row in by_market[net_top_key])
+        net_share = net_top_pnl / net_total_pnl
+    else:
+        net_top_key = None
+        net_top_pnl = None
+        net_share = None
     concentration = ConcentrationMetrics(
         total_pnl=total_pnl,
         top_market_key=top_key,
         top_market_pnl=top_pnl,
         top_market_share=share,
+        net_total_pnl=net_total_pnl,
+        top_market_net_key=net_top_key,
+        top_market_net_pnl=net_top_pnl,
+        top_market_net_share=net_share,
         status=concentration_status,
     )
 
@@ -1270,7 +1330,7 @@ def _evaluate_queue(
         ),
         criterion_e(
             net_roi=roi.net_roi,
-            top_market_share=concentration.top_market_share,
+            top_market_net_share=concentration.top_market_net_share,
             max_drawdown=(
                 drawdown.max_drawdown if roi_rows else None
             ),

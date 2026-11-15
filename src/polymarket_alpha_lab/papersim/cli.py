@@ -44,7 +44,13 @@ Subcommands (WP-P1 final commit):
   recorded paper evidence. The candidate queue comes from the managed
   papersim store (read-only SELECTs through the reviewed connection
   adapter), an explicit isolated-cluster DSN validated by the single
-  audited local validator, or an explicit JSON candidate file. Prints
+  audited local validator, or an explicit JSON candidate file. Store
+  reads join the per-trade settlement ledger (M1 final review P2-01):
+  settled trades evaluate on their recorded realization (win/loss
+  labels, EXITED exits with the ledger gross and two-sided fees,
+  VOIDED refunds), the market natural result stays an independent
+  whole-market scoring input, and book-walk provenance requires the
+  candidate's recorded walked order book. Prints
   one JSON :class:`~polymarket_alpha_lab.papersim.evaluation.EvaluationReport`;
   paper-only / report-only / readonly.
 - ``replay`` (final CLI wiring, M1): FX-12 forensic replay of one
@@ -537,12 +543,22 @@ def _cmd_validate_dsn() -> int:
 #: evidence_id (design P3-8 derived rule); the close mark is the latest
 #: CLOSE row; the effective market outcome reuses the pure FX-09S
 #: selection (latest non-UNKNOWN observation, tie-break outcome_id DESC).
+#: M1 final review P2-01: the candidates statement also joins the per-trade
+#: settlement ledger (``papersim.settlements`` through ``entries.entry_id``)
+#: and the recorded-book marker, so a settled trade evaluates on its actual
+#: realization (recorded gross PnL, win/loss label, EXITED/VOIDED
+#: classification) instead of being recomputed as held-to-natural-settlement,
+#: and legacy fills no longer obtain book-walk provenance for free.
 _EVAL_CANDIDATES_SQL = (
     "SELECT c.candidate_id, c.candidate_key, c.conclusion, c.side, c.market_type, "
     "c.market_kind, c.model_name, c.model_version, c.evaluated_at, c.condition_id, "
-    "c.market_id, c.market_slug, s.gate_version, e.stake, e.price, e.fee_category "
+    "c.market_id, c.market_slug, s.gate_version, e.stake, e.price, e.fee_category, "
+    "(c.order_book is not null) AS has_order_book, "
+    "st.classification, st.win_loss, st.exit_price, st.proceeds, st.pnl_gross, "
+    "st.fee_total, st.pnl_net, st.confirmed_at "
     "FROM papersim.candidates c JOIN papersim.scan_runs s ON s.scan_id = c.scan_id "
     "LEFT JOIN papersim.entries e ON e.candidate_id = c.candidate_id "
+    "LEFT JOIN papersim.settlements st ON st.entry_id = e.entry_id "
     "ORDER BY c.candidate_id"
 )
 _EVAL_EVIDENCE_SQL = (
@@ -623,8 +639,23 @@ def _evaluation_candidates_from_store(conn) -> tuple:
     candidates fall back to their candidate key as the market key (no
     market identity was ever bound); an UNKNOWN effective outcome stays
     ``None`` (coverage gap), never a filled value.
+
+    Settlement wiring (M1 final review P2-01): a trade with a
+    ``papersim.settlements`` row evaluates on the ledger's actual
+    realization — ``EXIT`` keeps the recorded gross PnL (the exit price is
+    reconstructed exactly from it: proceeds / shares) and pays two-sided
+    fees through the same single fee schedule, ``NATURAL`` carries the
+    post-audit ``win``/``loss`` label plus the recorded gross, and
+    ``VOIDED_REFUND`` voids the trade. The market's natural result stays
+    available as the independent whole-market scoring input
+    (``natural_outcome``) but never re-prices a settled trade. An entered
+    row WITHOUT a settlement record keeps the market natural result for
+    the recomputed basis and carries no recorded PnL, so the recorded
+    basis fails loudly on it (honest gap, never zero-filled).
+    ``book_walk`` provenance requires the candidate's recorded walked
+    book; legacy imports (no stored order book) stay ``recorded_price``.
     """
-    from polymarket_alpha_lab.papersim import evaluation, store
+    from polymarket_alpha_lab.papersim import evaluation, ledger, store
 
     candidate_rows = _fetch_rows(conn, _EVAL_CANDIDATES_SQL)
     decision_evidence: dict[int, dict] = {}
@@ -652,11 +683,42 @@ def _evaluation_candidates_from_store(conn) -> tuple:
             effective = store.select_effective_outcome(observations.get(identity, ()))
             if effective.is_effective:
                 outcome, settled_at = effective.outcome, effective.observed_at
+        natural_outcome = (
+            outcome if outcome in ledger.NATURAL_OUTCOMES else None
+        )
         close_price = None
         if close is not None:
             close_price = _number(close["last"] if close["last"] is not None
                                   else close["mid"])
         entered = row["stake"] is not None
+        recorded_pnl = None
+        classification = row["classification"] if entered else None
+        if classification is not None:
+            if classification == "EXIT":
+                # The ledger's actual exit: recorded gross PnL (the exit
+                # price is reconstructed from it in evaluation), never the
+                # market's natural settlement.
+                outcome = ledger.EXITED_OUTCOME
+                recorded_pnl = _number(row["pnl_gross"])
+                settled_at = row["confirmed_at"]
+            elif classification == "NATURAL":
+                if row["win_loss"] not in ledger.SETTLED_LABEL_OUTCOMES:
+                    raise ValueError(
+                        "papersim_eval_settlement_win_loss_missing: "
+                        f"candidate {candidate_id}"
+                    )
+                outcome = row["win_loss"]
+                recorded_pnl = _number(row["pnl_gross"])
+                settled_at = row["confirmed_at"]
+            elif classification == "VOIDED_REFUND":
+                outcome = ledger.VOIDED_OUTCOME
+                recorded_pnl = _number(row["pnl_gross"])
+                settled_at = row["confirmed_at"]
+            else:
+                raise ValueError(
+                    "papersim_eval_settlement_classification_unknown: "
+                    f"{classification!r} on candidate {candidate_id}"
+                )
         built.append(evaluation.EvaluationCandidate(
             candidate_id=str(candidate_id),
             model_key=f"{row['model_name']}:{row['model_version']}",
@@ -671,9 +733,13 @@ def _evaluation_candidates_from_store(conn) -> tuple:
             fill_price=_number(row["price"]) if entered else None,
             side=row["side"],
             fee_category=row["fee_category"] if entered else None,
-            fill_provenance="book_walk" if entered else None,
+            fill_provenance=(
+                ("book_walk" if row["has_order_book"] else "recorded_price")
+                if entered else None
+            ),
             outcome=outcome,
-            recorded_pnl=None,
+            natural_outcome=natural_outcome,
+            recorded_pnl=recorded_pnl,
             decision_time=row["evaluated_at"],
             settled_time=settled_at,
             close_price=close_price,
@@ -782,8 +848,9 @@ def _build_parser() -> argparse.ArgumentParser:
     evaluate_parser.add_argument(
         "--pnl-basis", choices=("recorded", "recomputed"), default="recorded",
         help="gross-PnL basis for ROI metrics (default: recorded; store reads "
-             "carry no recorded settlement PnL yet, so entered+settled rows "
-             "evaluate under 'recomputed')",
+             "take the recorded settlement PnL from papersim.settlements when "
+             "present — an entered row without a settlement record fails "
+             "loudly in recorded mode instead of being recomputed)",
     )
     evaluate_source = evaluate_parser.add_mutually_exclusive_group(required=True)
     evaluate_source.add_argument(
