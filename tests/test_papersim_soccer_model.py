@@ -703,3 +703,423 @@ def test_bou_lee_public_builder_to_gate_rejected_for_variant_spread(
     assert stub_report.variant_spread == 0.0
     assert stub_report.checks["variant_spread<=6c"] is True
     assert stub_report.decision.passed is True
+
+
+# ---------------------------------------------------------------------------
+# FX-10 (M1 plan §3): generic candidate construction across market kinds.
+#
+# ``candidate_for_market`` must reproduce the frozen
+# ``candidate_from_variants`` over-side output bit-for-bit on the four
+# frozen round-23 fixtures, quote every other supported market per variant
+# through the SAME frozen probability helpers (reverse direction as the
+# exact ``1 - p`` complement), expose extra context only through the new
+# ``CandidateEnvelope`` (the ``SoccerCandidate`` contract stays frozen),
+# and FAIL LOUDLY -- explicit ``ValueError`` -- on construction errors so
+# FX-08/FX-09 can record them, never falling back to the NOT-gate-safe
+# ``over_under_quote`` stub.
+
+
+def _r23_case_meta(case_id: str) -> tuple[dict, str, str, float]:
+    fixture = json.loads((FIXTURES / "regression_r23_soccer.json").read_text(encoding="utf-8"))
+    case = fixture["cases"][case_id]
+    home, away, line = next((h, a, ln) for cid, h, a, ln in R23_CASES if cid == case_id)
+    return case, home, away, line
+
+
+@pytest.mark.parametrize("case_id", [c[0] for c in R23_CASES])
+def test_candidate_for_market_over_matches_legacy_builder_bitwise(
+    case_id: str, tmp_path: Path
+) -> None:
+    """FX-10 headline proof: the generic builder's O/U over output IS the
+    frozen builder's output, bit for bit, on every frozen r23 fixture at
+    its frozen line."""
+    case, home, away, line = _r23_case_meta(case_id)
+    snapshot = _load_r23_snapshot(tmp_path)
+
+    legacy = soccer_model.candidate_from_variants(
+        snapshot,
+        home,
+        "EPL",
+        away,
+        "EPL",
+        line,
+        case["match"],
+        case["market_id"],
+        case["entry_ask_vwap250"],
+    )
+    env = soccer_model.candidate_for_market(
+        snapshot,
+        home,
+        "EPL",
+        away,
+        "EPL",
+        case["match"],
+        case["market_id"],
+        case["entry_ask_vwap250"],
+        kind="total",
+        side="over",
+        line=line,
+    )
+    assert legacy is not None and env is not None
+    # Bitwise: identical code path, identical floats, identical fields.
+    assert env.candidate == legacy
+    assert env.candidate.qs_variants == legacy.qs_variants
+    assert env.candidate.model_median == legacy.model_median
+    assert env.candidate.model_range == legacy.model_range
+    assert env.candidate.question == legacy.question
+    assert env.candidate.lambda_home == legacy.lambda_home
+    assert env.candidate.lambda_away == legacy.lambda_away
+    # Envelope context for the frozen over path.
+    assert env.kind == "total" and env.side == "over"
+    assert env.line == line and env.team_side is None
+    assert env.quote_source == "over_probability"
+    assert env.complement is False
+    assert env.bridge_consulted is False and env.bridge_source is None
+
+
+@pytest.mark.parametrize("case_id", [c[0] for c in R23_CASES])
+def test_candidate_for_market_over_25_matches_legacy_all_four(
+    case_id: str, tmp_path: Path
+) -> None:
+    """The literal reading of the FX-10 proof: O/U over 2.5 on all four
+    frozen fixtures (including CHE-MUN, whose frozen case is O3.5) is
+    bitwise identical to the legacy builder."""
+    case, home, away, _ = _r23_case_meta(case_id)
+    snapshot = _load_r23_snapshot(tmp_path)
+    legacy = soccer_model.candidate_from_variants(
+        snapshot, home, "EPL", away, "EPL", 2.5, case["match"], "mid-o25", 0.5
+    )
+    env = soccer_model.candidate_for_market(
+        snapshot,
+        home,
+        "EPL",
+        away,
+        "EPL",
+        case["match"],
+        "mid-o25",
+        0.5,
+        kind="total",
+        side="over",
+        line=2.5,
+    )
+    assert legacy is not None and env is not None
+    assert env.candidate == legacy
+
+
+def test_candidate_for_market_quotes_reuse_frozen_probability_functions() -> None:
+    """Every kind's per-variant quotes ARE the frozen helpers' outputs, in
+    frozen sweep order; the envelope records the actual quote source."""
+    snapshot = _mini_snapshot()
+    variants = soccer_model.fixture_variants(snapshot, "Alpha", "EPL", "Beta", "EPL")
+    assert variants is not None
+    market = "Alpha vs. Beta"
+
+    def build(**selection: object) -> soccer_model.CandidateEnvelope:
+        env = soccer_model.candidate_for_market(
+            snapshot, "Alpha", "EPL", "Beta", "EPL", market, "m1", 0.5, **selection
+        )
+        assert env is not None
+        return env
+
+    over = build(kind="total", side="over", line=2.5)
+    under = build(kind="total", side="under", line=2.5)
+    assert over.candidate.qs_variants == tuple(
+        soccer_model.over_probability(v.outputs, 2.5) for v in variants
+    )
+    assert under.candidate.qs_variants == tuple(
+        1.0 - soccer_model.over_probability(v.outputs, 2.5) for v in variants
+    )
+    assert over.candidate.question == "Alpha vs. Beta: O/U 2.5"
+    assert over.candidate.kind == "total" and over.candidate.side == 0
+    lambdas = soccer_model.match_lambdas(snapshot, "Alpha", "EPL", "Beta", "EPL")
+    assert lambdas is not None
+    assert (over.candidate.lambda_home, over.candidate.lambda_away) == lambdas
+
+    yes = build(kind="btts", side="yes")
+    no = build(kind="btts", side="no")
+    assert yes.candidate.qs_variants == tuple(
+        soccer_model.both_teams_to_score(v.outputs) for v in variants
+    )
+    assert no.candidate.qs_variants == tuple(
+        1.0 - soccer_model.both_teams_to_score(v.outputs) for v in variants
+    )
+
+    tt_home_over = build(kind="team_total", side="over", line=1.5, team_side="home")
+    tt_home_under = build(kind="team_total", side="under", line=1.5, team_side="home")
+    tt_away_over = build(kind="team_total", side="over", line=0.5, team_side="away")
+    assert tt_home_over.candidate.qs_variants == tuple(
+        soccer_model.team_total_over(v.outputs, "home", 1.5) for v in variants
+    )
+    assert tt_home_under.candidate.qs_variants == tuple(
+        1.0 - soccer_model.team_total_over(v.outputs, "home", 1.5) for v in variants
+    )
+    assert tt_away_over.candidate.qs_variants == tuple(
+        soccer_model.team_total_over(v.outputs, "away", 0.5) for v in variants
+    )
+
+    home = build(kind="match_winner", side="home")
+    home_no = build(kind="match_winner", side="home_no")
+    draw = build(kind="match_winner", side="draw")
+    away = build(kind="match_winner", side="away")
+    assert home.candidate.qs_variants == tuple(v.outputs.home_win for v in variants)
+    assert home_no.candidate.qs_variants == tuple(1.0 - v.outputs.home_win for v in variants)
+    assert draw.candidate.qs_variants == tuple(v.outputs.draw for v in variants)
+    assert away.candidate.qs_variants == tuple(v.outputs.away_win for v in variants)
+
+    cover = build(kind="spread", side="cover", line=-1.5, team_side="home")
+    nocover = build(kind="spread", side="nocover", line=-1.5, team_side="home")
+    assert cover.candidate.qs_variants == tuple(
+        soccer_model.cover_probability(v.outputs, "home", -1.5) for v in variants
+    )
+    assert nocover.candidate.qs_variants == tuple(
+        1.0 - soccer_model.cover_probability(v.outputs, "home", -1.5) for v in variants
+    )
+
+    # Envelope provenance: the actual forward quote source per kind.
+    assert over.quote_source == "over_probability"
+    assert yes.quote_source == "both_teams_to_score"
+    assert tt_home_over.quote_source == "team_total_over"
+    assert home.quote_source == "MatchOutputs.home_win"
+    assert draw.quote_source == "MatchOutputs.draw"
+    assert away.quote_source == "MatchOutputs.away_win"
+    assert cover.quote_source == "cover_probability"
+    assert all(
+        env.complement is False
+        for env in (over, yes, tt_home_over, tt_away_over, home, draw, away, cover)
+    )
+    assert all(env.complement is True for env in (under, no, tt_home_under, home_no, nocover))
+    # Aggregation and lambdas stay the frozen convention everywhere.
+    for env in (over, under, yes, no, tt_home_over, home, cover):
+        assert env.candidate.model_median == soccer_model.median(env.candidate.qs_variants)
+        assert env.candidate.model_range == (
+            min(env.candidate.qs_variants),
+            max(env.candidate.qs_variants),
+        )
+        assert (env.candidate.lambda_home, env.candidate.lambda_away) == lambdas
+
+
+def test_candidate_for_market_reverse_direction_complements() -> None:
+    """p and 1-p symmetry for every supported reverse direction."""
+    snapshot = _mini_snapshot()
+    selections = (
+        (("total", "over", 2.5, None), ("total", "under", 2.5, None)),
+        (("btts", "yes", None, None), ("btts", "no", None, None)),
+        (("team_total", "over", 1.5, "away"), ("team_total", "under", 1.5, "away")),
+        (("match_winner", "home", None, None), ("match_winner", "home_no", None, None)),
+        (("match_winner", "draw", None, None), ("match_winner", "draw_no", None, None)),
+        (("match_winner", "away", None, None), ("match_winner", "away_no", None, None)),
+        (("spread", "cover", -0.5, "home"), ("spread", "nocover", -0.5, "home")),
+        (("spread", "cover", 1.5, "away"), ("spread", "nocover", 1.5, "away")),
+    )
+    for forward_sel, reverse_sel in selections:
+        forward = soccer_model.candidate_for_market(
+            snapshot, "Alpha", "EPL", "Beta", "EPL", "m", "m1", 0.5,
+            kind=forward_sel[0], side=forward_sel[1], line=forward_sel[2], team_side=forward_sel[3],
+        )
+        reverse = soccer_model.candidate_for_market(
+            snapshot, "Alpha", "EPL", "Beta", "EPL", "m", "m2", 0.5,
+            kind=reverse_sel[0], side=reverse_sel[1], line=reverse_sel[2], team_side=reverse_sel[3],
+        )
+        assert forward is not None and reverse is not None
+        # Exact per-variant complement by construction.
+        for q_fwd, q_rev in zip(forward.candidate.qs_variants, reverse.candidate.qs_variants):
+            assert q_rev == 1.0 - q_fwd
+        assert forward.candidate.model_median + reverse.candidate.model_median == pytest.approx(
+            1.0, abs=1e-12
+        )
+        # Coarse side codes: 0 = Over/Yes forward, 1 = complement.
+        assert forward.candidate.side == 0 and reverse.candidate.side == 1
+
+
+def test_candidate_for_market_match_winner_medians_not_renormalized() -> None:
+    """The three 1X2 outcome medians are raw per-outcome medians over the
+    ten variants and are NOT renormalized to sum to 1 (the documented
+    existing aggregation; WP-P4 observed 0.988-1.005 on real fixtures)."""
+    snapshot = _mini_snapshot()
+    variants = soccer_model.fixture_variants(snapshot, "Alpha", "EPL", "Beta", "EPL")
+    assert variants is not None
+
+    medians = {}
+    for side, attr in (("home", "home_win"), ("draw", "draw"), ("away", "away_win")):
+        env = soccer_model.candidate_for_market(
+            snapshot, "Alpha", "EPL", "Beta", "EPL", "m", "m1", 0.5,
+            kind="match_winner", side=side,
+        )
+        assert env is not None
+        medians[side] = env.candidate.model_median
+        assert env.candidate.model_median == soccer_model.median(
+            [getattr(v.outputs, attr) for v in variants]
+        )
+    total = medians["home"] + medians["draw"] + medians["away"]
+    assert total == pytest.approx(
+        soccer_model.median([v.outputs.home_win for v in variants])
+        + soccer_model.median([v.outputs.draw for v in variants])
+        + soccer_model.median([v.outputs.away_win for v in variants]),
+        abs=1e-12,
+    )
+    # Sane aggregate, but not forced to exactly 1.
+    assert 0.9 <= total <= 1.1
+
+
+def test_candidate_for_market_construction_errors_are_explicit() -> None:
+    """Every construction error raises a loud ValueError (for FX-08/09 to
+    record); nothing is silently defaulted or coerced."""
+    snapshot = _mini_snapshot()
+
+    def call(**selection: object) -> soccer_model.CandidateEnvelope:
+        base: dict[str, object] = {"kind": "total", "side": "over", "line": 2.5}
+        base.update(selection)
+        env = soccer_model.candidate_for_market(
+            snapshot, "Alpha", "EPL", "Beta", "EPL", "m", "m1", 0.5, **base
+        )
+        assert env is not None
+        return env
+
+    with pytest.raises(ValueError, match="kind"):
+        call(kind="corners", side="over", line=2.5)
+    with pytest.raises(ValueError, match="kind"):
+        call(kind="ml", side="home")
+    with pytest.raises(ValueError, match="side"):
+        call(side="yes")
+    with pytest.raises(ValueError, match="side"):
+        call(kind="btts", side="over")
+    with pytest.raises(ValueError, match="side"):
+        call(kind="match_winner", side="home_yes")
+    with pytest.raises(ValueError, match="side"):
+        call(kind="spread", side="over", line=-1.5, team_side="home")
+    with pytest.raises(ValueError, match="requires a line"):
+        call(line=None)
+    with pytest.raises(ValueError, match="team_side"):
+        call(kind="team_total", side="over", line=1.5)
+    with pytest.raises(ValueError, match="team_side"):
+        call(kind="team_total", side="over", line=1.5, team_side="midfield")
+    with pytest.raises(ValueError, match="takes no line"):
+        call(kind="btts", side="yes", line=2.5)
+    with pytest.raises(ValueError, match="takes no team_side"):
+        call(kind="match_winner", side="home", line=None, team_side="home")
+    # Half-ball rule: integer lines have pushes, quarter lines mix
+    # settlements, non-finite / non-numeric values are garbage.
+    for bad_line in (3.0, 2, 2.25, 1.75, -1.0, 0.0, float("inf"), float("-inf"), float("nan"), "2.5", True):
+        with pytest.raises(ValueError, match="line"):
+            call(line=bad_line)
+    with pytest.raises(ValueError, match="line"):
+        call(kind="spread", side="cover", line=-1, team_side="home")
+
+
+def test_candidate_for_market_spread_is_quote_only_registry_rejects() -> None:
+    """Spread envelopes are quotable, but the suspension registry keeps
+    rejecting spread entry (FLAGGED_ONLY) -- quoting is not entry
+    authorization."""
+    snapshot = _mini_snapshot()
+    env = soccer_model.candidate_for_market(
+        snapshot, "Alpha", "EPL", "Beta", "EPL", "Alpha vs. Beta", "m1", 0.5,
+        kind="spread", side="cover", line=-1.5, team_side="home",
+    )
+    assert env is not None
+    assert env.candidate.kind == "spread"
+    policy = gates.suspension_policy(env.candidate.kind)
+    assert policy.policy == gates.POLICY_FLAGGED_ONLY
+    assert policy.eligible is False
+    cross = gates.suspension_policy(env.candidate.kind, cross_league=True)
+    assert cross.eligible is False
+    # Eligible kinds stay eligible through the same registry.
+    for kind in ("total", "btts", "team_total"):
+        assert gates.suspension_policy(kind).eligible is True
+    assert gates.suspension_policy("match_winner").policy == gates.POLICY_ELIGIBLE_DEPRIORITIZED
+
+
+def test_candidate_for_market_refused_fixture_returns_none_without_fallback() -> None:
+    """Fixture refusal (banned cross-league pairing, unknown team/league)
+    returns None exactly like the frozen builders -- never a fabricated
+    candidate and never an ``over_under_quote`` fallback."""
+    snapshot = _mini_snapshot()
+    banned = json.loads((FIXTURES / "regression_banned_path.json").read_text(encoding="utf-8"))["case"]
+    assert soccer_model.candidate_for_market(
+        snapshot,
+        banned["home"]["team"],
+        banned["home"]["league"],
+        banned["away"]["team"],
+        banned["away"]["league"],
+        "banned",
+        "m1",
+        0.5,
+        kind="total",
+        side="over",
+        line=2.5,
+    ) is None
+    assert soccer_model.candidate_for_market(
+        snapshot, "Alpha", "EPL", "Ghost", "EPL", "ghost", "m2", 0.5,
+        kind="btts", side="yes",
+    ) is None
+    assert soccer_model.candidate_for_market(
+        snapshot, "Alpha", "Serie_A", "Beta", "Serie_A", "noleague", "m3", 0.5,
+        kind="match_winner", side="home",
+    ) is None
+
+
+def test_candidate_for_market_bridge_provenance() -> None:
+    """The envelope's bridge record corresponds to the actual source: a
+    bridged cross-league construction records the exact bridge table; a
+    same-league construction never consults one (quotes identical with or
+    without a bridge argument)."""
+    snapshot = _mini_snapshot()
+    bridge = {"bundesliga": -0.09, "ligue_1": -0.18}
+
+    env = soccer_model.candidate_for_market(
+        snapshot,
+        "TSG 1899 Hoffenheim",
+        "bundesliga",
+        "Olympique Lyonnais",
+        "ligue_1",
+        "HOF-LYO",
+        "m1",
+        0.5,
+        kind="total",
+        side="over",
+        line=2.5,
+        bridge=bridge,
+    )
+    assert env is not None
+    assert env.bridge_consulted is True
+    assert env.bridge_source is bridge
+    bridged = soccer_model.fixture_variants(
+        snapshot,
+        "TSG 1899 Hoffenheim",
+        "bundesliga",
+        "Olympique Lyonnais",
+        "ligue_1",
+        bridge=bridge,
+    )
+    assert bridged is not None
+    assert env.candidate.qs_variants == tuple(
+        soccer_model.over_probability(v.outputs, 2.5) for v in bridged
+    )
+    # The same fixture without a bridge is refused (None), never bridged
+    # silently and never fallen back to the pair-level stub.
+    assert soccer_model.candidate_for_market(
+        snapshot,
+        "TSG 1899 Hoffenheim",
+        "bundesliga",
+        "Olympique Lyonnais",
+        "ligue_1",
+        "HOF-LYO",
+        "m2",
+        0.5,
+        kind="total",
+        side="over",
+        line=2.5,
+    ) is None
+
+    # Same-league: bridge is never consulted; quotes and provenance ignore it.
+    with_bridge = soccer_model.candidate_for_market(
+        snapshot, "Alpha", "EPL", "Beta", "EPL", "AB", "m3", 0.5,
+        kind="total", side="over", line=2.5, bridge={"EPL": 0.9},
+    )
+    without_bridge = soccer_model.candidate_for_market(
+        snapshot, "Alpha", "EPL", "Beta", "EPL", "AB", "m4", 0.5,
+        kind="total", side="over", line=2.5,
+    )
+    assert with_bridge is not None and without_bridge is not None
+    assert with_bridge.candidate.qs_variants == without_bridge.candidate.qs_variants
+    assert with_bridge.bridge_consulted is False
+    assert with_bridge.bridge_source is None
