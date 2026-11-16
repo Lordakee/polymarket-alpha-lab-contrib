@@ -9,6 +9,12 @@ failure rollback, idempotent rerun, prefix conflict, lock serialization
 and correction-by-new-migration. No test ever touches a business cluster:
 databases are created inside the throwaway cluster exposed by the test
 environment.
+
+M1 migration history runs against the frozen TWO-entry M1 catalog
+(``tests/papersim_m1_catalog.py``, M2 plan section 6.3) so the original
+"two migrations, nine tables" assertions stay exact; the current full
+manifest including the M2 operations migration is proven in
+``tests/test_papersim_m2_migrations.py``.
 """
 
 from hashlib import sha256
@@ -23,6 +29,7 @@ import uuid
 import pytest
 
 from polymarket_alpha_lab.papersim import migrations as pm
+from tests.papersim_m1_catalog import write_frozen_m1_catalog
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG_DIR = ROOT / 'database/papersim/migrations'
@@ -45,12 +52,18 @@ def test_lock_key_and_manifest_identity_are_pinned():
         path.name for path in CATALOG_DIR.glob('*.sql'))
 
 
-def test_catalog_hashes_match_file_bytes_and_strip_wrappers():
-    catalog = pm.papersim_migration_catalog(ROOT)
-    manifest = json.loads(MANIFEST_PATH.read_text(encoding='utf-8'))
+def test_catalog_hashes_match_file_bytes_and_strip_wrappers(tmp_path):
+    # M1 migration history keeps its frozen TWO-entry catalog (M2 plan
+    # section 6.3); the current full manifest is proven independently in
+    # tests/test_papersim_m2_migrations.py. The assertions are unchanged.
+    tree = write_frozen_m1_catalog(tmp_path / 'repo')
+    directory = tree / 'database/papersim/migrations'
+    manifest = json.loads(
+        (tree / 'database/papersim/migrations.lock.json').read_text(encoding='utf-8'))
+    catalog = pm.papersim_migration_catalog(tree)
     assert len(catalog) == len(manifest['migrations']) == 2
     for (name, digest, body), entry in zip(catalog, manifest['migrations'], strict=True):
-        assert digest == entry['sha256'] == sha256((CATALOG_DIR / name).read_bytes()).hexdigest()
+        assert digest == entry['sha256'] == sha256((directory / name).read_bytes()).hexdigest()
         assert entry['transaction_wrapper'] is True
         assert not pm.FORBIDDEN_BODY_TOKENS.search(body)
         assert 'begin;' not in body.lower() and 'commit;' not in body.lower()
@@ -217,13 +230,17 @@ def _ledger(owner):
 
 @NATIVE
 def test_native_fresh_apply_writes_matching_receipts(tmp_path):
+    # M1 history proof: the frozen two-entry catalog from empty (M2 plan
+    # section 6.3); the current three-entry catalog has its own fresh-apply
+    # proof in tests/test_papersim_m2_migrations.py.
+    tree = write_frozen_m1_catalog(tmp_path / 'm1')
     owner_dsn, app_dsn = _fresh_managed_database()
     owner = _connect(owner_dsn, autocommit=False)
-    result = pm.apply_pending_migrations(owner, ROOT)
+    result = pm.apply_pending_migrations(owner, tree)
     assert result == {'applied': 2, 'pending_before': 2}
-    catalog = pm.papersim_migration_catalog(ROOT)
+    catalog = pm.papersim_migration_catalog(tree)
     assert _ledger(owner) == [(name, digest) for name, digest, _ in catalog]
-    status = pm.migration_status(owner, ROOT)
+    status = pm.migration_status(owner, tree)
     assert status['applied'] == [name for name, _, _ in catalog] and status['pending'] == []
     with owner.cursor() as cursor:
         cursor.execute("SELECT count(*) FROM information_schema.tables "
@@ -255,10 +272,12 @@ def test_native_bootstrap_fails_on_existing_objects(tmp_path):
 
 @NATIVE
 def test_native_failed_migration_rolls_back_ddl_and_receipt(tmp_path):
-    owner_dsn, _ = _fresh_managed_database()
-    tree = tmp_path / 'repo'
-    shutil.copytree(ROOT / 'database/papersim', tree / 'database/papersim',
-                    ignore=shutil.ignore_patterns('migrations.lock.json'))
+    # M1 history proof on the frozen two-entry catalog (M2 plan section
+    # 6.3): the failing migration sorts after the M1 pair, so the ledger
+    # after the failure is exactly the frozen M1 prefix. Building from the
+    # frozen tree (instead of copying the live directory) keeps the
+    # committed-prefix assertion independent of later catalog growth.
+    tree = write_frozen_m1_catalog(tmp_path / 'repo')
     failing = tree / 'database/papersim/migrations/20261115000200_papersim_fail.sql'
     failing.write_text('begin;\ncreate table papersim.boom (x int);\nselect 1 / 0;\ncommit;\n',
                        encoding='utf-8')
@@ -268,10 +287,12 @@ def test_native_failed_migration_rolls_back_ddl_and_receipt(tmp_path):
                         'transaction_wrapper': True})
     (tree / 'database/papersim/migrations.lock.json').write_text(
         json.dumps({'format': pm.MANIFEST_FORMAT, 'migrations': entries}), encoding='utf-8')
+    owner_dsn, _ = _fresh_managed_database()
     owner = _connect(owner_dsn, autocommit=False)
     with pytest.raises(pm.PapersimMigrationError, match='papersim_migration_apply_failed'):
         pm.apply_pending_migrations(owner, tree)
-    catalog = pm.papersim_migration_catalog(ROOT)
+    catalog = pm.papersim_migration_catalog(tree)
+    catalog = tuple(row for row in catalog if row[0] != failing.name)
     assert _ledger(owner) == [(name, digest) for name, digest, _ in catalog]
     with owner.cursor() as cursor:
         cursor.execute("SELECT count(*) FROM information_schema.tables "
@@ -282,24 +303,26 @@ def test_native_failed_migration_rolls_back_ddl_and_receipt(tmp_path):
 
 @NATIVE
 def test_native_idempotent_rerun_and_prefix_conflict(tmp_path):
+    tree = write_frozen_m1_catalog(tmp_path / 'm1')
     owner_dsn, _ = _fresh_managed_database()
     owner = _connect(owner_dsn, autocommit=False)
-    assert pm.apply_pending_migrations(owner, ROOT)['applied'] == 2
-    assert pm.apply_pending_migrations(owner, ROOT) == {'applied': 0, 'pending_before': 0}
+    assert pm.apply_pending_migrations(owner, tree)['applied'] == 2
+    assert pm.apply_pending_migrations(owner, tree) == {'applied': 0, 'pending_before': 0}
     with owner.cursor() as cursor:
         cursor.execute("INSERT INTO papersim_private.migrations(name, sha256) "
                        "VALUES ('20990101000000_fake.sql', %s)", ('a' * 64,))
     owner.commit()
     with pytest.raises(pm.PapersimMigrationError, match='papersim_migration_history_conflict'):
-        pm.apply_pending_migrations(owner, ROOT)
+        pm.apply_pending_migrations(owner, tree)
     with pytest.raises(pm.PapersimMigrationError, match='papersim_migration_history_conflict'):
-        pm.migration_status(owner, ROOT)
+        pm.migration_status(owner, tree)
     owner.close()
 
 
 @NATIVE
 def test_native_concurrent_appliers_serialize_under_the_advisory_lock(tmp_path):
     psycopg = pytest.importorskip('psycopg')
+    tree = write_frozen_m1_catalog(tmp_path / 'm1')
     owner_dsn, _ = _fresh_managed_database()
     blocker = psycopg.connect(owner_dsn)
     blocker.autocommit = True
@@ -310,7 +333,7 @@ def test_native_concurrent_appliers_serialize_under_the_advisory_lock(tmp_path):
     def applier():
         owner = _connect(owner_dsn, autocommit=False)
         try:
-            results.append(pm.apply_pending_migrations(owner, ROOT))
+            results.append(pm.apply_pending_migrations(owner, tree))
         except Exception as error:  # pragma: no cover - surfaced by assertions
             results.append(error)
         finally:
@@ -327,19 +350,17 @@ def test_native_concurrent_appliers_serialize_under_the_advisory_lock(tmp_path):
     blocker.close()
     assert results == [{'applied': 2, 'pending_before': 2}]
     owner = _connect(owner_dsn, autocommit=False)
-    catalog = pm.papersim_migration_catalog(ROOT)
+    catalog = pm.papersim_migration_catalog(tree)
     assert _ledger(owner) == [(name, digest) for name, digest, _ in catalog]
     owner.close()
 
 
 @NATIVE
 def test_native_correction_arrives_as_a_new_migration_only(tmp_path):
+    tree = write_frozen_m1_catalog(tmp_path / 'm1')
     owner_dsn, _ = _fresh_managed_database()
     owner = _connect(owner_dsn, autocommit=False)
-    assert pm.apply_pending_migrations(owner, ROOT)['applied'] == 2
-    tree = tmp_path / 'repo'
-    shutil.copytree(ROOT / 'database/papersim', tree / 'database/papersim',
-                    ignore=shutil.ignore_patterns('migrations.lock.json'))
+    assert pm.apply_pending_migrations(owner, tree)['applied'] == 2
     corrected = tree / 'database/papersim/migrations/20261115000300_papersim_correction.sql'
     corrected.write_text('begin;\ncreate table papersim.correction_marker (k int);\ncommit;\n',
                          encoding='utf-8')
@@ -360,10 +381,11 @@ def test_native_correction_arrives_as_a_new_migration_only(tmp_path):
 def test_native_cli_applies_through_a_validated_socket_dsn(tmp_path):
     import subprocess
     import sys
+    tree = write_frozen_m1_catalog(tmp_path / 'm1')
     owner_dsn, _ = _fresh_managed_database()
     completed = subprocess.run(
         [sys.executable, '-m', 'polymarket_alpha_lab.papersim.migrations', 'apply',
-         '--repo-root', str(ROOT), '--dsn', owner_dsn],
+         '--repo-root', str(tree), '--dsn', owner_dsn],
         capture_output=True, text=True, timeout=120)
     assert completed.returncode == 0, completed.stderr
     assert json.loads(completed.stdout) == {'applied': 2, 'pending_before': 2}
