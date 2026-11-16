@@ -313,7 +313,12 @@ def test_native_register_verify_and_no_overwrite(managed_face):
     again = snapshots.register_snapshot(app, reg)
     assert again['inserted'] is False and again['content_sha256'] == first['content_sha256']
     with app.cursor() as cursor:
-        cursor.execute('SELECT count(*) FROM papersim.snapshots')
+        # The CI papersim partition shares one disposable cluster across
+        # nine files, so this table legitimately holds rows from earlier
+        # files; idempotency is proven on THIS digest only (exactly one
+        # row, original bytes untouched -- the overwrite check below).
+        cursor.execute('SELECT count(*) FROM papersim.snapshots '
+                       'WHERE content_sha256 = %s', (first['content_sha256'],))
         assert cursor.fetchone()[0] == 1
         cursor.execute('SELECT octet_length(content) FROM papersim.snapshots '
                        'WHERE content_sha256 = %s', (first['content_sha256'],))
