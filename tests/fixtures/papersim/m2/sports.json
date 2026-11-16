@@ -1,0 +1,174 @@
+{
+  "_comment": "m2 A4 synthetic wire inputs (offline fixture, no real data). FotMob part mirrors the two-match synthetic bundle of test_papersim_fotmob.py (kept m1/m2 plus playoff/unfinished/cancelled buckets); ESPN part is a two-team 2026-27 slice shaped like the verified 2026-11-10 ESPN wire (LAL opener vs GS, 7pm PT start stamped a UTC day ahead). Served byte-for-byte by the fake transport in tests/test_papersim_adapter_sports.py; the frozen transforms must produce output identical to the pre-A4 modules on these exact payloads.",
+  "fotmob": {
+    "scope": {
+      "league": {"id": 48, "key": "Championship", "max_round": 46, "team_count": null},
+      "season": "2026"
+    },
+    "league_payload": {
+      "details": {"selectedSeason": "2026/2027"},
+      "fixtures": {"allMatches": [
+        {
+          "id": "m1",
+          "round": "1",
+          "status": {"finished": true, "utcTime": "2026-08-08T19:45:00.000Z"},
+          "home": {"id": "t1", "name": "Birmingham City", "shortName": "Bir"},
+          "away": {"id": "t2", "name": "Blackburn Rovers", "shortName": "Bla"}
+        },
+        {
+          "id": "m2",
+          "round": "10",
+          "status": {"finished": true, "utcTime": "2026-10-02T14:00:00.000Z"},
+          "home": {"id": "t2", "name": "Blackburn Rovers", "shortName": "Bla"},
+          "away": {"id": "t1", "name": "Birmingham City", "shortName": "Bir"}
+        },
+        {
+          "id": "m3",
+          "round": "1/2",
+          "status": {"finished": true, "utcTime": "2026-05-10T19:45:00.000Z"},
+          "home": {"id": "t1", "name": "Birmingham City", "shortName": "Bir"},
+          "away": {"id": "t2", "name": "Blackburn Rovers", "shortName": "Bla"}
+        },
+        {
+          "id": "m4",
+          "round": "2",
+          "status": {"finished": false, "utcTime": "2026-08-15T11:00:00.000Z"},
+          "home": {"id": "t1", "name": "Birmingham City", "shortName": "Bir"},
+          "away": {"id": "t2", "name": "Blackburn Rovers", "shortName": "Bla"}
+        },
+        {
+          "id": "m5",
+          "round": "3",
+          "status": {
+            "finished": true,
+            "utcTime": "2026-08-22T11:00:00.000Z",
+            "reason": {"longKey": "matchCancelled", "shortKey": "CANC"}
+          },
+          "home": {"id": "t2", "name": "Blackburn Rovers", "shortName": "Bla"},
+          "away": {"id": "t1", "name": "Birmingham City", "shortName": "Bir"}
+        }
+      ]}
+    },
+    "match_details": {
+      "m1": {
+        "header": {"teams": [{"score": 2}, {"score": 1}]},
+        "content": {"stats": {"Periods": {"All": {"stats": [{"stats": [
+          {"title": "Expected goals (xG)", "stats": ["1.50", "0.75"]},
+          {"title": "xG non-penalty", "stats": ["1.20", "0.60"]}
+        ]}]}}}}
+      },
+      "m2": {
+        "header": {"teams": [{"score": 0}, {"score": 0}]},
+        "content": {"stats": {"Periods": {"All": {"stats": [{"stats": [
+          {"title": "Expected goals (xG)", "stats": ["0.90", "1.10"]}
+        ]}]}}}}
+      }
+    }
+  },
+  "espn_nba": {
+    "scope": {"season": "2026-27", "teams": ["GS", "LAL"]},
+    "schedules": {
+      "GS": {
+        "requestedSeason": {"year": 2027, "type": 2, "displayName": "2026-27"},
+        "season": {"year": 2027, "type": 2},
+        "team": {"id": "9", "abbreviation": "GS", "displayName": "Golden State Warriors"},
+        "events": [
+          {
+            "id": "401809244",
+            "date": "2026-10-22T02:00Z",
+            "seasonType": 2,
+            "competitions": [{
+              "status": {"type": {"completed": true, "name": "STATUS_FINAL"}},
+              "competitors": [
+                {
+                  "homeAway": "home",
+                  "score": {"value": 109.0, "displayValue": "109"},
+                  "team": {"id": "13", "abbreviation": "LAL", "displayName": "Los Angeles Lakers"}
+                },
+                {
+                  "homeAway": "away",
+                  "score": {"value": 119.0, "displayValue": "119"},
+                  "team": {"id": "9", "abbreviation": "GS", "displayName": "Golden State Warriors"}
+                }
+              ]
+            }]
+          }
+        ]
+      },
+      "LAL": {
+        "requestedSeason": {"year": 2027, "type": 2, "displayName": "2026-27"},
+        "season": {"year": 2027, "type": 2},
+        "team": {"id": "13", "abbreviation": "LAL", "displayName": "Los Angeles Lakers"},
+        "events": [
+          {
+            "id": "401809244",
+            "date": "2026-10-22T02:00Z",
+            "seasonType": 2,
+            "competitions": [{
+              "status": {"type": {"completed": true, "name": "STATUS_FINAL"}},
+              "competitors": [
+                {
+                  "homeAway": "home",
+                  "score": {"value": 109.0, "displayValue": "109"},
+                  "team": {"id": "13", "abbreviation": "LAL", "displayName": "Los Angeles Lakers"}
+                },
+                {
+                  "homeAway": "away",
+                  "score": {"value": 119.0, "displayValue": "119"},
+                  "team": {"id": "9", "abbreviation": "GS", "displayName": "Golden State Warriors"}
+                }
+              ]
+            }]
+          }
+        ]
+      }
+    },
+    "summaries": {
+      "401809244": {
+        "header": {"competitions": [{
+          "date": "2026-10-21T00:00Z",
+          "competitors": [
+            {"homeAway": "home", "score": 109, "team": {"id": "13", "abbreviation": "LAL"}},
+            {"homeAway": "away", "score": 119, "team": {"id": "9", "abbreviation": "GS"}}
+          ]
+        }]},
+        "boxscore": {"teams": [
+          {
+            "homeAway": "home",
+            "team": {"id": "13", "abbreviation": "LAL"},
+            "statistics": [
+              {"name": "fieldGoalsMade-fieldGoalsAttempted", "displayValue": "47-85"},
+              {"name": "freeThrowsMade-freeThrowsAttempted", "displayValue": "16-21"},
+              {"name": "offensiveRebounds", "displayValue": "10"},
+              {"name": "turnovers", "displayValue": "13"},
+              {"name": "totalTurnovers", "displayValue": "14"}
+            ]
+          },
+          {
+            "homeAway": "away",
+            "team": {"id": "9", "abbreviation": "GS"},
+            "statistics": [
+              {"name": "fieldGoalsMade-fieldGoalsAttempted", "displayValue": "52-90"},
+              {"name": "freeThrowsMade-freeThrowsAttempted", "displayValue": "21-26"},
+              {"name": "offensiveRebounds", "displayValue": "11"},
+              {"name": "turnovers", "displayValue": "17"},
+              {"name": "totalTurnovers", "displayValue": "18"}
+            ]
+          }
+        ]},
+        "injuries": [
+          {
+            "team": {"id": "13", "abbreviation": "LAL"},
+            "injuries": [
+              {
+                "status": "Out",
+                "date": "2026-10-20T22:15Z",
+                "athlete": {"fullName": "Max Kleber"}
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

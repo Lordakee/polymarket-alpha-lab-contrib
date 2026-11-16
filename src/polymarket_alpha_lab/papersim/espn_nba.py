@@ -28,6 +28,33 @@ Network boundary: only :func:`fetch_team_schedule`,
 sharing one module-wide polite-spacing guard (:data:`SLEEP_S` = 1.2 s
 between any two requests). No credentials, no cookies, paper-only.
 
+M2 A4 bounded-read boundary (m2-plan-formal.md section 2.5): every
+network call now reads its body through
+:func:`polymarket_alpha_lab.public_http.read_public_body` (declared
+framing enforced, body capped at :data:`_RESPONSE_READ_LIMIT_DEFAULT`
+or ``budget.next_response_read_limit()`` when a shared
+:class:`~polymarket_alpha_lab.papersim.adapters.contracts.FetchBudget`
+is supplied), the request URL and the final (post-redirect) URL must
+sit inside the frozen ``https://site.api.espn.com/`` origin allowlist,
+and the explicit ``allow_public_fetch`` permission (paper-only default
+``False``) is required before any connection is built. Retry/backoff
+and polite-spacing semantics stay frozen; with a shared budget every
+actual attempt charges the same round budget and every wait is
+clamped to the remaining round time.
+
+On-disk cache boundary (frozen-surface note): the read-through cache
+below (:data:`DEFAULT_CACHE_DIR`, :func:`_atomic_write_json`,
+:func:`_cache_read`) is the LEGACY WP-NBA-1 ops path kept verbatim for
+the standalone backfill CLI (:func:`main`). The M2 adapter entrance
+(:mod:`polymarket_alpha_lab.papersim.adapters.sports`) NEVER enables
+it — it passes ``cache_dir=None`` (in-memory only; PostgreSQL
+snapshots arrive with the S0+ storage wiring, not here), so M2 rounds
+perform zero disk-cache writes.
+
+NBA shadow positioning: this data adapter being usable does NOT
+authorize NBA entry. NBA remains a shadow/research lane; the frozen
+entry policy elsewhere in papersim is unchanged by anything here.
+
 Snapshot contract (FROZEN — do not deviate; the model is built against
 this exact JSON)::
 
@@ -89,7 +116,17 @@ import urllib.request
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from types import MappingProxyType
-from typing import Collection, Mapping
+from typing import Callable, Collection, Mapping
+
+from polymarket_alpha_lab import public_http
+from polymarket_alpha_lab.papersim.adapters.contracts import (
+    DEFAULT_ALLOW_PUBLIC_FETCH,
+    DEFAULT_MAX_RESPONSE_BYTES,
+    FetchBudget,
+    BudgetExhaustedError,
+    REASON_DEADLINE_EXCEEDED,
+    require_public_fetch,
+)
 
 __all__ = [
     "API_PATH",
@@ -146,6 +183,10 @@ FT_COEFFICIENT = 0.44
 
 #: Default on-disk cache location (raw payloads verbatim; created
 #: lazily on first write). Pass ``cache_dir=None`` to disable caching.
+#: LEGACY WP-NBA-1 OPS PATH ONLY (frozen-surface boundary): the M2
+#: adapter entrance ``papersim.adapters.sports`` never uses it — it
+#: pins ``cache_dir=None`` (in-memory data only, zero disk-cache
+#: writes; PostgreSQL snapshots arrive with the S0+ wiring).
 DEFAULT_CACHE_DIR = Path.home() / ".papersim_cache" / "espn_nba"
 
 #: Schedules gain results over time, so cached schedule payloads expire
@@ -237,25 +278,113 @@ def _season_label(year: int) -> str:
     return f"{year - 1}-{year % 100:02d}"
 
 
-def _polite_pause() -> None:
-    """Sleep the remainder of :data:`SLEEP_S` since the last request."""
+#: Per-response read ceiling applied when no shared ``FetchBudget`` is
+#: supplied: the A0 contract default (2 MiB), itself far under the 4 MiB
+#: hard ceiling of ``public_http.read_public_body``.
+_RESPONSE_READ_LIMIT_DEFAULT = DEFAULT_MAX_RESPONSE_BYTES
+
+#: Frozen origin allowlist for every ESPN request (scheme + host).
+_ALLOWED_ORIGINS = (f"https://{HOST}/",)
+
+#: Receives ``(url, raw_bytes)`` for every successful bounded read; the
+#: M2 adapters use it to build per-response evidence without changing
+#: the fetch functions' return values.
+ResponseSink = Callable[[str, bytes], None]
+
+
+class EspnNbaOriginError(ValueError):
+    """Request or final response URL outside the frozen ESPN origin
+    allowlist (redirect drift included). Fixed message only — never
+    carries the rejected URL. Subclasses :class:`ValueError` so the
+    frozen retry loop never retries an origin rejection."""
+
+
+def _verify_origin(url: object) -> None:
+    """Refuse any URL outside ``https://site.api.espn.com/`` (fixed code)."""
+    if not isinstance(url, str) or not url.startswith(_ALLOWED_ORIGINS):
+        raise EspnNbaOriginError("espn_nba_origin_not_allowed")
+
+
+def _sleep_bounded(seconds: float, budget: FetchBudget | None) -> None:
+    """``time.sleep(seconds)`` clamped to the remaining round budget.
+
+    Without a budget this is the plain WP-NBA-1 sleep (frozen
+    semantics). With one, the wait never runs past
+    ``budget.deadline_monotonic``: the sleep is clamped to the
+    remaining seconds, and a wait that cannot fit before the deadline
+    raises
+    :class:`~polymarket_alpha_lab.papersim.adapters.contracts.BudgetExhaustedError`
+    so the caller stops instead of sleeping or retrying past the round.
+    """
+    if seconds <= 0.0:
+        return
+    if budget is None:
+        time.sleep(seconds)
+        return
+    remaining = budget.remaining_seconds()
+    if remaining <= 0.0:
+        raise BudgetExhaustedError(REASON_DEADLINE_EXCEEDED)
+    time.sleep(min(float(seconds), remaining))
+
+
+def _polite_pause(budget: FetchBudget | None = None) -> None:
+    """Sleep the remainder of :data:`SLEEP_S` since the last request.
+
+    With a shared budget the spacing sleep is additionally clamped to
+    the remaining round time (m2-plan section 2.5: every wait stays
+    inside the round budget).
+    """
     global _last_fetch_monotonic
     now = time.monotonic()
     if _last_fetch_monotonic is not None:
         remaining = SLEEP_S - (now - _last_fetch_monotonic)
         if remaining > 0.0:
-            time.sleep(remaining)
+            _sleep_bounded(remaining, budget)
     _last_fetch_monotonic = time.monotonic()
 
 
-def _http_get_json(url: str, *, timeout: float) -> object:
-    """One HTTPS GET returning parsed JSON (raises on transport/JSON errors)."""
+def _http_get_json(
+    url: str,
+    *,
+    timeout: float,
+    allow_public_fetch: bool = DEFAULT_ALLOW_PUBLIC_FETCH,
+    budget: FetchBudget | None = None,
+    response_sink: ResponseSink | None = None,
+) -> object:
+    """One HTTPS GET returning parsed JSON (raises on transport/JSON errors).
+
+    M2 A4 bounded read (m2-plan section 2.5): the body comes through
+    :func:`polymarket_alpha_lab.public_http.read_public_body` — declared
+    framing enforced, body capped at ``budget.next_response_read_limit()``
+    (:data:`_RESPONSE_READ_LIMIT_DEFAULT` without a budget) — and both
+    the request URL and the final (post-redirect) URL must sit inside
+    the frozen origin allowlist. The explicit network permission is
+    re-checked here so no connection is ever built without an
+    ``allow_public_fetch=True`` somewhere in the chain.
+    """
+    require_public_fetch(allow_public_fetch)
+    _verify_origin(url)
     request = urllib.request.Request(
         url,
         headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
     )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        body = response.read()
+    effective_timeout = float(timeout)
+    if budget is not None:
+        effective_timeout = min(
+            effective_timeout, budget.effective_timeout_seconds()
+        )
+    with urllib.request.urlopen(request, timeout=effective_timeout) as response:
+        _verify_origin(response.geturl())
+        read_limit = (
+            budget.next_response_read_limit()
+            if budget is not None
+            else _RESPONSE_READ_LIMIT_DEFAULT
+        )
+        body = public_http.read_public_body(response, read_limit)
+    if budget is not None:
+        budget.charge_response_bytes(len(body))
+    if response_sink is not None:
+        response_sink(url, body)
     try:
         return json.loads(body)
     except json.JSONDecodeError as exc:
@@ -264,17 +393,41 @@ def _http_get_json(url: str, *, timeout: float) -> object:
         ) from exc
 
 
-def _fetch_json(url: str, *, timeout: float) -> object:
-    """Fetch with retry/backoff and polite spacing; fail via EspnNbaError."""
+def _fetch_json(
+    url: str,
+    *,
+    timeout: float,
+    allow_public_fetch: bool = DEFAULT_ALLOW_PUBLIC_FETCH,
+    budget: FetchBudget | None = None,
+    response_sink: ResponseSink | None = None,
+) -> object:
+    """Fetch with retry/backoff and polite spacing; fail via EspnNbaError.
+
+    The retry/backoff rules keep their frozen WP-NBA-1 semantics
+    (:data:`FETCH_ATTEMPTS` transport-error attempts, ``5 s x attempt``
+    backoff, :data:`SLEEP_S` polite spacing). With a shared budget every
+    actual attempt charges ``budget.charge_request()`` and every wait is
+    clamped to the remaining round time, so budget or deadline
+    exhaustion stops the loop immediately — never retried past.
+    """
+    require_public_fetch(allow_public_fetch)
     last_exc: Exception | None = None
     for attempt in range(FETCH_ATTEMPTS):
-        _polite_pause()
+        if budget is not None:
+            budget.charge_request()
+        _polite_pause(budget)
         try:
-            return _http_get_json(url, timeout=timeout)
+            return _http_get_json(
+                url,
+                timeout=timeout,
+                allow_public_fetch=allow_public_fetch,
+                budget=budget,
+                response_sink=response_sink,
+            )
         except (urllib.error.URLError, OSError, EspnNbaError) as exc:
             last_exc = exc
             if attempt < FETCH_ATTEMPTS - 1:
-                time.sleep(5.0 * (attempt + 1))
+                _sleep_bounded(5.0 * (attempt + 1), budget)
     raise EspnNbaError(f"giving up after {FETCH_ATTEMPTS} attempts: {url} ({last_exc})")
 
 
@@ -329,13 +482,30 @@ def _cached_fetch_json(
     max_age_s: float | None,
     *,
     timeout: float,
+    allow_public_fetch: bool = DEFAULT_ALLOW_PUBLIC_FETCH,
+    budget: FetchBudget | None = None,
+    response_sink: ResponseSink | None = None,
 ) -> dict:
-    """Read-through cache around :func:`_fetch_json` (cache hit = no network)."""
+    """Read-through cache around :func:`_fetch_json` (cache hit = no network).
+
+    LEGACY ops path (frozen-surface boundary, m2-plan section 2.5): a
+    non-``None`` ``cache_path`` is only ever supplied by the legacy
+    WP-NBA-1 backfill tooling/CLI. M2 rounds pass ``cache_dir=None``
+    end to end, so this wrapper performs zero disk writes for them. A
+    cache hit charges no budget and builds no evidence (no request
+    happened); a miss charges and reports exactly like a direct fetch.
+    """
     if cache_path is not None:
         cached = _cache_read(cache_path, max_age_s)
         if cached is not None:
             return cached
-    payload = _fetch_json(url, timeout=timeout)
+    payload = _fetch_json(
+        url,
+        timeout=timeout,
+        allow_public_fetch=allow_public_fetch,
+        budget=budget,
+        response_sink=response_sink,
+    )
     if not isinstance(payload, dict):
         raise EspnNbaSchemaError(f"payload from {url} is not an object")
     if cache_path is not None:
@@ -362,6 +532,9 @@ def fetch_team_schedule(
     cache_dir: Path | str | None = DEFAULT_CACHE_DIR,
     max_age_s: float | None = SCHEDULE_CACHE_MAX_AGE_S,
     timeout: float = FETCH_TIMEOUT_S,
+    allow_public_fetch: bool = DEFAULT_ALLOW_PUBLIC_FETCH,
+    budget: FetchBudget | None = None,
+    response_sink: ResponseSink | None = None,
 ) -> dict:
     """Fetch one team's regular-season schedule payload (NETWORK, cached).
 
@@ -372,7 +545,14 @@ def fetch_team_schedule(
     echo ``requestedSeason`` with the requested year and type 2, and the
     payload's own ``team.abbreviation`` must equal ``abbrev`` (guards the
     frozen id table against silent ESPN id changes).
+
+    M2 A4: ``allow_public_fetch`` defaults to the paper-only denial —
+    no connection is built without an explicit ``True`` (checked before
+    any cache access too). With a shared ``budget`` every attempt/wait
+    is charged/clamped against the round and ``response_sink`` receives
+    ``(url, raw_bytes)`` per successful bounded read.
     """
+    require_public_fetch(allow_public_fetch)
     if abbrev not in NBA_TEAMS:
         raise ValueError(f"unknown NBA abbreviation {abbrev!r}")
     year = season_year(season)
@@ -380,7 +560,9 @@ def fetch_team_schedule(
     if cache_dir is not None:
         cache_path = Path(cache_dir) / f"schedule_{abbrev}_{year}.json"
     payload = _cached_fetch_json(
-        _schedule_url(abbrev, year), cache_path, max_age_s, timeout=timeout
+        _schedule_url(abbrev, year), cache_path, max_age_s,
+        timeout=timeout, allow_public_fetch=allow_public_fetch,
+        budget=budget, response_sink=response_sink,
     )
     requested = payload.get("requestedSeason")
     if not isinstance(requested, dict) or (
@@ -404,6 +586,9 @@ def fetch_game_summary(
     *,
     cache_dir: Path | str | None = DEFAULT_CACHE_DIR,
     timeout: float = FETCH_TIMEOUT_S,
+    allow_public_fetch: bool = DEFAULT_ALLOW_PUBLIC_FETCH,
+    budget: FetchBudget | None = None,
+    response_sink: ResponseSink | None = None,
 ) -> dict:
     """Fetch one game's summary payload (NETWORK; immutable once cached).
 
@@ -411,7 +596,10 @@ def fetch_game_summary(
     header (teams/scores), the box score (25 team-stat groups incl. all
     four possession inputs) and the injury report. Summary payloads of
     completed games never change, so the cache entry has no expiry.
+    Same M2 A4 permission/budget/``response_sink`` parameters as
+    :func:`fetch_team_schedule`.
     """
+    require_public_fetch(allow_public_fetch)
     eid = str(event_id)
     if not eid.isdigit():
         raise ValueError(f"event id must be numeric, got {event_id!r}")
@@ -421,6 +609,8 @@ def fetch_game_summary(
     payload = _cached_fetch_json(
         f"https://{HOST}{API_PATH}/summary?event={eid}",
         cache_path, None, timeout=timeout,
+        allow_public_fetch=allow_public_fetch,
+        budget=budget, response_sink=response_sink,
     )
     if "header" not in payload or "boxscore" not in payload:
         raise EspnNbaSchemaError(
@@ -435,14 +625,20 @@ def fetch_nba_season(
     cache_dir: Path | str | None = DEFAULT_CACHE_DIR,
     schedule_max_age_s: float | None = SCHEDULE_CACHE_MAX_AGE_S,
     timeout: float = FETCH_TIMEOUT_S,
+    teams: Collection[str] | None = None,
+    allow_public_fetch: bool = DEFAULT_ALLOW_PUBLIC_FETCH,
+    budget: FetchBudget | None = None,
+    response_sink: ResponseSink | None = None,
 ) -> dict:
     """Fetch every schedule + every completed game summary (NETWORK).
 
     Orchestrates :func:`fetch_team_schedule` over the frozen 30-team
-    table, collects the COMPLETED events (each game appears in both
-    teams' schedules; de-duplicated by event id) and fetches each
-    summary exactly once through :func:`fetch_game_summary`. Returns
-    the raw bundle consumed by :func:`build_snapshot`::
+    table (``teams`` narrows it to an explicit subset for bounded
+    scan windows; ``None`` keeps the full frozen table), collects the
+    COMPLETED events (each game appears in both teams' schedules;
+    de-duplicated by event id) and fetches each summary exactly once
+    through :func:`fetch_game_summary`. Returns the raw bundle consumed
+    by :func:`build_snapshot`::
 
         {"season": "2026-27", "season_year": 2027,
          "generated_at": "<iso8601 now>", "schedules": {abbrev: payload},
@@ -451,14 +647,30 @@ def fetch_nba_season(
     Unstarted games are simply absent from the bundle (the snapshot is
     a to-date backfill); a completed event without its summary fails
     closed inside :func:`build_snapshot`.
+
+    M2 A4: ``allow_public_fetch`` (paper-only default ``False``) and
+    the shared ``budget``/``response_sink`` propagate to every schedule
+    and summary fetch. The M2 adapter path pins ``cache_dir=None``
+    (zero disk-cache writes); the on-disk cache remains the legacy
+    WP-NBA-1 ops option.
     """
+    require_public_fetch(allow_public_fetch)
     year = season_year(season)
+    if teams is None:
+        table: Mapping[str, tuple[int, str]] = NBA_TEAMS
+    else:
+        unknown = sorted(set(teams) - set(NBA_TEAMS))
+        if unknown:
+            raise ValueError(f"unknown NBA abbreviation(s) {unknown!r}")
+        table = {abbrev: NBA_TEAMS[abbrev] for abbrev in teams}
     schedules: dict[str, dict] = {}
     completed: dict[str, dict] = {}  # event_id -> normalized event row
-    for abbrev in sorted(NBA_TEAMS):
+    for abbrev in sorted(table):
         payload = fetch_team_schedule(
             abbrev, season,
             cache_dir=cache_dir, max_age_s=schedule_max_age_s, timeout=timeout,
+            allow_public_fetch=allow_public_fetch,
+            budget=budget, response_sink=response_sink,
         )
         schedules[abbrev] = payload
         for event in _completed_events(payload, abbrev):
@@ -472,7 +684,9 @@ def fetch_nba_season(
     summaries: dict[str, dict] = {}
     for eid in sorted(completed, key=int):
         summaries[eid] = fetch_game_summary(
-            eid, cache_dir=cache_dir, timeout=timeout
+            eid, cache_dir=cache_dir, timeout=timeout,
+            allow_public_fetch=allow_public_fetch,
+            budget=budget, response_sink=response_sink,
         )
     return {
         "season": season,
@@ -1123,11 +1337,17 @@ def main(argv: list[str] | None = None) -> int:
     """CLI: backfill one season to date and write a snapshot file.
 
     ``python -m polymarket_alpha_lab.papersim.espn_nba --out PATH
-    [--season 2026-27] [--cache-dir DIR] [--schedule-max-age-s SEC]``.
+    [--season 2026-27] [--cache-dir DIR] [--schedule-max-age-s SEC]
+    --allow-public-fetch``.
     Fetches through the on-disk cache, builds the fail-closed snapshot,
     validates it again through :func:`load_nba_snapshot` and writes it
     atomically. Prints team/game/injury counts as evidence. The module
     is stdlib-only, so the same file runs standalone on the ops host.
+
+    M2 A4: the network backfill now requires the explicit
+    ``--allow-public-fetch`` opt-in (paper-only default: denied). This
+    CLI stays the LEGACY WP-NBA-1 ops path; M2 rounds go through
+    ``papersim.adapters.sports`` with ``cache_dir=None``.
     """
     parser = argparse.ArgumentParser(
         description="ESPN NBA snapshot backfill (paper-only, no credentials)"
@@ -1142,6 +1362,10 @@ def main(argv: list[str] | None = None) -> int:
         "--schedule-max-age-s", type=float, default=SCHEDULE_CACHE_MAX_AGE_S,
         help="schedule cache freshness window in seconds",
     )
+    parser.add_argument(
+        "--allow-public-fetch", action="store_true",
+        help="explicit network permission (paper-only default: denied)",
+    )
     args = parser.parse_args(argv)
     cache_dir: Path | str | None = args.cache_dir
     if cache_dir == "":
@@ -1150,6 +1374,7 @@ def main(argv: list[str] | None = None) -> int:
         args.season,
         cache_dir=cache_dir,
         schedule_max_age_s=args.schedule_max_age_s,
+        allow_public_fetch=args.allow_public_fetch,
     )
     snapshot = build_snapshot(raw, season=args.season)
     target = write_snapshot(snapshot, args.out)

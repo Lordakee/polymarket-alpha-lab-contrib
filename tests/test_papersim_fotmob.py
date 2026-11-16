@@ -34,6 +34,7 @@ Frozen anchors were computed once from the excerpt at generation time
 
 from __future__ import annotations
 
+import email.message
 import json
 import re
 import tempfile
@@ -62,10 +63,20 @@ def _reset_rate_limit(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 class _StubResponse:
-    """Minimal ``urlopen`` context manager returning fixed bytes."""
+    """Minimal ``urlopen`` context manager returning fixed bytes.
 
-    def __init__(self, body: bytes) -> None:
+    m2 A4 test-input upgrade (original assertions unchanged): carries
+    HTTP-shaped ``headers`` (Content-Length framing), an
+    ``amt``-bounded ``read`` and ``geturl()`` so the bounded transport
+    (``fotmob._http_get_json`` via ``public_http.read_public_body``)
+    accepts it exactly like a real ``http.client`` response.
+    """
+
+    def __init__(self, body: bytes, *, final_url: str | None = None) -> None:
         self._body = body
+        self._final_url = final_url
+        self.headers = email.message.Message()
+        self.headers["Content-Length"] = str(len(body))
 
     def __enter__(self) -> "_StubResponse":
         return self
@@ -73,8 +84,13 @@ class _StubResponse:
     def __exit__(self, *exc: object) -> None:
         return None
 
-    def read(self) -> bytes:
-        return self._body
+    def geturl(self) -> str | None:
+        return self._final_url
+
+    def read(self, amt: int | None = None) -> bytes:
+        if amt is None or amt < 0:
+            return self._body
+        return self._body[:amt]
 
 
 # --------------------------------------------------------------------------
@@ -559,7 +575,7 @@ def _install_urlopen(monkeypatch: pytest.MonkeyPatch, responses: list) -> list:
             item = responses[-1]
         if isinstance(item, Exception):
             raise item
-        return _StubResponse(item)
+        return _StubResponse(item, final_url=request.full_url)
 
     monkeypatch.setattr(fotmob.urllib.request, "urlopen", _fake_urlopen)
     return requests
@@ -570,16 +586,18 @@ def test_fetch_league_builds_url_and_returns_payload(
 ) -> None:
     monkeypatch.setattr(fotmob.time, "sleep", lambda seconds: None)
     requests = _install_urlopen(monkeypatch, [b'{"details": {}, "fixtures": {}}'])
-    payload = fotmob.fetch_fotmob_league(48, "2025/2026")
+    payload = fotmob.fetch_fotmob_league(48, "2025/2026", allow_public_fetch=True)
     assert payload == {"details": {}, "fixtures": {}}
     assert requests[0].full_url == (
         "https://www.fotmob.com/api/data/leagues?id=48&season=2025%2F2026"
     )
     requests = _install_urlopen(monkeypatch, [b"{}"])
-    fotmob.fetch_fotmob_league(fotmob.FotMobLeague.CHAMPIONSHIP)
+    fotmob.fetch_fotmob_league(
+        fotmob.FotMobLeague.CHAMPIONSHIP, allow_public_fetch=True
+    )
     assert requests[0].full_url == "https://www.fotmob.com/api/data/leagues?id=48"
     requests = _install_urlopen(monkeypatch, [b"{}"])
-    fotmob.fetch_match_details("5836754")
+    fotmob.fetch_match_details("5836754", allow_public_fetch=True)
     assert requests[0].full_url == (
         "https://www.fotmob.com/api/data/matchDetails?matchId=5836754"
     )
@@ -589,10 +607,10 @@ def test_fetch_enforces_polite_spacing(monkeypatch: pytest.MonkeyPatch) -> None:
     _install_urlopen(monkeypatch, [b"{}", b"{}"])
     sleeps: list[float] = []
     monkeypatch.setattr(fotmob.time, "sleep", sleeps.append)
-    fotmob.fetch_match_details("1")
+    fotmob.fetch_match_details("1", allow_public_fetch=True)
     assert sleeps == []  # first request: nothing to space against
     fotmob._last_fetch_monotonic = time.monotonic()  # a request just left
-    fotmob.fetch_match_details("2")
+    fotmob.fetch_match_details("2", allow_public_fetch=True)
     assert len(sleeps) == 1
     assert 0.0 < sleeps[0] <= fotmob.SLEEP_S
 
@@ -605,7 +623,7 @@ def test_fetch_retries_with_backoff_then_recovers(
     )
     sleeps: list[float] = []
     monkeypatch.setattr(fotmob.time, "sleep", sleeps.append)
-    assert fotmob.fetch_match_details("1") == {"ok": 1}
+    assert fotmob.fetch_match_details("1", allow_public_fetch=True) == {"ok": 1}
     # backoffs are exactly 5s then 10s; any polite-spacing sleeps are
     # bounded by SLEEP_S.
     assert 5.0 in sleeps and 10.0 in sleeps
@@ -618,7 +636,7 @@ def test_fetch_gives_up_after_attempts(monkeypatch: pytest.MonkeyPatch) -> None:
     sleeps: list[float] = []
     monkeypatch.setattr(fotmob.time, "sleep", sleeps.append)
     with pytest.raises(fotmob.FotMobError, match="giving up"):
-        fotmob.fetch_match_details("1")
+        fotmob.fetch_match_details("1", allow_public_fetch=True)
     assert len(requests) == fotmob.FETCH_ATTEMPTS
     assert 15.0 in sleeps
 
@@ -627,7 +645,7 @@ def test_fetch_rejects_non_object_payload(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(fotmob.time, "sleep", lambda seconds: None)
     _install_urlopen(monkeypatch, [b"[1, 2]"])
     with pytest.raises(fotmob.FotMobSchemaError, match="not an object"):
-        fotmob.fetch_match_details("1")
+        fotmob.fetch_match_details("1", allow_public_fetch=True)
     _install_urlopen(monkeypatch, [b"not json at all"])
     with pytest.raises(fotmob.FotMobError, match="non-JSON"):
-        fotmob.fetch_match_details("1")
+        fotmob.fetch_match_details("1", allow_public_fetch=True)
