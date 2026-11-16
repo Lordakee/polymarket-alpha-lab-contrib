@@ -909,3 +909,840 @@ def test_legacy_face_is_unchanged_by_import_and_registration(
     after = fingerprint(read_only)
     read_only.close()
     assert after == before
+
+
+# ---------------------------------------------------------------------------
+# M3/V2 reporting views (design m3-v1-views-design 2026-11-15; M3 plan
+# section 7.2 verification matrix). Every proof below builds its OWN
+# one-shot managed database, so nothing here depends on the shared
+# managed_face fixture or on module ordering; the pre-existing tests in
+# this file are untouched (append-only section).
+# ---------------------------------------------------------------------------
+
+PAPERSIM_VIEWS = ('natural_settlement_summary', 'candidate_scoring_view',
+                  'queue_summary_view')
+M1_PAPERSIM_DIGESTS = (
+    ('20261115000000_papersim_bootstrap.sql',
+     'ef0efa36b4fee775473611f5b73f1d34fe20cb4f13c26608a2aac562d9dcc74c'),
+    ('20261115000100_papersim_v2_core.sql',
+     '2d5b4f4407d59189d7cfa896c45884efc0c88a24bc3fee403cd18fb070b94945'),
+)
+REPORTING_VIEWS_MIGRATION = '20261116000010_papersim_reporting_views.sql'
+
+
+def _rebind_dsn(dsn: str, database: str) -> str:
+    return ' '.join(f'dbname={database}' if token.startswith('dbname=') else token
+                    for token in dsn.split(' '))
+
+
+def _rows(connection, statement, params=()):
+    with connection.cursor() as cursor:
+        cursor.execute(statement, params)
+        columns = [description[0] for description in cursor.description]
+        return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+
+def _fresh_views_database(repo_root=ROOT, expected=None):
+    """A private managed-shaped database with the papersim catalog applied."""
+    psycopg = pytest.importorskip('psycopg')
+    admin = connect(OWNER_DSN, autocommit=True)
+    name = 'pal_papersim_v2v_' + uuid.uuid4().hex[:10]
+    with admin.cursor() as cursor:
+        cursor.execute("SELECT system_identifier::text FROM pg_control_system()")
+        system_id = cursor.fetchone()[0]
+        cursor.execute(f"CREATE DATABASE {name} OWNER pal_owner")
+    admin.close()
+    owner_dsn = _rebind_dsn(OWNER_DSN, name)
+    app_dsn = owner_dsn.replace('user=pal_owner', 'user=pal_app')
+    bootstrap = psycopg.connect(owner_dsn)
+    bootstrap.autocommit = True
+    with bootstrap.cursor() as cursor:
+        from polymarket_alpha_lab.project_postgres import sql
+        cursor.execute(sql.bootstrap_sql(uuid.uuid4().hex, 'b' * 64, system_id))
+    bootstrap.close()
+    owner = connect(owner_dsn, autocommit=False)
+    result = pm.apply_pending_migrations(owner, repo_root)
+    if expected is not None:
+        assert result == expected
+    owner.close()
+    return owner_dsn, app_dsn
+
+
+def _entry_id_for(owner, candidate_id):
+    with owner.cursor() as cursor:
+        cursor.execute('SELECT entry_id FROM papersim.entries WHERE candidate_id = %s',
+                       (candidate_id,))
+        return cursor.fetchone()[0]
+
+
+def _insert_settlement(owner, entry_id, classification, *, pnl_gross, fee_total,
+                       proceeds, confirmed_at, win_loss=None, outcome_label=None,
+                       exit_price=None, source_outcome_id=None):
+    pnl_gross = Decimal(str(pnl_gross))
+    fee_total = Decimal(str(fee_total))
+    with owner.cursor() as cursor:
+        cursor.execute(
+            'INSERT INTO papersim.settlements (entry_id, classification, outcome_label, '
+            'win_loss, exit_price, proceeds, pnl_gross, fee_total, pnl_net, '
+            'source_outcome_id, confirmed_by, confirmed_at) '
+            'VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+            (entry_id, classification, outcome_label, win_loss, exit_price,
+             Decimal(str(proceeds)), pnl_gross, fee_total, pnl_gross - fee_total,
+             source_outcome_id, 'm3-v2-views', confirmed_at))
+
+
+def _sized_entry(stake, price, fee_category, rate):
+    stake = Decimal(str(stake))
+    price = Decimal(str(price))
+    shares = (stake / price).quantize(Decimal('0.000001'))
+    fee = (stake * Decimal(str(rate)) * (Decimal(1) - price)).quantize(Decimal('0.000001'))
+    return entry(stake=stake, price=price, shares=shares, fee_category=fee_category,
+                 fee_rate=Decimal(str(rate)), entry_fee=fee, fee_source='schedule')
+
+
+def _queue_row(app, model_name):
+    rows = _rows(app, 'SELECT * FROM papersim.queue_summary_view '
+                      'WHERE model_name = %s', (model_name,))
+    assert len(rows) == 1, rows
+    return rows[0]
+
+
+def _view_catalog_tree(tree_root):
+    """Copy the live papersim migration directory into a synthetic repo tree."""
+    import shutil
+    directory = ROOT / 'database/papersim/migrations'
+    (tree_root / 'database/papersim/migrations').mkdir(parents=True)
+    entries = []
+    for path in sorted(directory.glob('*.sql')):
+        shutil.copyfile(path, tree_root / 'database/papersim/migrations' / path.name)
+        entries.append({'name': path.name,
+                        'sha256': sha256(path.read_bytes()).hexdigest(),
+                        'transaction_wrapper': True})
+    return tree_root, entries
+
+
+def _write_manifest(tree_root, entries):
+    import json
+    (tree_root / 'database/papersim/migrations.lock.json').write_text(
+        json.dumps({'format': pm.MANIFEST_FORMAT, 'migrations': entries}), encoding='utf-8')
+    return tree_root
+
+
+def test_old_migration_and_v1_faces_are_pinned_unchanged():
+    import json
+    manifest = json.loads(
+        (ROOT / 'database/papersim/migrations.lock.json').read_text(encoding='utf-8'))
+    entries = manifest['migrations']
+    # Manifest pin 3 -> 4 entries after the V2R3 rebase onto integrated
+    # main: [M1, M1, S0 operations, V2 reporting views] (the M1 pair and
+    # the S0 entry keep their published bytes; the V1 face is untouched).
+    assert [item['name'] for item in entries] == [
+        '20261115000000_papersim_bootstrap.sql',
+        '20261115000100_papersim_v2_core.sql',
+        '20261116000000_papersim_m2_operations.sql',
+        REPORTING_VIEWS_MIGRATION]
+    directory = ROOT / 'database/papersim/migrations'
+    for item, (name, pinned) in zip(entries[:2], M1_PAPERSIM_DIGESTS, strict=True):
+        assert item['name'] == name and item['sha256'] == pinned
+        assert sha256((directory / name).read_bytes()).hexdigest() == pinned
+    v1_manifest = json.loads(
+        (ROOT / 'database/migrations.lock.json').read_text(encoding='utf-8'))
+    assert len(v1_manifest['migrations']) == 70  # the V1 face is untouched
+
+
+def test_reporting_views_catalog_red_conditions(tmp_path):
+    tree, entries = _view_catalog_tree(tmp_path / 'repo')
+    _write_manifest(tree, entries)
+    # Tampered reporting-views bytes stop the catalog loudly.
+    target = tree / 'database/papersim/migrations' / REPORTING_VIEWS_MIGRATION
+    target.write_bytes(target.read_bytes() + b'\n-- drift\n')
+    with pytest.raises(pm.PapersimMigrationError, match='papersim_migration_changed'):
+        pm.papersim_migration_catalog(tree)
+    # A lock manifest that omits the trailing reporting-views entry (the
+    # last of the four live entries after the V2R3 rebase) is an
+    # inventory mismatch.
+    _write_manifest(tree, entries[:3])
+    with pytest.raises(pm.PapersimMigrationError,
+                       match='papersim_migration_inventory_mismatch'):
+        pm.papersim_migration_catalog(tree)
+
+
+@NATIVE
+def test_reporting_views_apply_matrix_incremental_and_idempotent(tmp_path):
+    import shutil
+    owner_dsn, app_dsn = _fresh_views_database(
+        expected={'applied': 4, 'pending_before': 4})
+    owner = connect(owner_dsn, autocommit=False)
+    assert pm.apply_pending_migrations(owner, ROOT) == {'applied': 0, 'pending_before': 0}
+    owner.close()
+    app = connect(app_dsn)
+    listed = [row['table_name'] for row in _rows(
+        app, "SELECT table_name FROM information_schema.views "
+             "WHERE table_schema = 'papersim' ORDER BY table_name")]
+    assert listed == ['candidate_scoring_view', 'natural_settlement_summary',
+                      'queue_summary_view']
+    for view in PAPERSIM_VIEWS:  # the app role can SELECT every view
+        assert _rows(app, f'SELECT count(*) AS n FROM papersim.{view}')[0]['n'] == 0
+    granted = [row['table_name'] for row in _rows(
+        app, "SELECT table_name FROM information_schema.role_table_grants "
+             "WHERE table_schema = 'papersim' AND grantee = 'pal_app' "
+             "AND privilege_type = 'SELECT' AND table_name = ANY(%s) "
+             "ORDER BY table_name", (list(PAPERSIM_VIEWS),))]
+    assert granted == ['candidate_scoring_view', 'natural_settlement_summary',
+                       'queue_summary_view']
+    app.close()
+    # Incremental face: the two M1 migrations first, then the full catalog
+    # adds exactly the two post-M1 migrations (the S0 operations entry and
+    # the reporting-views entry).
+    tree = tmp_path / 'm1-tree'
+    (tree / 'database/papersim/migrations').mkdir(parents=True)
+    entries = []
+    for name, _digest in M1_PAPERSIM_DIGESTS:
+        shutil.copyfile(ROOT / 'database/papersim/migrations' / name,
+                        tree / 'database/papersim/migrations' / name)
+        entries.append({'name': name,
+                        'sha256': sha256(
+                            (tree / 'database/papersim/migrations' / name).read_bytes()
+                        ).hexdigest(),
+                        'transaction_wrapper': True})
+    _write_manifest(tree, entries)
+    inc_owner_dsn, _ = _fresh_views_database(
+        repo_root=tree, expected={'applied': 2, 'pending_before': 2})
+    owner = connect(inc_owner_dsn, autocommit=False)
+    assert pm.apply_pending_migrations(owner, ROOT) == {'applied': 2, 'pending_before': 2}
+    assert pm.apply_pending_migrations(owner, ROOT) == {'applied': 0, 'pending_before': 0}
+    status = pm.migration_status(owner, ROOT)
+    assert status['applied'] == [
+        '20261115000000_papersim_bootstrap.sql',
+        '20261115000100_papersim_v2_core.sql',
+        '20261116000000_papersim_m2_operations.sql',
+        REPORTING_VIEWS_MIGRATION]
+    assert status['pending'] == []
+    owner.close()
+
+
+@NATIVE
+def test_reporting_views_survive_a_failed_fourth_migration(tmp_path):
+    tree, entries = _view_catalog_tree(tmp_path / 'repo')
+    # Synthetic follow-up migration keeps its 20261117* timestamp so it
+    # still appends after the live four-entry catalog tail (M1 pair, S0
+    # operations, V2 reporting views).
+    failing = tree / 'database/papersim/migrations/20261117000000_views_fail.sql'
+    failing.write_text('begin;\ncreate table papersim.boom (x int);\nselect 1 / 0;\ncommit;\n',
+                       encoding='utf-8')
+    entries.append({'name': failing.name,
+                    'sha256': sha256(failing.read_bytes()).hexdigest(),
+                    'transaction_wrapper': True})
+    _write_manifest(tree, entries)
+    owner_dsn, _ = _fresh_views_database()
+    owner = connect(owner_dsn, autocommit=False)
+    with pytest.raises(pm.PapersimMigrationError, match='papersim_migration_apply_failed'):
+        pm.apply_pending_migrations(owner, tree)
+    counts = _rows(
+        owner,
+        "SELECT (SELECT count(*) FROM papersim_private.migrations) AS ledger_rows, "
+        "(SELECT count(*) FROM information_schema.tables WHERE table_schema = 'papersim' "
+        " AND table_name = 'boom') AS boom_tables, "
+        "(SELECT count(*) FROM information_schema.tables WHERE table_schema = 'papersim' "
+        " AND table_type = 'BASE TABLE') AS base_tables, "
+        "(SELECT count(*) FROM information_schema.views "
+        " WHERE table_schema = 'papersim') AS view_rows")[0]
+    assert counts == {'ledger_rows': 4, 'boom_tables': 0, 'base_tables': 13,
+                      'view_rows': 3}
+    for view in PAPERSIM_VIEWS:  # the applied views stay queryable
+        assert _rows(owner, f'SELECT count(*) AS n FROM papersim.{view}')[0]['n'] == 0
+    owner.close()
+
+
+@NATIVE
+def test_two_entries_one_market_and_outcome_versions_never_double_count():
+    import math
+    owner_dsn, app_dsn = _fresh_views_database()
+    store_psycopg = adapter()
+    owner = connect(owner_dsn, autocommit=True)
+    app = connect(app_dsn)
+    market = '3866000'
+
+    def decisions(ref, first_mid, first_prob):
+        # Two DECISION rows plus two CLOSE rows: the representatives are
+        # the smallest DECISION evidence_id and the LATEST CLOSE row.
+        return (evidence(observed_at=at(4), market_ref_kind='market_id', market_ref=ref,
+                         side='YES', mid=Decimal(first_mid),
+                         model_probability=Decimal(first_prob)),
+                evidence(observed_at=at(5), market_ref_kind='market_id', market_ref=ref,
+                         side='YES', mid=Decimal('0.99'),
+                         model_probability=Decimal('0.99')),
+                evidence(observed_at=at(9), evidence_role='CLOSE',
+                         market_ref_kind='market_id', market_ref=ref, side='YES',
+                         mid=Decimal('0.80'), last=Decimal('0.80'),
+                         source_kind='clob_terminal_price', source_ref='c1'),
+                evidence(observed_at=at(10), evidence_role='CLOSE',
+                         market_ref_kind='market_id', market_ref=ref, side='YES',
+                         mid=Decimal('0.85'), last=Decimal('0.85'),
+                         source_kind='clob_terminal_price', source_ref='c2'))
+
+    rows = (
+        candidate(candidate_key='e1', conclusion='ACCEPTED', market_slug=None,
+                  condition_id=None, market_id=market,
+                  price_evidence=decisions(market, '0.515', '0.68'),
+                  entry=_sized_entry(750, '0.515', 'crypto', '0.07')),
+        candidate(candidate_key='e2', conclusion='ACCEPTED', market_slug=None,
+                  condition_id=None, market_id=market,
+                  price_evidence=decisions(market, '0.455', '0.70'),
+                  entry=_sized_entry(500, '0.455', 'crypto', '0.07')),
+    )
+    result = store_psycopg.record_scan(app, store.ScanSubmission(scan=scan_run(),
+                                                                 candidates=rows))
+    base = store_psycopg.record_market_outcome(app, outcome(
+        market_id=market, market_slug=None, outcome='YES', observed_at=at(30),
+        source_ref='base-' + market))['outcome_id']
+    store_psycopg.record_market_outcome(app, outcome(
+        market_id=market, market_slug=None, outcome='UNKNOWN', confirmed_at=None,
+        observed_at=at(100), source_ref='later-unknown-' + market))
+    corrected = store_psycopg.record_market_outcome(app, outcome(
+        market_id=market, market_slug=None, outcome='YES', observed_at=at(150),
+        confirmed_at=at(160), source_ref='correction-' + market))['outcome_id']
+    assert corrected != base
+    _insert_settlement(owner, _entry_id_for(owner, result['candidate_ids']['e1']),
+                       'NATURAL', win_loss='win', pnl_gross='743.68', fee_total='25.4625',
+                       proceeds='1493.68', confirmed_at=at(70))
+    _insert_settlement(owner, _entry_id_for(owner, result['candidate_ids']['e2']),
+                       'NATURAL', win_loss='win', pnl_gross='561.52', fee_total='19.0750',
+                       proceeds='1061.52', confirmed_at=at(71))
+
+    summary = _rows(app, 'SELECT * FROM papersim.natural_settlement_summary')
+    assert len(summary) == 1  # one market identity row, no fan-out
+    row = summary[0]
+    assert (row['market_ref_kind'], row['market_ref']) == ('market_id', market)
+    assert row['effective_outcome_id'] == corrected  # later YES wins; UNKNOWN never shadows
+    assert row['effective_outcome'] == 'YES'
+    assert row['outcome_observed_at'] == at(150)
+    assert row['settlements_total'] == 2
+    assert (row['natural_settled'], row['natural_hits'],
+            row['natural_losses']) == (2, 2, 0)
+    assert row['natural_hit_rate'] == Decimal(1)
+    assert row['natural_pnl_gross'] == Decimal('1305.20')  # 743.68 + 561.52, no doubling
+    assert row['natural_fee_total'] == Decimal('44.5375')
+    assert row['natural_pnl_net'] == Decimal('1260.6625')
+    assert (row['exit_settled'], row['voided_settled']) == (0, 0)
+
+    scored = _rows(app, 'SELECT * FROM papersim.candidate_scoring_view '
+                        'ORDER BY candidate_id')
+    first_evidence = _rows(
+        app, 'SELECT candidate_id, '
+             'min(evidence_id) FILTER (WHERE evidence_role = \'DECISION\') AS first_id, '
+             'count(*) FILTER (WHERE evidence_role = \'DECISION\') AS decisions, '
+             'count(*) FILTER (WHERE evidence_role = \'CLOSE\') AS closes '
+             'FROM papersim.candidate_price_evidence GROUP BY candidate_id '
+             'ORDER BY candidate_id')
+    assert len(scored) == 2 and len(first_evidence) == 2
+    for score, first in zip(scored, first_evidence, strict=True):
+        assert first['decisions'] == 2 and first['closes'] == 2  # no cross product
+        assert score['decision_evidence_id'] == first['first_id']
+        assert score['scoring_status'] == 'OK'
+        assert score['natural_hit'] is True
+        assert score['effective_outcome'] == 'YES'
+        assert score['entry_id'] is not None
+    assert scored[0]['model_probability'] == Decimal('0.68')
+    assert scored[0]['decision_mid'] == Decimal('0.515')
+    assert scored[0]['close_mid'] == Decimal('0.85')  # latest CLOSE row wins
+    assert scored[0]['market_mid_side_aligned'] == Decimal('0.515')
+    assert scored[0]['model_minus_market'] == Decimal('0.165')
+    assert scored[0]['brier_pair_diff'] == Decimal('-0.132825')
+    expected_logloss = -math.log(0.68) + math.log(0.515)
+    assert abs(float(scored[0]['logloss_pair_diff']) - expected_logloss) < 1e-9
+    assert scored[0]['infinite_log_loss_pair'] is False
+
+    queue = _queue_row(app, 'gbm')
+    assert (queue['candidates_total'], queue['entered'],
+            queue['settled_natural']) == (2, 2, 2)
+    assert (queue['natural_hits'], queue['natural_hit_rate']) == (2, Decimal(1))
+    assert queue['stake_sum'] == Decimal(1250)
+    assert queue['gross_pnl_sum'] == Decimal('1305.20')
+    assert queue['net_pnl_sum'] == Decimal('1260.6625')
+    assert (queue['entries_fee_source_schedule'],
+            queue['entries_fee_source_estimated']) == (2, 0)
+    assert queue['top_market_key'] == market
+    assert queue['top_market_pnl'] == Decimal('1305.20')
+    assert queue['top_market_share'] == Decimal(1)
+    assert queue['top_market_net_pnl'] == Decimal('1260.6625')
+    assert queue['markets_total'] == 1 and queue['markets_scored'] == 1
+    owner.close()
+    app.close()
+
+
+@NATIVE
+def test_win_loss_labels_count_as_natural_settlements():
+    # Section 78.5 P3 counter-shape: the settlement side carries only
+    # win/loss labels (the market outcome row is UNKNOWN). The views must
+    # report settled=2 / hits=1 / rate=0.5, never the bug's 0/0/NULL.
+    owner_dsn, app_dsn = _fresh_views_database()
+    store_psycopg = adapter()
+    owner = connect(owner_dsn, autocommit=True)
+    app = connect(app_dsn)
+    slug = unique_slug()
+    rows = (
+        candidate(candidate_key='wl-win', conclusion='ACCEPTED', market_slug=slug,
+                  side='YES', price_evidence=(evidence(
+                      observed_at=at(4), market_ref=slug, mid=Decimal('0.60'),
+                      model_probability=Decimal('0.55')),),
+                  entry=_sized_entry(100, '0.60', 'crypto', '0.07')),
+        candidate(candidate_key='wl-loss', conclusion='ACCEPTED', market_slug=slug,
+                  side='YES', price_evidence=(evidence(
+                      observed_at=at(4), market_ref=slug, mid=Decimal('0.40'),
+                      model_probability=Decimal('0.45')),),
+                  entry=_sized_entry(100, '0.40', 'crypto', '0.07')),
+    )
+    result = store_psycopg.record_scan(app, store.ScanSubmission(scan=scan_run(),
+                                                                 candidates=rows))
+    store_psycopg.record_market_outcome(app, outcome(
+        market_slug=slug, outcome='UNKNOWN', confirmed_at=None, observed_at=at(30)))
+    _insert_settlement(owner, _entry_id_for(owner, result['candidate_ids']['wl-win']),
+                       'NATURAL', win_loss='win', pnl_gross='66.666667',
+                       fee_total='2.800000', proceeds='166.666667', confirmed_at=at(70))
+    _insert_settlement(owner, _entry_id_for(owner, result['candidate_ids']['wl-loss']),
+                       'NATURAL', win_loss='loss', pnl_gross='-100', fee_total='4.200000',
+                       proceeds='0', confirmed_at=at(71))
+    row = _rows(app, 'SELECT * FROM papersim.natural_settlement_summary')[0]
+    assert row['effective_outcome'] == 'UNKNOWN'
+    assert (row['natural_settled'], row['natural_hits'],
+            row['natural_losses']) == (2, 1, 1)
+    assert row['natural_hit_rate'] == Decimal('0.5')
+    queue = _queue_row(app, 'gbm')
+    assert (queue['settled_natural'], queue['natural_hits'],
+            queue['natural_hit_rate']) == (2, 1, Decimal('0.5'))
+    hits = [item['natural_hit'] for item in _rows(
+        app, 'SELECT natural_hit FROM papersim.candidate_scoring_view '
+             'ORDER BY candidate_id')]
+    # The market-level result is UNKNOWN (recorded_label), so the
+    # per-candidate natural_hit stays a three-valued gap (design section
+    # 4.2 / vector A-3); the settlement-side statistics above carry the
+    # 2/1/0.5 truth. An unknown market result is never guessed.
+    assert hits == [None, None]
+    assert queue['markets_scored'] == 0  # unknown market result stays a gap
+    assert queue['markets_missing_outcome'] == 1
+    owner.close()
+    app.close()
+
+
+@NATIVE
+def test_exit_and_voided_stay_out_of_the_natural_hit_rate():
+    owner_dsn, app_dsn = _fresh_views_database()
+    store_psycopg = adapter()
+    owner = connect(owner_dsn, autocommit=True)
+    app = connect(app_dsn)
+    natural = unique_slug()
+    exit_slug = unique_slug()
+    void_slug = unique_slug()
+    rows = (
+        candidate(candidate_key='mix-win', conclusion='ACCEPTED', market_slug=natural,
+                  side='YES', price_evidence=(evidence(
+                      observed_at=at(4), market_ref=natural, mid=Decimal('0.60'),
+                      model_probability=Decimal('0.55')),),
+                  entry=_sized_entry(100, '0.60', 'crypto', '0.07')),
+        candidate(candidate_key='mix-loss', conclusion='ACCEPTED', market_slug=natural,
+                  side='NO', price_evidence=(evidence(
+                      observed_at=at(4), market_ref=natural, side='NO',
+                      mid=Decimal('0.40'), model_probability=Decimal('0.45')),),
+                  entry=_sized_entry(100, '0.40', 'crypto', '0.07')),
+        candidate(candidate_key='mix-exit', conclusion='ACCEPTED', market_slug=exit_slug,
+                  price_evidence=(evidence(
+                      observed_at=at(4), market_ref=exit_slug, mid=Decimal('0.50'),
+                      model_probability=Decimal('0.52')),),
+                  entry=_sized_entry(100, '0.50', 'crypto', '0.07')),
+        candidate(candidate_key='mix-void', conclusion='ACCEPTED', market_slug=void_slug,
+                  price_evidence=(evidence(
+                      observed_at=at(4), market_ref=void_slug, mid=Decimal('0.30'),
+                      model_probability=Decimal('0.35')),),
+                  entry=_sized_entry(120, '0.30', 'crypto', '0.07')),
+    )
+    result = store_psycopg.record_scan(app, store.ScanSubmission(
+        scan=scan_run(), candidates=rows))
+    void_outcome = store_psycopg.record_market_outcome(app, outcome(
+        market_slug=natural, outcome='YES', observed_at=at(30)))['outcome_id']
+    store_psycopg.record_market_outcome(app, outcome(
+        market_slug=void_slug, outcome='VOIDED', confirmed_at=None, observed_at=at(30)))
+    ids = result['candidate_ids']
+    _insert_settlement(owner, _entry_id_for(owner, ids['mix-win']),
+                       'NATURAL', win_loss='win', pnl_gross='66.666667',
+                       fee_total='2.800000', proceeds='166.666667', confirmed_at=at(70),
+                       source_outcome_id=void_outcome)  # the natural market's YES row
+    _insert_settlement(owner, _entry_id_for(owner, ids['mix-loss']),
+                       'NATURAL', win_loss='loss', pnl_gross='-100',
+                       fee_total='4.200000', proceeds='0', confirmed_at=at(71))
+    _insert_settlement(owner, _entry_id_for(owner, ids['mix-exit']),
+                       'EXIT', pnl_gross='-8', fee_total='3.500000', proceeds='92',
+                       confirmed_at=at(72), exit_price='0.46')
+    void_entry = _entry_id_for(owner, ids['mix-void'])
+    _insert_settlement(owner, void_entry, 'VOIDED_REFUND', pnl_gross='0',
+                       fee_total='0', proceeds='120', confirmed_at=at(73))
+
+    queue = _queue_row(app, 'gbm')
+    assert (queue['settled_natural'], queue['settled_exit'],
+            queue['settled_voided']) == (2, 1, 1)
+    # EXIT and VOIDED_REFUND stay out of the hit-rate denominator (2
+    # natural settlements, not 4).
+    assert (queue['natural_hits'], queue['natural_hit_rate']) == (1, Decimal('0.5'))
+
+    summary = {row['market_ref']: row for row in _rows(
+        app, 'SELECT * FROM papersim.natural_settlement_summary')}
+    assert set(summary) == {natural, void_slug}  # the EXIT market minted no row
+    assert exit_slug not in summary
+    void_row = summary[void_slug]
+    assert void_row['effective_outcome'] == 'VOIDED'
+    assert void_row['voided_settled'] == 1
+    assert void_row['voided_pnl_gross'] == Decimal(0)
+    assert void_row['voided_pnl_net'] == Decimal(0)  # proceeds = stake
+    assert void_row['natural_settled'] == 0
+    assert void_row['natural_hit_rate'] is None  # zero denominator is NULL, not 0
+    exit_row = _rows(app, 'SELECT scoring_status, natural_hit, effective_outcome '
+                          'FROM papersim.candidate_scoring_view WHERE candidate_key = '
+                          '%s', ('mix-exit',))[0]
+    assert exit_row['effective_outcome'] is None  # an early exit is no natural loss
+    assert exit_row['natural_hit'] is None
+    assert exit_row['scoring_status'] == 'NO_OUTCOME_OBSERVATION'
+    owner.close()
+    app.close()
+
+
+@NATIVE
+def test_rejected_candidates_score_and_coverage_gaps_stay_gaps():
+    owner_dsn, app_dsn = _fresh_views_database()
+    store_psycopg = adapter()
+    app = connect(app_dsn)
+    ok = unique_slug()
+    rejected = unique_slug()
+    unknown = unique_slug()
+    no_mid = unique_slug()
+    no_prob = unique_slug()
+    rows = (
+        candidate(candidate_key='cov-ok', conclusion='ACCEPTED', market_slug=ok,
+                  model_name='cov-model', price_evidence=(evidence(
+                      observed_at=at(4), market_ref=ok, mid=Decimal('0.51'),
+                      model_probability=Decimal('0.634')),),
+                  entry=_sized_entry(200, '0.51', 'sports', '0.05')),
+        candidate(candidate_key='cov-same-market', conclusion='REJECTED', market_slug=ok,
+                  model_name='cov-model', price_evidence=(evidence(
+                      observed_at=at(6), market_ref=ok, mid=Decimal('0.52'),
+                      model_probability=Decimal('0.60')),)),
+        candidate(candidate_key='cov-rejected', conclusion='REJECTED',
+                  market_slug=rejected, model_name='cov-model', side='NO',
+                  price_evidence=(evidence(
+                      observed_at=at(4), market_ref=rejected, side='NO',
+                      mid=Decimal('0.55'), model_probability=Decimal('0.71')),)),
+        candidate(candidate_key='cov-construction', conclusion='CONSTRUCTION_FAILED',
+                  model_name='cov-model', market_slug=None, market_id=None,
+                  condition_id=None),
+        candidate(candidate_key='cov-unknown', conclusion='ACCEPTED',
+                  market_slug=unknown, model_name='cov-model',
+                  price_evidence=(evidence(
+                      observed_at=at(4), market_ref=unknown, mid=Decimal('0.50'),
+                      model_probability=Decimal('0.50')),),
+                  entry=_sized_entry(50, '0.50', 'sports', '0.05')),
+        candidate(candidate_key='cov-no-mid', conclusion='ACCEPTED', market_slug=no_mid,
+                  model_name='cov-model', price_evidence=(evidence(
+                      observed_at=at(4), market_ref=no_mid,
+                      model_probability=Decimal('0.50')),),
+                  entry=_sized_entry(50, '0.50', 'sports', '0.05')),
+        candidate(candidate_key='cov-no-prob', conclusion='ACCEPTED',
+                  market_slug=no_prob, model_name='cov-model', price_evidence=(
+                      evidence(observed_at=at(4), market_ref=no_prob,
+                               mid=Decimal('0.50')),),
+                  entry=_sized_entry(50, '0.50', 'sports', '0.05')),
+    )
+    store_psycopg.record_scan(app, store.ScanSubmission(scan=scan_run(), candidates=rows))
+    store_psycopg.record_market_outcome(app, outcome(market_slug=ok, outcome='NO',
+                                                     observed_at=at(30)))
+    store_psycopg.record_market_outcome(app, outcome(market_slug=rejected, outcome='NO',
+                                                     observed_at=at(30)))
+    store_psycopg.record_market_outcome(app, outcome(market_slug=unknown,
+                                                     outcome='UNKNOWN',
+                                                     confirmed_at=None,
+                                                     observed_at=at(30)))
+    store_psycopg.record_market_outcome(app, outcome(market_slug=no_mid, outcome='YES',
+                                                     observed_at=at(30)))
+    store_psycopg.record_market_outcome(app, outcome(market_slug=no_prob, outcome='YES',
+                                                     observed_at=at(30)))
+
+    status = {item['candidate_key']: item for item in _rows(
+        app, 'SELECT candidate_key, market_key, scoring_status, natural_hit, '
+             'model_minus_market, brier_pair_diff, logloss_pair_diff, entry_id, stake '
+             'FROM papersim.candidate_scoring_view')}
+    assert status['cov-ok']['scoring_status'] == 'OK'
+    assert status['cov-ok']['natural_hit'] is False  # YES side judged NO
+    assert status['cov-ok']['model_minus_market'] == Decimal('0.124')
+    assert status['cov-ok']['brier_pair_diff'] == Decimal('0.141856')
+    assert status['cov-rejected']['scoring_status'] == 'OK'  # rejected still scores
+    assert status['cov-rejected']['natural_hit'] is True
+    assert status['cov-rejected']['entry_id'] is None  # a rejection is never a trade
+    assert status['cov-rejected']['stake'] is None
+    assert status['cov-construction']['scoring_status'] == 'NO_BINDING'
+    assert status['cov-construction']['market_key'] is None
+    assert status['cov-unknown']['scoring_status'] == 'UNKNOWN_OUTCOME'
+    assert status['cov-unknown']['natural_hit'] is None
+    assert status['cov-no-mid']['scoring_status'] == 'MISSING_MARKET_MID'
+    assert status['cov-no-prob']['scoring_status'] == 'MISSING_MODEL_PROBABILITY'
+    for key in ('cov-construction', 'cov-unknown', 'cov-no-mid', 'cov-no-prob'):
+        assert status[key]['model_minus_market'] is None
+        assert status[key]['brier_pair_diff'] is None
+        assert status[key]['logloss_pair_diff'] is None  # gaps are never zero-filled
+
+    queue = _queue_row(app, 'cov-model')
+    assert queue['candidates_total'] == 7
+    assert queue['markets_missing_binding'] == 1  # construction failure, not a market
+    assert queue['markets_total'] == 5
+    assert queue['deduped_repeats'] == 1  # six bound candidates over five markets
+    assert queue['markets_scored'] == 2  # the ok market rep and the rejected market
+    assert queue['markets_missing_outcome'] == 1
+    assert queue['markets_missing_market_mid'] == 1
+    assert queue['markets_missing_model_probability'] == 1
+    assert queue['brier_diff_mean'] == Decimal('0.011728')
+    app.close()
+
+
+@NATIVE
+def test_net_concentration_counterexample_and_undefined_when_negative():
+    owner_dsn, app_dsn = _fresh_views_database()
+    store_psycopg = adapter()
+    owner = connect(owner_dsn, autocommit=True)
+    app = connect(app_dsn)
+    price = Decimal('0.6817148572467722')
+    # Unquantized recorded amounts keep the seeded book equal to the
+    # P2-02 anchor arithmetic (quantizing here would drift the net share
+    # by ~1e-9, outside the 1e-9 design tolerance).
+    gross_each = Decimal(250) / price - Decimal(250)
+    fee_each = Decimal(250) * Decimal('0.05') * (Decimal(1) - price)
+    rows = [candidate(
+        candidate_key='conc-top', conclusion='ACCEPTED', market_slug='mkt-top',
+        model_name='conc-model', price_evidence=(evidence(
+            observed_at=at(4), market_ref='mkt-top', mid=Decimal('0.50'),
+            model_probability=Decimal('0.55')),),
+        entry=_sized_entry(150, '0.50', 'sports', '0.05'))]
+    for index in (2, 3, 4):
+        rows.append(candidate(
+            candidate_key=f'conc-{index}', conclusion='ACCEPTED',
+            market_slug=f'mkt-{index}', model_name='conc-model', price_evidence=(
+                evidence(observed_at=at(4), market_ref=f'mkt-{index}', mid=price,
+                         model_probability=Decimal('0.75')),),
+            entry=_sized_entry(250, price, 'sports', '0.05')))
+    loser_rows = [
+        candidate(candidate_key='lose-1', conclusion='ACCEPTED', market_slug='lose-1',
+                  model_name='loser-model', price_evidence=(evidence(
+                      observed_at=at(4), market_ref='lose-1', mid=Decimal('0.50'),
+                      model_probability=Decimal('0.55')),),
+                  entry=_sized_entry(200, '0.50', 'sports', '0.05')),
+        candidate(candidate_key='lose-2', conclusion='ACCEPTED', market_slug='lose-2',
+                  model_name='loser-model', price_evidence=(evidence(
+                      observed_at=at(4), market_ref='lose-2', mid=Decimal('0.40'),
+                      model_probability=Decimal('0.45')),),
+                  entry=_sized_entry(100, '0.40', 'sports', '0.05')),
+    ]
+    result = store_psycopg.record_scan(app, store.ScanSubmission(
+        scan=scan_run(), candidates=tuple(rows)))
+    loser_result = store_psycopg.record_scan(app, store.ScanSubmission(
+        scan=scan_run(), candidates=tuple(loser_rows)))
+    for key, slug in (('conc-top', 'mkt-top'), ('conc-2', 'mkt-2'),
+                      ('conc-3', 'mkt-3'), ('conc-4', 'mkt-4')):
+        store_psycopg.record_market_outcome(app, outcome(market_slug=slug, outcome='YES',
+                                                         observed_at=at(30)))
+        gross = Decimal('150') if key == 'conc-top' else gross_each
+        fee = Decimal('3.750000') if key == 'conc-top' else fee_each
+        _insert_settlement(owner, _entry_id_for(owner, result['candidate_ids'][key]),
+                           'NATURAL', win_loss='win', pnl_gross=gross, fee_total=fee,
+                           proceeds=Decimal(150 if key == 'conc-top' else 250) + gross,
+                           confirmed_at=at(70))
+    for key, slug, stake in (('lose-1', 'lose-1', 200), ('lose-2', 'lose-2', 100)):
+        entry_id = _entry_id_for(owner, loser_result['candidate_ids'][key])
+        _insert_settlement(owner, entry_id, 'NATURAL', win_loss='loss',
+                           pnl_gross=-stake, fee_total=_sized_entry(
+                               stake, '0.50' if key == 'lose-1' else '0.40', 'sports',
+                               '0.05').entry_fee, proceeds='0', confirmed_at=at(71))
+
+    conc = _queue_row(app, 'conc-model')
+    assert conc['top_market_key'] == 'mkt-top'
+    assert conc['top_market_pnl'] == Decimal(150)
+    assert abs(float(conc['top_market_share']) - 0.299900) < 5e-6
+    assert conc['top_market_net_key'] == 'mkt-top'
+    assert conc['top_market_net_pnl'] == Decimal('146.25')
+    assert abs(float(conc['top_market_net_share']) - 0.301869404845) < 1e-9
+    # The two bases stand side by side; the gross value must never stand
+    # in for the net one (OD-G criterion E reads the net column).
+    assert conc['top_market_net_share'] != conc['top_market_share']
+    assert float(conc['top_market_net_share']) > float(conc['top_market_share'])
+
+    loser = _queue_row(app, 'loser-model')
+    assert loser['top_market_pnl'] == Decimal(-100)  # least-negative market
+    assert loser['top_market_share'] is None  # total pnl not positive: undefined
+    assert loser['top_market_net_share'] is None  # never a fabricated ratio
+    owner.close()
+    app.close()
+
+
+@NATIVE
+def test_views_reconcile_with_ledger_sums_and_the_evaluator():
+    from polymarket_alpha_lab.papersim import evaluation as ev
+    owner_dsn, app_dsn = _fresh_views_database()
+    store_psycopg = adapter()
+    owner = connect(owner_dsn, autocommit=True)
+    app = connect(app_dsn)
+    market_a = unique_slug()
+    market_b = unique_slug()
+    market_e = unique_slug()
+    model_key = 'rec-model/r1'
+    rows = (
+        candidate(candidate_key='rec-a1', conclusion='ACCEPTED', market_slug=market_a,
+                  model_name='rec-model', price_evidence=(evidence(
+                      observed_at=at(4), market_ref=market_a, mid=Decimal('0.50'),
+                      model_probability=Decimal('0.62')),),
+                  entry=_sized_entry(250, '0.56', 'crypto', '0.07')),
+        candidate(candidate_key='rec-a2', conclusion='ACCEPTED', market_slug=market_a,
+                  model_name='rec-model', side='NO', price_evidence=(evidence(
+                      observed_at=at(5), market_ref=market_a, mid=Decimal('0.49'),
+                      model_probability=Decimal('0.634')),),
+                  entry=_sized_entry(150, '0.40', 'crypto', '0.07')),
+        candidate(candidate_key='rec-b', conclusion='ACCEPTED', market_slug=market_b,
+                  model_name='rec-model', price_evidence=(evidence(
+                      observed_at=at(4), market_ref=market_b, mid=Decimal('0.52'),
+                      model_probability=Decimal('0.55')),),
+                  entry=_sized_entry(100, '0.50', 'crypto', '0.07')),
+        candidate(candidate_key='rec-e', conclusion='REJECTED', market_slug=market_e,
+                  model_name='rec-model', side='NO', price_evidence=(evidence(
+                      observed_at=at(4), market_ref=market_e, side='NO',
+                      mid=Decimal('0.55'), model_probability=Decimal('0.71')),)),
+    )
+    result = store_psycopg.record_scan(app, store.ScanSubmission(scan=scan_run(),
+                                                                 candidates=rows))
+    store_psycopg.record_market_outcome(app, outcome(market_slug=market_a, outcome='YES',
+                                                     observed_at=at(30)))
+    store_psycopg.record_market_outcome(app, outcome(market_slug=market_e, outcome='NO',
+                                                     observed_at=at(30)))
+    ids = result['candidate_ids']
+    a1_fee = _sized_entry(250, '0.56', 'crypto', '0.07').entry_fee
+    a2_fee = _sized_entry(150, '0.40', 'crypto', '0.07').entry_fee
+    b_entry = _sized_entry(100, '0.50', 'crypto', '0.07')
+    b_exit_fee = (Decimal(200) * Decimal('0.07') * Decimal('0.46')
+                  * Decimal('0.54')).quantize(Decimal('0.000001'))
+    _insert_settlement(owner, _entry_id_for(owner, ids['rec-a1']), 'NATURAL',
+                       win_loss='win', pnl_gross='196.428571', fee_total=a1_fee,
+                       proceeds='446.428571', confirmed_at=at(70))
+    _insert_settlement(owner, _entry_id_for(owner, ids['rec-a2']), 'NATURAL',
+                       win_loss='loss', pnl_gross='-150', fee_total=a2_fee,
+                       proceeds='0', confirmed_at=at(71))
+    _insert_settlement(owner, _entry_id_for(owner, ids['rec-b']), 'EXIT',
+                       pnl_gross='-8', fee_total=b_entry.entry_fee + b_exit_fee,
+                       proceeds='92', confirmed_at=at(72), exit_price='0.46')
+    with owner.cursor() as cursor:  # one close mark drives the CLV input
+        cursor.execute('INSERT INTO papersim.marks (entry_id, mark_key, marked_at, mid, '
+                       'is_close, source_kind) VALUES (%s,%s,%s,%s,%s,%s)',
+                       (_entry_id_for(owner, ids['rec-a1']), 'rec-close', at(9),
+                        Decimal('0.61'), True, 'clob_terminal_price'))
+
+    evaluation_rows = (
+        ev.EvaluationCandidate(
+            candidate_id='rec-a1', model_key=model_key, market_type='terminal',
+            gate_version='g1', market_key=market_a, model_probability=0.62,
+            market_mid=0.50, accepted=True, stake=250.0, fill_price=0.56, side='YES',
+            fee_category='crypto', outcome='YES', recorded_pnl=196.428571,
+            decision_time=at(4), settled_time=at(70), close_price=0.61),
+        ev.EvaluationCandidate(
+            candidate_id='rec-a2', model_key=model_key, market_type='terminal',
+            gate_version='g1', market_key=market_a, model_probability=0.634,
+            market_mid=0.51, accepted=True, stake=150.0, fill_price=0.40, side='NO',
+            fee_category='crypto', outcome='YES', recorded_pnl=-150.0,
+            decision_time=at(5), settled_time=at(71)),
+        ev.EvaluationCandidate(
+            candidate_id='rec-b', model_key=model_key, market_type='terminal',
+            gate_version='g1', market_key=market_b, model_probability=0.55,
+            market_mid=0.52, accepted=True, stake=100.0, fill_price=0.50, side='YES',
+            fee_category='crypto', outcome='EXITED', recorded_pnl=-8.0,
+            decision_time=at(4), settled_time=at(72)),
+        ev.EvaluationCandidate(
+            candidate_id='rec-e', model_key=model_key, market_type='terminal',
+            gate_version='g1', market_key=market_e, model_probability=0.71,
+            market_mid=0.55, accepted=False, side='NO', outcome='NO',
+            decision_time=at(4)),
+    )
+    report = ev.evaluate_queues(evaluation_rows)
+    assert len(report.queues) == 1
+    evaluated = report.queues[0]
+
+    queue = _queue_row(app, 'rec-model')
+    counts = evaluated.counts
+    assert queue['candidates_total'] == counts.candidates == 4
+    assert queue['candidates_accepted'] == counts.accepted == 3
+    assert (queue['candidates_rejected'] + queue['candidates_construction_failed']
+            == counts.rejected == 1)
+    assert queue['entered'] == counts.entered == 3
+    assert queue['settled_natural'] + queue['settled_exit'] == counts.settled == 3
+    assert queue['entries_unsettled'] == counts.unresolved == 0
+    assert queue['settled_voided'] == counts.voided == 0
+    fills = evaluated.fills
+    assert queue['settled_natural'] == fills.natural_settled == 2
+    assert queue['natural_hits'] == fills.hits == 1
+    assert abs(float(queue['natural_hit_rate']) - fills.hit_rate) < 1e-9
+    roi = evaluated.roi
+    assert abs(float(queue['stake_sum']) - roi.stake) < 0.005
+    assert abs(float(queue['gross_pnl_sum']) - roi.gross_pnl) < 0.005
+    assert abs(float(queue['entry_fee_sum']) - roi.entry_fees) < 0.005
+    assert abs(float(queue['exit_fee_sum']) - roi.exit_fees) < 0.005
+    assert abs(float(queue['fee_total_sum'])
+               - (roi.entry_fees + roi.exit_fees)) < 0.005
+    assert abs(float(queue['net_pnl_sum']) - roi.net_pnl) < 0.005
+    assert abs(float(queue['gross_roi']) - roi.gross_roi) < 1e-9
+    assert abs(float(queue['net_roi']) - roi.net_roi) < 1e-9
+    concentration = evaluated.concentration
+    assert queue['top_market_key'] == concentration.top_market_key == market_a
+    assert abs(float(queue['top_market_pnl'])
+               - concentration.top_market_pnl) < 0.005
+    assert abs(float(queue['top_market_share'])
+               - concentration.top_market_share) < 1e-9
+    assert queue['top_market_net_key'] == concentration.top_market_net_key == market_a
+    assert abs(float(queue['top_market_net_pnl'])
+               - concentration.top_market_net_pnl) < 0.005
+    assert abs(float(queue['top_market_net_share'])
+               - concentration.top_market_net_share) < 1e-9
+    drawdown = evaluated.drawdown
+    assert abs(float(queue['max_drawdown_net']) - drawdown.max_drawdown) < 0.005
+    assert queue['drawdown_rows'] == drawdown.series_rows == 3
+    scoring = evaluated.scoring
+    assert queue['markets_total'] == scoring.markets_total == 3
+    assert queue['markets_scored'] == scoring.markets_scored == 2
+    assert queue['markets_missing_outcome'] == scoring.missing_outcome == 1
+    assert queue['markets_missing_model_probability'] == scoring.missing_model_probability == 0
+    assert queue['markets_missing_market_mid'] == scoring.missing_market_mid == 0
+    assert queue['deduped_repeats'] == scoring.deduped_repeats == 1
+    assert abs(float(queue['model_brier_mean']) - scoring.model_brier) < 1e-12
+    assert abs(float(queue['market_brier_mean']) - scoring.market_brier) < 1e-12
+    assert abs(float(queue['brier_diff_mean']) - scoring.brier_diff_mean) < 1e-12
+    assert abs(float(queue['logloss_diff_mean'])
+               - scoring.logloss_diff_mean) < 1e-12
+    assert queue['infinite_log_loss_pairs'] == scoring.infinite_log_loss_pairs == 0
+    clv = evaluated.clv
+    assert queue['clv_entries_eligible'] == clv.entries_eligible == 3
+    assert queue['clv_entries_with_close_mark'] == 1
+    assert queue['clv_entries_with_close_mid'] == clv.entries_with_close == 1
+    assert abs(float(queue['clv_mean']) - clv.mean) < 1e-9
+
+    # Same-basis ledger reconciliation: the queue row equals independent
+    # SQL sums over the recorded book (entries and settlements).
+    ledger = _rows(
+        app,
+        'SELECT (SELECT coalesce(sum(stake), 0) FROM papersim.entries) AS stake_sum, '
+        '(SELECT coalesce(sum(entry_fee), 0) FROM papersim.entries) AS entry_fee_sum, '
+        '(SELECT coalesce(sum(pnl_gross), 0) FROM papersim.settlements) AS gross_sum, '
+        '(SELECT coalesce(sum(fee_total), 0) FROM papersim.settlements) AS fee_sum, '
+        '(SELECT coalesce(sum(pnl_net), 0) FROM papersim.settlements) AS net_sum')[0]
+    assert queue['stake_sum'] == ledger['stake_sum']
+    assert queue['entry_fee_sum'] == ledger['entry_fee_sum']
+    assert queue['gross_pnl_sum'] == ledger['gross_sum']
+    assert queue['fee_total_sum'] == ledger['fee_sum']
+    assert queue['net_pnl_sum'] == ledger['net_sum']
+
+    scored = {item['candidate_key']: item for item in _rows(
+        app, 'SELECT candidate_key, market_mid_side_aligned, model_minus_market, '
+             'brier_pair_diff FROM papersim.candidate_scoring_view')}
+    assert scored['rec-a2']['market_mid_side_aligned'] == Decimal('0.51')  # mirrored
+    assert scored['rec-a2']['model_minus_market'] == Decimal('0.124')
+    assert scored['rec-a2']['brier_pair_diff'] == Decimal('0.141856')
+    owner.close()
+    app.close()

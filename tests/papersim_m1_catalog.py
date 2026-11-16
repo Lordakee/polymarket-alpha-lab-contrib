@@ -2,9 +2,9 @@
 
 The M1 migration-history proofs keep running against the frozen TWO-entry
 M1 catalog (two migrations, nine tables) with their original assertions
-unchanged; the current full catalog (three entries after S0) is proven
-independently in ``tests/test_papersim_m2_migrations.py`` so no
-current-version validation hides behind this historical fixture.
+unchanged; the current full catalog (grown beyond the frozen pair since
+S0 and V2) is proven independently in ``tests/test_papersim_m2_migrations.py``
+so no current-version validation hides behind this historical fixture.
 
 The pinned sha256 values below are the published M1 migration bytes from
 ``database/papersim/migrations.lock.json`` at the M1 exit commit. The

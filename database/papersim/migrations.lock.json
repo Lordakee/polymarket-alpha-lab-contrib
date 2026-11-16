@@ -15,6 +15,11 @@
       "name": "20261116000000_papersim_m2_operations.sql",
       "sha256": "428a8fd5ebf84f945dc4ae78d02f99f61ba39b8743c0bd78b2380e67a013df2d",
       "transaction_wrapper": true
+    },
+    {
+      "name": "20261116000010_papersim_reporting_views.sql",
+      "sha256": "87b802b547f1ffc1d25fa3c8cb401ef643fc5a34f35e6450e5bc56261af1a293",
+      "transaction_wrapper": true
     }
   ]
 }
