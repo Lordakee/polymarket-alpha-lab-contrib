@@ -21,7 +21,7 @@ Release before its Actions copy expires.
 
 | Input | Value |
 | --- | --- |
-| Repository | `Lordakee/polymarket-alpha-lab` — `--repo` is always explicit; local `origin` points there; `wmqfl861/polymarket-alpha-lab` is the historical fork |
+| Repository | `wmqfl861/polymarket-alpha-lab` — canonical per OD-C (DELIVERY_PLAN.md §77.3.1) and the section 19 correction; `--repo` is always explicit; the section 2 clone makes local `origin` point there; `Lordakee/polymarket-alpha-lab` is the historical source, currently unverifiable |
 | Build host | `ubuntu@166.1.232.93` (shared, dev-only) |
 | Release tuple | Ubuntu 26.04.1 x86_64 / Python 3.12.14 / one precisely identified PostgreSQL 18 build (DELIVERY_PLAN.md section 61) |
 | Proposed tag | `v0.1.0-linux-preview.1` — subject to the absence check in section 11 |
@@ -45,7 +45,7 @@ without provisioning or copying credentials onto the shared host.
 
 ```bash
 set -euo pipefail
-REPO='Lordakee/polymarket-alpha-lab'
+REPO='wmqfl861/polymarket-alpha-lab'
 TAG='v0.1.0-linux-preview.1'
 KIT='polymarket-alpha-lab-v0.1.0-linux-preview.1-linux-x86_64.zip'
 PREFIX="$HOME/pg-runtime-src"          # frozen, approved PG18 prefix
@@ -53,7 +53,7 @@ OUT=                                   # a NEW directory OUTSIDE any checkout
 C=                                     # final merged source commit (full sha)
 mkdir -p "$OUT" && [ "$(ls -A "$OUT")" ] && { echo 'OUT must be empty' >&2; exit 1; }
 
-git clone "https://github.com/Lordakee/polymarket-alpha-lab.git" "$HOME/release-checkout"
+git clone "https://github.com/wmqfl861/polymarket-alpha-lab.git" "$HOME/release-checkout"
 cd "$HOME/release-checkout"
 git rev-parse --verify "$C^{commit}"          # must print exactly $C
 git checkout --detach "$C"
@@ -406,7 +406,7 @@ byte, size and identity checks above. Re-peel the remote tag to `C`:
 
 ```bash
 VERIFY="$OUT/../public-verification-$(date -u +%Y%m%dT%H%M%SZ)"
-git clone --no-checkout "https://github.com/Lordakee/polymarket-alpha-lab.git" "$VERIFY/clone"
+git clone --no-checkout "https://github.com/wmqfl861/polymarket-alpha-lab.git" "$VERIFY/clone"
 git -C "$VERIFY/clone" cat-file -t "$TAG"                  # must be 'tag' (annotated)
 git -C "$VERIFY/clone" rev-parse "$TAG^{commit}"           # must print exactly $C
 git ls-remote --tags origin "refs/tags/$TAG"               # record the tag object id
@@ -545,7 +545,7 @@ When this runbook is executed through a local agent on 166, forward the
 following; it is the complete objective, and this document is the procedure:
 
 > You are executing the reviewed L6 release runbook
-> `docs/releases/linux-preview-release.md` in `Lordakee/polymarket-alpha-lab`
+> `docs/releases/linux-preview-release.md` in `wmqfl861/polymarket-alpha-lab`
 > on `ubuntu@166.1.232.93` (release tuple Ubuntu 26.04.1 x86_64 / Python
 > 3.12.14 / pinned PostgreSQL 18). Follow its sections in order: sanitize the
 > environment, verify the frozen PG18 prefix and tuple provenance, run
@@ -560,9 +560,41 @@ following; it is the complete objective, and this document is the procedure:
 > first failure on any failed guard, unverifiable immutability, or any hash,
 > size, identity or tuple mismatch. Publication proceeds only through the
 > exact section 11–12 command sequence with
-> `--repo Lordakee/polymarket-alpha-lab`, `--verify-tag`, draft first, and
+> `--repo wmqfl861/polymarket-alpha-lab`, `--verify-tag`, draft first, and
 > requires `isImmutable=true`. Handle no credentials beyond the coordinator's
 > already-authorized session; never copy credentials onto the shared host.
 > Report the exact commands, exit codes, receipts, measurements and stop
 > points; keep first failures, retries, skipped and unexecuted steps
 > separately labeled.
+
+## 19. Correction (2026-11-16): canonical repository
+
+**Correction (2026-11-16, codex M3 decision 3):** The canonical repository for
+this runbook is `wmqfl861/polymarket-alpha-lab`. `Lordakee/polymarket-alpha-lab`
+is the historical source repository and its current state is **not verifiable**
+(access currently fails; that failure does not prove the old repository or its
+contents no longer exist). This implements owner decision OD-C recorded in
+DELIVERY_PLAN.md section 77.3.1 ("wmqfl861 为正本") and the codex M3 decision
+receipt of 2026-11-16; it corrects the outdated repository guidance above
+without rewriting history.
+
+Scope of this correction:
+
+- Current operational guidance now targets the canonical repository only:
+  `REPO` (section 2), both `git clone` URLs (sections 2 and 12), and the
+  explicit `--repo` value in the forwardable prompt (section 18) all point to
+  `wmqfl861/polymarket-alpha-lab`.
+- Commands that rely on `origin` (sections 2, 11 and 12) inherit the canonical
+  target only through the section 2 clone. In any pre-existing checkout,
+  verify the actual remote target (`git remote -v`) before using `origin`;
+  never assume the local remote has switched because this document changed.
+- Historical facts are unchanged: every recorded commit, tree, tag, URL and
+  checksum value in this runbook and in DELIVERY_PLAN.md stays exactly as
+  recorded. No release has been published under this runbook yet (status
+  PENDING), so there is no publication record to amend.
+- Dual-repository comparison no longer conditions delivery: push verification
+  compares the canonical repository's target refs against the expected
+  delivery SHAs only. The historical repository's current tip and any
+  divergence are recorded as "not verifiable" until access is restored; any
+  future comparison is read-only. This correction does not authorize
+  overwriting, deleting or force-pushing the historical repository.
