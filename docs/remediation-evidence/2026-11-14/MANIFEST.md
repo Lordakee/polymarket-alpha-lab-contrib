@@ -56,6 +56,8 @@ authorization，大小写不敏感）加 dotted-quad IPv4（八位组 0–255 �
 | `de726bea2190db7a271560914940f58a09ad57fc0fff1077cbd878008cc703db` | 67413 | `decision/decision-output.log` | `PAL-R\codex-decision-20261114\`（含 DECISION 1–4 与 RATIONALE 原文） |
 | `76c8da64feb9e29587b7c6a4392b357e1b5dc440a0c50121e215a2e8c7e75bd1` | 328417 | `decision/m1-rereview-output-20261114.log` | `PAL-R\`（M1 计划复审回执补齐：2026-11-14 codex gpt-6-astra/max 独立复审，VERDICT: PASS＝3 CORRECT-AS-APPLIED＋2 NO-CHANGE-CONFIRMED、0 新发现；原件 CRLF，同 decision-output.log 存证口径原样入库） |
 | `d693680ad272a50f20330a965bcdff49d3da15255102544e48894dc3f2251bba` | 2825 | `decision/m1-rereview-brief-20261114.md` | `PAL-R\`（该回执的 owner 委派简报：复审对象 SHA256 锚点、背景锚点与输出要求；原件 CRLF 原样入库） |
+| `a4ebe4f17e925b7001c5337f93f67c454bff68467c0bbf5972b4c6f9a9d8296b` | 5509 | `decision/codex-m1-final-brief-20261115.md` | `PAL-R\codex-m1-final-brief-20261115.md`（M1 整体终审 owner 委派简报：终审对象 d83ab064 锚点、核验清单、降级取证条款与整改记录；M1 出口回执节点 2026-11-16 追加入库，敏感扫描 8 词＋dotted-quad 均 0 命中；原件 CRLF 原样入库，索引 i/crlf 逐字节保真） |
+| `e4d7a35de67833563d0fa17036291e0141a3d673138373b775b477930e1aa7` | 866313 | `decision/m1-final-review-rerun-20261116.log` | `PAL-R\codex-m1-final-rerun-output.log`（M1 整体终审复跑回执：codex gpt-6-astra/max，VERDICT: PASS＝0 未决 P1/P2＋新增 1 项 P3 报表缺口；含 P2-01/02/03 关闭裁定、铁律/冻结面核验与双 CI 降级取证边界；M1 出口回执节点 2026-11-16 追加入库，索引 i/mixed 逐字节保真。敏感扫描：8 词命中 50 处经逐条核对均为过程性/否定性文本（secret-scan 规则名、"password-free DSN" 类否定性结论、测试函数名、passfile 占位 DSN 模板），无凭据/token/密钥值；IPv4 命中 1 处＝166.1.232.93，系终审读取 AGENTS.md 时引用的既有 tracked 内容（HEAD 中 10+ 文件已含），非新增披露，其余 3 形态为排除项 127.0.0.1/0.0.0.0/255.255.255.255；原件 CRLF+LF 混合行尾原样入库，不做行尾/空白归一） |
 
 ### plans/（r03 三计划 + 复审结论要点 + distribution 计划）
 

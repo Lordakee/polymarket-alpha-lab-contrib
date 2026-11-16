@@ -3973,3 +3973,42 @@ final CLI 端到端（计划 Z2，s4_cli）：`papersim.cli evaluate --dsn`（�
 - **M1 不在此宣告完成**：在「docs/m1-synthesis 推送后同 HEAD 双 CI（Offline＋Native，papersim 分区真实收集执行）绿」与「fresh 独立合成复审 VERDICT: PASS、无未解决阻断项」两者到达之前，M1 保持进行中；到达后仍受下条约束。
 - 真实历史导入生产执行与连续运行（M2/FX-17）留缺口、不冒充（78.3②③）；软件验收不等于统计策略验证，不构成晋级或任何真实资金/凭据/订单授权；OD-G A–F 与暂停规则照旧。
 - 本段为合成节点实施者按协调者指令写入的自记内容，自身未经独立复审（78.2 末行状态＝待合成复审）；本段所在文档提交自身 SHA 与其后任何 CI/复审结果不在本文预写，由提交后的 Git 对象与回执给出。
+
+### 78.5 M1 出口回执：整体终审 PASS，M1 工程出口关闭（2026-11-16）
+
+本段由 M1 出口回执节点写入（协调者单写文档域），登记 M1 整体终审结论、回执入库、P2 关闭与 P3 开放项，并回填 78.2 两处占位状态、解除 78.4 的「M1 保持进行中」条件。
+
+**终审事实**：owner 委派 codex（gpt-6-astra，reasoning effort max，read-only sandbox，OpenAI Codex v0.167.0，session `01a1e252-5111-7573-837c-ccf3f662c0e8`）对 M1 整体交付终审。首跑（2026-11-15，回执留存库外 PAL-R 未入库）三项 P2 阻断 FAIL → 修复提交 `0ca71e42` → CI 隔离加固 `d83ab064` → 复跑终审 **VERDICT: PASS**：**0 未决 P1/P2**，新增 1 项 P3（见下）。终审核验覆盖（回执原文数字）：82 个既有离线断言函数、四冻结 fixture 八组逐位比较、三项 P2 反例复算、27 个改变的 Python 文件内存编译及 `git diff --check`；一个需子进程的既有断言被本轮只读防护拦截未计入通过数，其「校验先于驱动导入」语义另行直接验证通过。审核前后 HEAD 一致、未修改/创建/删除文件、未连库、未读凭据、未改 SSH/信任配置。
+
+**终审回执入库**（`docs/remediation-evidence/2026-11-14/decision/`；复制前后 SHA256 逐字节校验一致，CRLF/混合行尾按 server-mirror verbatim 口径原样入库不归一；清单登记于该目录 MANIFEST.md）：
+
+| 入库文件 | bytes | SHA256 | 库外原件（PAL-R） |
+| --- | ---: | --- | --- |
+| `m1-final-review-rerun-20261116.log` | 866313 | `e4d7a35de67833563d0fa17036291e0141a3d673138373b775b477930e1aa7` | `codex-m1-final-rerun-output.log`（终审复跑回执全文，末行 VERDICT: PASS） |
+| `codex-m1-final-brief-20261115.md` | 5509 | `a4ebe4f17e925b7001c5337f93f67c454bff68467c0bbf5972b4c6f9a9d8296b` | 同名（终审 owner 委派简报） |
+
+**最终源码与完整版本链**：终审对象＝本地固定提交 **`d83ab0645b83d5f279c628e35eae0df49a92594f`**（本地 `main` 与 `m1/final-fix` 同 SHA；协调者简报称 canonical GitHub main 同 SHA，终审因 API 不可达未独立确认 ref 对齐，仅确认本地 HEAD），比较基线 `ca16ac4773feec22736c5f955583663c67770a7d`。版本链 **`ca16ac47..d83ab064` 共 16 个提交（12 非 merge＋4 merge；含基线共 17 个）**——终审按 Git 对象更正简报的「15 提交」计数，并更正归因：TIME_WAIT 四点等待＋五处 admission view 回显属 `ae7c513a`，`d83ab064` 仅修复 native 快照计数的共享集群隔离。链序：09D 设计（库外文档）→ FX-08 `0198af16` / FX-10 `304a241a` / FX-11 `2713c6ca` / 09S `32f98ee1` → merge `71320c9e`、`a9976f69` → FX-12 `a3fdc10a` → merge `3685745c` → 09L `795ceb58` → merge `4ec70bac` → final CLI `ebe542e0` → §78 合成 `29f043f7` → CI 整改 `49951207` → 加固 `ae7c513a` → 终审整改 `0ca71e42` → `d83ab064`（全 SHA 与父代见 78.1 及 git log）。
+
+**双 CI 终态（协调者侧核实记录，同 SHA `d83ab064`、attempt 1、event=push）**：Offline run **43795350447** success；Native run **43795350382** success——research/dispatch/storage/papersim 四 Linux 分区全绿＋聚合绿，papersim 九文件矩阵**首次全绿**，windows 分区设计性 skip。**证据边界（终审回执原文如实登记）**：终审代理本轮 gh API 读取两 run 及 ref 均 HTTP 404，`srv` 备用路径主机密钥验证失败即停止（未绕过信任检查），故终审回执**不声称已独立确认同 SHA 双 CI 绿**、也不冒称 CI 失败；其按委派允许的降级方式，以本地 Git 对象核验九文件矩阵与 `PAPERSIM_FILES` pin 一致、四个 FX-12 native nodeid 均在执行清单、八个 workflow 静态断言通过——证明最终版本的接线/触发/断言配置，不证明 GitHub 当次运行成功。两 run 的运行终态以上述协调者侧 CI 回执为准。
+
+**终审 P2 三项修复关闭记录**（修复提交 `0ca71e42`，CI 隔离后续 `d83ab064`；修复链本身经 fresh 独立只读复审 VERDICT: PASS——独立复现终审场景→修复验证→测试覆盖三段确认）：
+
+| 原阻断项（首跑终审） | 终审关闭裁定（独立复算） |
+| --- | --- |
+| P2-01 evaluate 未接逐笔结算，提前退出被改算为自然结算 | **关闭**：`papersim/cli.py` entries 关联 settlements，区分 EXIT/NATURAL/VOIDED_REFUND 并保留独立 `natural_outcome`；复算 `250@0.50 → 0.30 退出`＝毛 −100.00、入场费 6.25、退出费 5.25、**净 −111.50**、退出 1 笔；市场后为 YES 仍参与全市场评分、不再重定价该退出交易；缺订单簿记录不再自动获 `book_walk` 标记；recorded 与显式 recomputed 两调用均有正式回归断言并通过 |
+| P2-02 OD-G E 使用毛盈利集中度 | **关闭**：`papersim/evaluation.py` 净集中度独立计算并传入 E；四市场反例复算毛 29.9900% vs **净 30.1869404845%** → E 正确输出 FAIL；历史回归所需毛口径锚点单独保留；正式反例与 30% 边界断言通过 |
+| P2-03 FX-12 原生测试未进入 CI 矩阵 | **代码及接线关闭**：`.github/workflows/native-postgres.yml` papersim 清单恰为九文件、与 `PAPERSIM_FILES` 完全一致（新增 snapshots/replay 两文件），四个 FX-12 native nodeid 均存在并进入执行清单；`d83ab064` 将快照幂等计数限定到当前 digest，保留原文长度与禁止覆盖断言，未以删除断言或 skip 规避；GitHub 当次执行结果受上述证据边界约束 |
+
+**P3 与开放项（终审原文提取；均不阻断 M1 工程出口，移交后续节点）**：
+
+1. **报表缺口（终审新增 P3）**：`papersim/evaluation.py` 命中率统计仍只选择 `outcome` 为自然结果 token 的交易，而数据库适配器现已为 NATURAL settlement 填入 win/loss，致这些交易不入统计——终审以两笔自然结算（一胜一负）内存数据复现 `settled=2`、`markets_scored=2` 但 `natural_settled=0`、`hits=0`、`hit_rate=null`；后续须修复为正确统计自然结算命中并继续排除 EXITED/VOIDED；不影响已复核的逐笔损益、全市场评分或 A–F 判定。
+2. **`_old_cli up` bind 点**：同构 bind 暴露继续留给后续节点处理，终审未扩大整改范围。
+3. **§7.5 视图**：新 schema 视图仍未交付，按 78.3① 已登记条件接受继续保留。
+4. **生产导入**：生产历史导入未执行；本轮证明的是纯转换与 dry-run（78.3②），`--execute-production` 授权门未申请、未执行。
+5. **连续运行**：连续运行与 M2/FX-17 自动暂停接线未完成，不能据 M1 工程验收宣称 OD-G F 达成（78.3③）。
+
+关联登记仍有效且经终审逐项核实属实、无冒充：78.3④ 计数口径注记、⑤⑥ CodeGraph 状态同步至 `ebe542e0`（不扩写为 `d83ab064` 已同步）、⑦ 节点复审回执留痕缺口（本回执不替代历史 reviewer 身份/新鲜性/覆盖证明）。铁律面终审亦通过：连接白名单 61→62 项（唯一新增 `store_psycopg.py`、无通配豁免）、四个连接入口均先经唯一 audited DSN validator、九张新表 paper_only/report_only/readonly CHECK＋UPDATE/DELETE/TRUNCATE 保护、70 条既有迁移与 V1 冻结面未动、OLD 仍固定 `2b20002c`。
+
+**78.2 占位行回填处置**：「DB tests 在 native papersim 分区真实通过」行——上述同 SHA 双 CI 回执落地，占位解除；「独立 review 无未解决阻断项」行——本整体终审 VERDICT: PASS（0 未决 P1/P2）落地。78.4 声明的两项到达条件均已满足，「M1 保持进行中」状态就此解除；78.3②③ 与上列 P3/开放项不因本出口关闭而销项。
+
+**M1 出口声明（严格措辞）**：**M1 工程出口就此关闭**——九节点＋final CLI＋合成＋两轮 CI 整改＋终审整改＋整体终审 PASS，完整链 `ca16ac47..d83ab064`（16 提交）。**策略统计验证、M2、M3、生产导入不在 M1 范围，不随本出口宣告完成**；本出口不构成任何真实资金/凭据/实盘执行/生产导入授权，Phase 1 paper-only/report-only/readonly 边界不变，OD-G A–F 判定与暂停规则照旧。本段为出口回执节点按协调者指令写入的记录性内容，其所在提交自身 SHA 与推送后的 CI/复审结果不在本文预写，由提交后的 Git 对象与回执给出。
