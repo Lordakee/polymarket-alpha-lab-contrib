@@ -1,0 +1,569 @@
+{
+  "schema": "papersim-m2-polymarket-fixture-v1",
+  "notes": "Synthetic recorded-shape responses for the A1 adapter tests. Every value is fabricated for offline coverage of Gamma events pagination, single-market reads, token/direction/fee mapping defects and CLOB book shapes; none of it is real market data and no test may open a socket.",
+  "gamma_events": {
+    "btc_page0": [
+      {
+        "id": "e1",
+        "title": "Bitcoin markets",
+        "markets": [
+          {
+            "id": "101",
+            "conditionId": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "slug": "btc-touch-95k-week",
+            "question": "Will Bitcoin touch $95,000 this week?",
+            "outcomes": "[\"Yes\", \"No\"]",
+            "clobTokenIds": "[\"910000000001\", \"910000000002\"]",
+            "outcomePrices": "[\"0.55\", \"0.45\"]",
+            "endDate": "2026-11-21T00:00:00Z",
+            "active": true,
+            "closed": false,
+            "feeRateBps": "0"
+          },
+          {
+            "id": "102",
+            "conditionId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+            "slug": "eth-touch-3k-week",
+            "question": "Will Ethereum touch $3,000 this week?",
+            "outcomes": "[\"No\", \"Yes\"]",
+            "clobTokenIds": "[\"910000000012\", \"910000000011\"]",
+            "outcomePrices": "[\"0.47\", \"0.53\"]",
+            "endDate": "2026-11-20T00:00:00Z",
+            "active": true,
+            "closed": false
+          },
+          {
+            "id": "103",
+            "conditionId": "0x3333333333333333333333333333333333333333333333333333333333333333",
+            "slug": "btc-above-90k",
+            "question": "Will Bitcoin trade above $90,000 in 2026?",
+            "outcomes": "[\"Yes\", \"No\"]",
+            "outcomePrices": "[\"0.8\", \"0.2\"]",
+            "endDate": "2026-12-15T00:00:00Z",
+            "active": true,
+            "closed": false
+          },
+          {
+            "id": "104",
+            "conditionId": "0x4444444444444444444444444444444444444444444444444444444444444444",
+            "slug": "eth-above-4k",
+            "question": "Will Ethereum trade above $4,000 in 2026?",
+            "outcomes": "[\"Yes\", \"No\"]",
+            "clobTokenIds": "[\"910000000021\", \"910000000021\"]",
+            "outcomePrices": "[\"0.3\", \"0.7\"]",
+            "endDate": "2026-12-20T00:00:00Z",
+            "active": true,
+            "closed": false
+          },
+          {
+            "id": "105",
+            "conditionId": "0x5555555555555555555555555555555555555555555555555555555555555555",
+            "slug": "btc-over-90k-percent",
+            "question": "Will Bitcoin be over 90k percent of its ath?",
+            "outcomes": "[\"Over\", \"Under\"]",
+            "clobTokenIds": "[\"910000000022\", \"910000000023\"]",
+            "outcomePrices": "[\"0.6\", \"0.4\"]",
+            "endDate": "2026-12-18T00:00:00Z",
+            "active": true,
+            "closed": false
+          },
+          {
+            "id": "106",
+            "conditionId": "0x6666666666666666666666666666666666666666666666666666666666666666",
+            "slug": "btc-when-100k",
+            "question": "When will Bitcoin hit $100,000?",
+            "outcomes": "[\"Yes\", \"No\"]",
+            "clobTokenIds": "[\"910000000024\", \"910000000025\"]",
+            "outcomePrices": "[\"0.5\", \"0.5\"]",
+            "endDate": "yesterday",
+            "active": true,
+            "closed": false
+          }
+        ]
+      },
+      {
+        "id": "e2",
+        "title": "Repeated event",
+        "markets": [
+          {
+            "id": "101",
+            "conditionId": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "slug": "btc-touch-95k-week",
+            "question": "Will Bitcoin touch $95,000 this week?",
+            "outcomes": "[\"Yes\", \"No\"]",
+            "clobTokenIds": "[\"910000000001\", \"910000000002\"]",
+            "outcomePrices": "[\"0.55\", \"0.45\"]",
+            "endDate": "2026-11-21T00:00:00Z",
+            "active": true,
+            "closed": false,
+            "feeRateBps": "0"
+          }
+        ]
+      }
+    ],
+    "btc_page1": [
+      {
+        "id": "e3",
+        "title": "Drifted event",
+        "markets": [
+          {
+            "id": "101",
+            "conditionId": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "slug": "btc-touch-95k-week",
+            "question": "Will Bitcoin touch $96,000 this week?",
+            "outcomes": "[\"Yes\", \"No\"]",
+            "clobTokenIds": "[\"910000000001\", \"910000000002\"]",
+            "outcomePrices": "[\"0.55\", \"0.45\"]",
+            "endDate": "2026-11-21T00:00:00Z",
+            "active": true,
+            "closed": false,
+            "feeRateBps": "0"
+          }
+        ]
+      },
+      {
+        "id": "e4",
+        "title": "Fee and clean markets",
+        "markets": [
+          {
+            "id": "109",
+            "conditionId": "0x9999999999999999999999999999999999999999999999999999999999999999",
+            "slug": "eth-fee-weird-event",
+            "question": "Will Ethereum do something fee-weird?",
+            "outcomes": "[\"Yes\", \"No\"]",
+            "clobTokenIds": "[\"910000000026\", \"910000000027\"]",
+            "outcomePrices": "[\"0.5\", \"0.5\"]",
+            "endDate": "2026-11-25T00:00:00Z",
+            "active": true,
+            "closed": false,
+            "feeRateBps": "bogus-unit"
+          },
+          {
+            "id": "110",
+            "conditionId": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "slug": "eth-steady-2k",
+            "question": "Will Ethereum hold $2,000 in November?",
+            "outcomes": "[\"Yes\", \"No\"]",
+            "clobTokenIds": "[\"910000000031\", \"910000000032\"]",
+            "endDate": "2026-11-22T00:00:00Z",
+            "active": true,
+            "closed": false
+          }
+        ]
+      }
+    ],
+    "btc_page2": [],
+    "ethx_page0": [
+      {
+        "id": "ex1",
+        "title": "Truncation candidates",
+        "markets": [
+          {
+            "id": "301",
+            "conditionId": "0xababababababababababababababababababababababababababababababab01",
+            "slug": "trunc-e1",
+            "question": "Truncation market e1",
+            "outcomes": "[\"Yes\", \"No\"]",
+            "clobTokenIds": "[\"920000000001\", \"920000000002\"]",
+            "outcomePrices": "[\"0.5\", \"0.5\"]",
+            "endDate": "2026-11-25T00:00:00Z",
+            "active": true,
+            "closed": false
+          },
+          {
+            "id": "302",
+            "conditionId": "0xababababababababababababababababababababababababababababababab02",
+            "slug": "trunc-e2",
+            "question": "Truncation market e2",
+            "outcomes": "[\"Yes\", \"No\"]",
+            "clobTokenIds": "[\"920000000003\", \"920000000004\"]",
+            "outcomePrices": "[\"0.5\", \"0.5\"]",
+            "endDate": "2026-11-23T00:00:00Z",
+            "active": true,
+            "closed": false
+          },
+          {
+            "id": "303",
+            "conditionId": "0xababababababababababababababababababababababababababababababab03",
+            "slug": "trunc-e3",
+            "question": "Truncation market e3",
+            "outcomes": "[\"Yes\", \"No\"]",
+            "clobTokenIds": "[\"920000000005\", \"920000000006\"]",
+            "outcomePrices": "[\"0.5\", \"0.5\"]",
+            "endDate": "2026-11-24T00:00:00Z",
+            "active": true,
+            "closed": false
+          },
+          {
+            "id": "304",
+            "conditionId": "0xababababababababababababababababababababababababababababababab04",
+            "slug": "trunc-e4",
+            "question": "Truncation market e4",
+            "outcomes": "[\"Yes\", \"No\"]",
+            "clobTokenIds": "[\"920000000007\", \"920000000008\"]",
+            "outcomePrices": "[\"0.5\", \"0.5\"]",
+            "endDate": "2026-11-26T00:00:00Z",
+            "active": true,
+            "closed": false
+          },
+          {
+            "id": "305",
+            "conditionId": "0xababababababababababababababababababababababababababababababab05",
+            "slug": "trunc-e5",
+            "question": "Truncation market e5",
+            "outcomes": "[\"Yes\", \"No\"]",
+            "clobTokenIds": "[\"920000000009\", \"920000000010\"]",
+            "outcomePrices": "[\"0.5\", \"0.5\"]",
+            "endDate": "2026-11-27T00:00:00Z",
+            "active": true,
+            "closed": false
+          }
+        ]
+      }
+    ],
+    "ethx_page1": [],
+    "second_page0": [
+      {
+        "id": "sc1",
+        "title": "Broken first occurrence",
+        "markets": [
+          {
+            "id": "401",
+            "conditionId": "0x6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a",
+            "slug": "second-chance-market",
+            "question": "Broken first occurrence of second-chance market?",
+            "outcomes": "[\"Yes\", \"No\"]",
+            "outcomePrices": "[\"0.5\", \"0.5\"]",
+            "endDate": "2026-11-28T00:00:00Z",
+            "active": true,
+            "closed": false
+          }
+        ]
+      }
+    ],
+    "second_page1": [
+      {
+        "id": "sc2",
+        "title": "Valid later occurrence",
+        "markets": [
+          {
+            "id": "401",
+            "conditionId": "0x6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a",
+            "slug": "second-chance-market",
+            "question": "Broken first occurrence of second-chance market?",
+            "outcomes": "[\"Yes\", \"No\"]",
+            "clobTokenIds": "[\"910000000091\", \"910000000092\"]",
+            "outcomePrices": "[\"0.5\", \"0.5\"]",
+            "endDate": "2026-11-28T00:00:00Z",
+            "active": true,
+            "closed": false
+          }
+        ]
+      }
+    ],
+    "second_page2": []
+  },
+  "gamma_market_slug": {
+    "btc-100k-by-dec31": {
+      "id": "201",
+      "conditionId": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "slug": "btc-100k-by-dec31",
+      "question": "Will Bitcoin close above $100,000 on December 31, 2026?",
+      "description": "Resolves YES if the 12:00 UTC CoinDesk price on December 31, 2026 is strictly above $100,000.",
+      "category": "crypto",
+      "outcomes": "[\"Yes\", \"No\"]",
+      "clobTokenIds": "[\"910000000041\", \"910000000042\"]",
+      "outcomePrices": "[\"0.642\", \"0.358\"]",
+      "startDate": "2026-11-01T00:00:00Z",
+      "gameStartTime": "2026-12-31T21:00:00Z",
+      "endDate": "2026-12-31T23:59:59Z",
+      "active": true,
+      "closed": false,
+      "archived": false,
+      "feeRateBps": "100"
+    },
+    "btc-above-95k-oct": {
+      "id": "202",
+      "conditionId": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "slug": "btc-above-95k-oct",
+      "question": "Will Bitcoin be above $95,000 on October 31?",
+      "outcomes": "[\"Yes\", \"No\"]",
+      "clobTokenIds": "[\"910000000051\", \"910000000052\"]",
+      "outcomePrices": "[\"1\", \"0\"]",
+      "endDate": "2026-10-31T12:00:00Z",
+      "active": false,
+      "closed": true,
+      "archived": true,
+      "umaResolutionStatus": "resolved"
+    },
+    "btc-fee-weird": {
+      "id": "203",
+      "conditionId": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "slug": "btc-fee-weird",
+      "question": "Will Bitcoin reach a weird fee state?",
+      "outcomes": "[\"Yes\", \"No\"]",
+      "clobTokenIds": "[\"910000000013\", \"910000000014\"]",
+      "outcomePrices": "[\"0.3\", \"0.7\"]",
+      "endDate": "2026-12-01T00:00:00Z",
+      "active": true,
+      "closed": false,
+      "feeRateBps": "12.5.x"
+    },
+    "btc-wrong-id": {
+      "id": "204",
+      "conditionId": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "slug": "btc-wrong-id",
+      "question": "Will this market answer with someone else's condition id?",
+      "outcomes": "[\"Yes\", \"No\"]",
+      "clobTokenIds": "[\"910000000015\", \"910000000016\"]",
+      "outcomePrices": "[\"0.5\", \"0.5\"]",
+      "endDate": "2026-12-05T00:00:00Z",
+      "active": true,
+      "closed": false
+    },
+    "btc-open-corner": {
+      "id": "205",
+      "conditionId": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "slug": "btc-open-corner",
+      "question": "Will Bitcoin pin to a corner while still open?",
+      "outcomes": "[\"Yes\", \"No\"]",
+      "clobTokenIds": "[\"910000000017\", \"910000000018\"]",
+      "outcomePrices": "[\"1\", \"0\"]",
+      "endDate": "2026-11-30T00:00:00Z",
+      "active": true,
+      "closed": false
+    },
+    "eth-above-3k-nov": {
+      "id": "206",
+      "conditionId": "0x1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a",
+      "slug": "eth-above-3k-nov",
+      "question": "Will Ethereum be above $3,000 on November 30?",
+      "outcomes": "[\"Yes\", \"No\"]",
+      "clobTokenIds": "[\"910000000061\", \"910000000062\"]",
+      "outcomePrices": "[\"1\", \"0\"]",
+      "endDate": "2026-11-30T12:00:00Z",
+      "active": false,
+      "closed": true
+    },
+    "eth-below-4k-nov": {
+      "id": "207",
+      "conditionId": "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a",
+      "slug": "eth-below-4k-nov",
+      "question": "Will Ethereum stay below $4,000 on November 30?",
+      "outcomes": "[\"Yes\", \"No\"]",
+      "clobTokenIds": "[\"910000000071\", \"910000000072\"]",
+      "outcomePrices": "[\"0\", \"1\"]",
+      "endDate": "2026-11-30T12:00:00Z",
+      "active": false,
+      "closed": true
+    },
+    "btc-eq-50k-nov": {
+      "id": "208",
+      "conditionId": "0x3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a",
+      "slug": "btc-eq-50k-nov",
+      "question": "Will Bitcoin pin exactly at $50,000 through November?",
+      "outcomes": "[\"Yes\", \"No\"]",
+      "clobTokenIds": "[\"910000000081\", \"910000000082\"]",
+      "outcomePrices": "[\"1\", \"0\"]",
+      "endDate": "2026-11-30T12:00:00Z",
+      "active": false,
+      "closed": true
+    }
+  },
+  "gamma_market_condition": {
+    "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": [
+      {
+        "id": "201",
+        "conditionId": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "slug": "btc-100k-by-dec31",
+        "question": "Will Bitcoin close above $100,000 on December 31, 2026?",
+        "outcomes": "[\"Yes\", \"No\"]",
+        "clobTokenIds": "[\"910000000041\", \"910000000042\"]",
+        "outcomePrices": "[\"0.642\", \"0.358\"]",
+        "endDate": "2026-12-31T23:59:59Z",
+        "active": true,
+        "closed": false
+      }
+    ],
+    "0x2222222222222222222222222222222222222222222222222222222222222222": [
+      {
+        "id": "102",
+        "conditionId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+        "slug": "eth-touch-3k-week",
+        "question": "Will Ethereum touch $3,000 this week?",
+        "outcomes": "[\"No\", \"Yes\"]",
+        "clobTokenIds": "[\"910000000012\", \"910000000011\"]",
+        "outcomePrices": "[\"0.47\", \"0.53\"]",
+        "endDate": "2026-11-20T00:00:00Z",
+        "active": true,
+        "closed": false
+      }
+    ],
+    "0x4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a": [],
+    "0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a": [
+      {
+        "id": "501",
+        "conditionId": "0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+        "slug": "ambig-one",
+        "question": "Ambiguous market one",
+        "outcomes": "[\"Yes\", \"No\"]",
+        "clobTokenIds": "[\"930000000001\", \"930000000002\"]",
+        "outcomePrices": "[\"0.5\", \"0.5\"]",
+        "endDate": "2026-12-01T00:00:00Z",
+        "active": true,
+        "closed": false
+      },
+      {
+        "id": "502",
+        "conditionId": "0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+        "slug": "ambig-two",
+        "question": "Ambiguous market two",
+        "outcomes": "[\"Yes\", \"No\"]",
+        "clobTokenIds": "[\"930000000003\", \"930000000004\"]",
+        "outcomePrices": "[\"0.5\", \"0.5\"]",
+        "endDate": "2026-12-02T00:00:00Z",
+        "active": true,
+        "closed": false
+      }
+    ]
+  },
+  "clob_books": {
+    "910000000001": {
+      "market": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "asset_id": "910000000001",
+      "timestamp": "1762300800000",
+      "hash": "0x00000000000000000000000000000000000000000000000000000000000ab001",
+      "bids": [
+        {
+          "price": "0.53",
+          "size": "210"
+        },
+        {
+          "price": "0.51",
+          "size": "95"
+        },
+        {
+          "price": "0.55",
+          "size": "40"
+        }
+      ],
+      "asks": [
+        {
+          "price": "0.57",
+          "size": "120"
+        },
+        {
+          "price": "0.56",
+          "size": "80"
+        }
+      ]
+    },
+    "910000000002": {
+      "asset_id": "910000000002",
+      "timestamp": "1762300800001",
+      "bids": [],
+      "asks": [
+        {
+          "price": "0.44",
+          "size": "300"
+        }
+      ]
+    },
+    "910000000003": {
+      "asset_id": "910000000003",
+      "timestamp": "1762300800002",
+      "bids": [],
+      "asks": []
+    },
+    "910000000004": {
+      "asset_id": "910000000004",
+      "timestamp": "1762300800003",
+      "bids": [
+        {
+          "price": "1.5",
+          "size": "10"
+        }
+      ],
+      "asks": []
+    },
+    "910000000017": {
+      "asset_id": "910000000017",
+      "timestamp": "1762310000000",
+      "bids": [],
+      "asks": []
+    },
+    "910000000018": {
+      "asset_id": "910000000018",
+      "timestamp": "1762310000001",
+      "bids": [],
+      "asks": []
+    },
+    "910000000051": {
+      "asset_id": "910000000051",
+      "timestamp": "1762400000000",
+      "bids": [
+        {
+          "price": "0.995",
+          "size": "120"
+        }
+      ],
+      "asks": []
+    },
+    "910000000052": {
+      "asset_id": "910000000052",
+      "timestamp": "1762400000001",
+      "bids": [
+        {
+          "price": "0.004",
+          "size": "500"
+        }
+      ],
+      "asks": []
+    },
+    "910000000061": {
+      "asset_id": "910000000061",
+      "timestamp": "1762500000000",
+      "bids": [
+        {
+          "price": "0.90",
+          "size": "100"
+        }
+      ],
+      "asks": []
+    },
+    "910000000062": {
+      "asset_id": "910000000062",
+      "timestamp": "1762500000001",
+      "bids": [
+        {
+          "price": "0.004",
+          "size": "80"
+        }
+      ],
+      "asks": []
+    },
+    "910000000071": {
+      "asset_id": "910000000071",
+      "timestamp": "1762600000000",
+      "bids": [
+        {
+          "price": "0.003",
+          "size": "60"
+        }
+      ],
+      "asks": []
+    },
+    "910000000081": {
+      "asset_id": "910000000081",
+      "timestamp": "1762700000000",
+      "bids": [],
+      "asks": []
+    },
+    "910000000082": {
+      "asset_id": "910000000082",
+      "timestamp": "1762700000001",
+      "bids": [],
+      "asks": []
+    }
+  }
+}
