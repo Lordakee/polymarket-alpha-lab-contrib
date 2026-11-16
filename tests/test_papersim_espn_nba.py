@@ -29,6 +29,7 @@ Four layers (house pattern of ``test_papersim_fotmob.py``):
 
 from __future__ import annotations
 
+import email.message
 import json
 import os
 import re
@@ -767,8 +768,20 @@ def test_write_snapshot_validates_before_writing(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------
 
 class _StubResponse:
-    def __init__(self, body: bytes) -> None:
+    """Minimal ``urlopen`` context manager returning fixed bytes.
+
+    m2 A4 test-input upgrade (original assertions unchanged): carries
+    HTTP-shaped ``headers`` (Content-Length framing), an
+    ``amt``-bounded ``read`` and ``geturl()`` so the bounded transport
+    (``espn_nba._http_get_json`` via ``public_http.read_public_body``)
+    accepts it exactly like a real ``http.client`` response.
+    """
+
+    def __init__(self, body: bytes, *, final_url: str | None = None) -> None:
         self._body = body
+        self._final_url = final_url
+        self.headers = email.message.Message()
+        self.headers["Content-Length"] = str(len(body))
 
     def __enter__(self) -> "_StubResponse":
         return self
@@ -776,8 +789,13 @@ class _StubResponse:
     def __exit__(self, *exc: object) -> None:
         return None
 
-    def read(self) -> bytes:
-        return self._body
+    def geturl(self) -> str | None:
+        return self._final_url
+
+    def read(self, amt: int | None = None) -> bytes:
+        if amt is None or amt < 0:
+            return self._body
+        return self._body[:amt]
 
 
 def _install_urlopen(monkeypatch: pytest.MonkeyPatch, responses: list) -> list:
@@ -792,7 +810,7 @@ def _install_urlopen(monkeypatch: pytest.MonkeyPatch, responses: list) -> list:
             item = responses[-1]
         if isinstance(item, Exception):
             raise item
-        return _StubResponse(item)
+        return _StubResponse(item, final_url=request.full_url)
 
     monkeypatch.setattr(espn_nba.urllib.request, "urlopen", _fake_urlopen)
     return requests
@@ -815,7 +833,9 @@ def test_fetch_schedule_builds_url_and_validates_echo(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     requests = _install_urlopen(monkeypatch, [_stub_schedule("POR")])
-    payload = espn_nba.fetch_team_schedule("POR", "2026-27", cache_dir=None)
+    payload = espn_nba.fetch_team_schedule(
+        "POR", "2026-27", cache_dir=None, allow_public_fetch=True
+    )
     assert requests[0].full_url == (
         "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
         "/teams/22/schedule?season=2027&seasontype=2"
@@ -823,7 +843,7 @@ def test_fetch_schedule_builds_url_and_validates_echo(
     assert payload["requestedSeason"]["year"] == 2027
     summary_stub = json.dumps({"header": {}, "boxscore": {}}).encode()
     requests = _install_urlopen(monkeypatch, [summary_stub])
-    espn_nba.fetch_game_summary("401909952", cache_dir=None)
+    espn_nba.fetch_game_summary("401909952", cache_dir=None, allow_public_fetch=True)
     assert requests[0].full_url == (
         "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
         "/summary?event=401909952"
@@ -839,19 +859,21 @@ def test_fetch_schedule_fail_closed_on_echo_and_team_drift(
     with pytest.raises(
         espn_nba.EspnNbaSchemaError, match="does not echo year=2027"
     ):
-        espn_nba.fetch_team_schedule("POR", cache_dir=None)
+        espn_nba.fetch_team_schedule("POR", cache_dir=None, allow_public_fetch=True)
     swapped = _schedule_payload("PHX", "Any Team", [])
     _install_urlopen(monkeypatch, [json.dumps(swapped).encode()])
     with pytest.raises(
         espn_nba.EspnNbaSchemaError, match="payload team block"
     ):
-        espn_nba.fetch_team_schedule("POR", cache_dir=None)
+        espn_nba.fetch_team_schedule("POR", cache_dir=None, allow_public_fetch=True)
 
 
 @pytest.mark.parametrize("call", [
-    lambda: espn_nba.fetch_team_schedule("XXX", cache_dir=None),
-    lambda: espn_nba.fetch_team_schedule("POR", "2026_27", cache_dir=None),
-    lambda: espn_nba.fetch_game_summary("not-an-id", cache_dir=None),
+    lambda: espn_nba.fetch_team_schedule("XXX", cache_dir=None, allow_public_fetch=True),
+    lambda: espn_nba.fetch_team_schedule(
+        "POR", "2026_27", cache_dir=None, allow_public_fetch=True
+    ),
+    lambda: espn_nba.fetch_game_summary("not-an-id", cache_dir=None, allow_public_fetch=True),
 ])
 def test_fetch_rejects_bad_arguments(call) -> None:
     with pytest.raises(ValueError):
@@ -865,7 +887,7 @@ def test_fetch_summary_requires_header_and_box(
     with pytest.raises(
         espn_nba.EspnNbaSchemaError, match="missing header/boxscore"
     ):
-        espn_nba.fetch_game_summary("1", cache_dir=None)
+        espn_nba.fetch_game_summary("1", cache_dir=None, allow_public_fetch=True)
 
 
 def test_fetch_enforces_polite_spacing(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -873,10 +895,10 @@ def test_fetch_enforces_polite_spacing(monkeypatch: pytest.MonkeyPatch) -> None:
     _install_urlopen(monkeypatch, [summary_stub, summary_stub])
     sleeps: list[float] = []
     monkeypatch.setattr(espn_nba.time, "sleep", sleeps.append)
-    espn_nba.fetch_game_summary("1", cache_dir=None)
+    espn_nba.fetch_game_summary("1", cache_dir=None, allow_public_fetch=True)
     assert sleeps == []  # first request: nothing to space against
     espn_nba._last_fetch_monotonic = time.monotonic()
-    espn_nba.fetch_game_summary("2", cache_dir=None)
+    espn_nba.fetch_game_summary("2", cache_dir=None, allow_public_fetch=True)
     assert len(sleeps) == 1
     assert 0.0 < sleeps[0] <= espn_nba.SLEEP_S
     assert espn_nba.SLEEP_S >= 1.2  # WP-NBA-1 policy floor
@@ -890,7 +912,7 @@ def test_fetch_retries_with_backoff_then_recovers(
     )
     sleeps: list[float] = []
     monkeypatch.setattr(espn_nba.time, "sleep", sleeps.append)
-    payload = espn_nba.fetch_team_schedule("POR", cache_dir=None)
+    payload = espn_nba.fetch_team_schedule("POR", cache_dir=None, allow_public_fetch=True)
     assert payload["team"]["abbreviation"] == "POR"
     assert 5.0 in sleeps and 10.0 in sleeps
 
@@ -901,7 +923,7 @@ def test_fetch_gives_up_after_attempts(monkeypatch: pytest.MonkeyPatch) -> None:
     sleeps: list[float] = []
     monkeypatch.setattr(espn_nba.time, "sleep", sleeps.append)
     with pytest.raises(espn_nba.EspnNbaError, match="giving up"):
-        espn_nba.fetch_game_summary("1", cache_dir=None)
+        espn_nba.fetch_game_summary("1", cache_dir=None, allow_public_fetch=True)
     assert len(requests) == espn_nba.FETCH_ATTEMPTS
     assert 15.0 in sleeps
 
@@ -911,10 +933,10 @@ def test_fetch_rejects_non_json_and_non_object(
 ) -> None:
     _install_urlopen(monkeypatch, [b"not json at all"])
     with pytest.raises(espn_nba.EspnNbaError, match="non-JSON"):
-        espn_nba.fetch_game_summary("1", cache_dir=None)
+        espn_nba.fetch_game_summary("1", cache_dir=None, allow_public_fetch=True)
     _install_urlopen(monkeypatch, [b"[1, 2]"])
     with pytest.raises(espn_nba.EspnNbaSchemaError, match="not an object"):
-        espn_nba.fetch_game_summary("1", cache_dir=None)
+        espn_nba.fetch_game_summary("1", cache_dir=None, allow_public_fetch=True)
 
 
 # --------------------------------------------------------------------------
@@ -925,11 +947,13 @@ def test_cache_round_trip_hits_without_network(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
     requests = _install_urlopen(monkeypatch, [_stub_schedule("POR")])
-    espn_nba.fetch_team_schedule("POR", cache_dir=tmp_path)
+    espn_nba.fetch_team_schedule("POR", cache_dir=tmp_path, allow_public_fetch=True)
     cached = tmp_path / "schedule_POR_2027.json"
     assert cached.is_file()
     _install_urlopen(monkeypatch, [OSError("network is gone")])
-    again = espn_nba.fetch_team_schedule("POR", cache_dir=tmp_path)
+    again = espn_nba.fetch_team_schedule(
+        "POR", cache_dir=tmp_path, allow_public_fetch=True
+    )
     assert again["team"]["abbreviation"] == "POR"
     assert len(requests) == 1  # second call never reached urlopen
 
@@ -939,16 +963,16 @@ def test_cache_schedule_expiry_and_summary_permanence(
 ) -> None:
     summary = json.dumps({"header": {}, "boxscore": {}}).encode()
     requests = _install_urlopen(monkeypatch, [_stub_schedule("POR"), summary])
-    espn_nba.fetch_team_schedule("POR", cache_dir=tmp_path)
-    espn_nba.fetch_game_summary("4011", cache_dir=tmp_path)
+    espn_nba.fetch_team_schedule("POR", cache_dir=tmp_path, allow_public_fetch=True)
+    espn_nba.fetch_game_summary("4011", cache_dir=tmp_path, allow_public_fetch=True)
     assert len(requests) == 2
     # age both files far beyond the schedule window
     old = time.time() - 10 * 365 * 24 * 3600
     for path in tmp_path.iterdir():
         os.utime(path, (old, old))
     _install_urlopen(monkeypatch, [_stub_schedule("POR")])
-    espn_nba.fetch_game_summary("4011", cache_dir=tmp_path)  # still cached
-    espn_nba.fetch_team_schedule("POR", cache_dir=tmp_path)  # refetched
+    espn_nba.fetch_game_summary("4011", cache_dir=tmp_path, allow_public_fetch=True)  # still cached
+    espn_nba.fetch_team_schedule("POR", cache_dir=tmp_path, allow_public_fetch=True)  # refetched
     assert tmp_path.joinpath("summary_4011.json").is_file()
     # default schedule window is six hours, not ten years
     assert espn_nba.SCHEDULE_CACHE_MAX_AGE_S <= 6.5 * 3600
@@ -958,10 +982,12 @@ def test_cache_corrupt_entry_refetches(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
     _install_urlopen(monkeypatch, [_stub_schedule("POR")])
-    espn_nba.fetch_team_schedule("POR", cache_dir=tmp_path)
+    espn_nba.fetch_team_schedule("POR", cache_dir=tmp_path, allow_public_fetch=True)
     (tmp_path / "schedule_POR_2027.json").write_text("{corrupt", encoding="utf-8")
     requests = _install_urlopen(monkeypatch, [_stub_schedule("POR")])
-    payload = espn_nba.fetch_team_schedule("POR", cache_dir=tmp_path)
+    payload = espn_nba.fetch_team_schedule(
+        "POR", cache_dir=tmp_path, allow_public_fetch=True
+    )
     assert payload["team"]["abbreviation"] == "POR"
     assert len(requests) == 1
 
@@ -972,8 +998,8 @@ def test_cache_disabled_without_dir(
     requests = _install_urlopen(
         monkeypatch, [_stub_schedule("POR"), _stub_schedule("POR")]
     )
-    espn_nba.fetch_team_schedule("POR", cache_dir=None)
-    espn_nba.fetch_team_schedule("POR", cache_dir=None)
+    espn_nba.fetch_team_schedule("POR", cache_dir=None, allow_public_fetch=True)
+    espn_nba.fetch_team_schedule("POR", cache_dir=None, allow_public_fetch=True)
     assert len(requests) == 2
     assert list(tmp_path.iterdir()) == []
 
@@ -1007,7 +1033,9 @@ def test_fetch_nba_season_deduplicates_shared_games(
         "AAA": (1, "Alpha Aces"), "BBB": (2, "Beta Bears"),
     })
     monkeypatch.setattr(espn_nba, "NBA_TEAMS", league)
-    raw = espn_nba.fetch_nba_season("2026-27", cache_dir=tmp_path)
+    raw = espn_nba.fetch_nba_season(
+        "2026-27", cache_dir=tmp_path, allow_public_fetch=True
+    )
     assert calls == {"schedule": 2, "summary": 1}
     assert set(raw["schedules"]) == {"AAA", "BBB"}
     assert set(raw["summaries"]) == {"4011"}
@@ -1034,6 +1062,7 @@ def test_main_writes_validated_snapshot(
     code = espn_nba.main([
         "--out", str(out), "--season", "2026-27",
         "--cache-dir", str(tmp_path / "cache"),
+        "--allow-public-fetch",
     ])
     assert code == 0
     reloaded = espn_nba.load_nba_snapshot(str(out))

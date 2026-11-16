@@ -26,6 +26,23 @@ only, and both share one module-wide polite-spacing guard
 (:data:`SLEEP_S` = 1.3 s between any two requests, matching the Phase
 1 fetch policy). No credentials, no cookies, paper-only.
 
+M2 A4 bounded-read boundary (m2-plan-formal.md section 2.5): every
+network call now reads its body through
+:func:`polymarket_alpha_lab.public_http.read_public_body` (declared
+framing enforced, body capped at :data:`_RESPONSE_READ_LIMIT_DEFAULT`
+or ``budget.next_response_read_limit()`` when a shared
+:class:`~polymarket_alpha_lab.papersim.adapters.contracts.FetchBudget`
+is supplied), the request URL and the final (post-redirect) URL must
+sit inside the frozen ``https://www.fotmob.com/`` origin allowlist,
+and the explicit ``allow_public_fetch`` permission (paper-only
+default ``False``) is required before any connection is built. The
+retry/backoff and polite-spacing rules keep their frozen Phase 1
+semantics; with a shared budget each actual attempt charges the same
+round budget and every wait is clamped to the remaining round time,
+so budget exhaustion stops the loop instead of retrying past the
+round. Transform, dedup, cancelled-match, skip-rate, team-count,
+season and value checks below are frozen and untouched.
+
 Fail-closed contract (inherited from Phase 1): the transform refuses
 to emit a block when the payload shape looks like an upstream schema
 change — season drift (``selectedSeason`` vs the derived season
@@ -57,7 +74,17 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from enum import Enum
-from typing import Mapping
+from typing import Callable, Mapping
+
+from polymarket_alpha_lab import public_http
+from polymarket_alpha_lab.papersim.adapters.contracts import (
+    DEFAULT_ALLOW_PUBLIC_FETCH,
+    DEFAULT_MAX_RESPONSE_BYTES,
+    FetchBudget,
+    BudgetExhaustedError,
+    REASON_DEADLINE_EXCEEDED,
+    require_public_fetch,
+)
 
 __all__ = [
     "FETCH_ATTEMPTS",
@@ -165,25 +192,112 @@ def _league_id(league: int | FotMobLeague) -> int:
     return int(league)
 
 
-def _polite_pause() -> None:
-    """Sleep the remainder of :data:`SLEEP_S` since the last request."""
+#: Per-response read ceiling applied when no shared ``FetchBudget`` is
+#: supplied: the A0 contract default (2 MiB), itself far under the 4 MiB
+#: hard ceiling of ``public_http.read_public_body``.
+_RESPONSE_READ_LIMIT_DEFAULT = DEFAULT_MAX_RESPONSE_BYTES
+
+#: Frozen origin allowlist for every FotMob request (scheme + host).
+_ALLOWED_ORIGINS = (f"https://{HOST}/",)
+
+#: Receives ``(url, raw_bytes)`` for every successful bounded read; the
+#: M2 adapters use it to build per-response evidence without changing
+#: the fetch functions' return values.
+ResponseSink = Callable[[str, bytes], None]
+
+
+class FotMobOriginError(ValueError):
+    """Request or final response URL outside the frozen FotMob origin
+    allowlist (redirect drift included). Fixed message only — never
+    carries the rejected URL. Subclasses :class:`ValueError` so the
+    frozen retry loop never retries an origin rejection."""
+
+
+def _verify_origin(url: object) -> None:
+    """Refuse any URL outside ``https://www.fotmob.com/`` (fixed code)."""
+    if not isinstance(url, str) or not url.startswith(_ALLOWED_ORIGINS):
+        raise FotMobOriginError("fotmob_origin_not_allowed")
+
+
+def _sleep_bounded(seconds: float, budget: FetchBudget | None) -> None:
+    """``time.sleep(seconds)`` clamped to the remaining round budget.
+
+    Without a budget this is the plain Phase 1 sleep (frozen semantics).
+    With one, the wait never runs past ``budget.deadline_monotonic``:
+    the sleep is clamped to the remaining seconds, and a wait that
+    cannot fit before the deadline raises
+    :class:`~polymarket_alpha_lab.papersim.adapters.contracts.BudgetExhaustedError`
+    so the caller stops instead of sleeping or retrying past the round.
+    """
+    if seconds <= 0.0:
+        return
+    if budget is None:
+        time.sleep(seconds)
+        return
+    remaining = budget.remaining_seconds()
+    if remaining <= 0.0:
+        raise BudgetExhaustedError(REASON_DEADLINE_EXCEEDED)
+    time.sleep(min(float(seconds), remaining))
+
+
+def _polite_pause(budget: FetchBudget | None = None) -> None:
+    """Sleep the remainder of :data:`SLEEP_S` since the last request.
+
+    With a shared budget the spacing sleep is additionally clamped to
+    the remaining round time (m2-plan section 2.5: every wait stays
+    inside the round budget).
+    """
     global _last_fetch_monotonic
     now = time.monotonic()
     if _last_fetch_monotonic is not None:
         remaining = SLEEP_S - (now - _last_fetch_monotonic)
         if remaining > 0.0:
-            time.sleep(remaining)
+            _sleep_bounded(remaining, budget)
     _last_fetch_monotonic = time.monotonic()
 
 
-def _http_get_json(url: str, *, timeout: float) -> object:
-    """One HTTPS GET returning parsed JSON (raises on transport/JSON errors)."""
+def _http_get_json(
+    url: str,
+    *,
+    timeout: float,
+    allow_public_fetch: bool = DEFAULT_ALLOW_PUBLIC_FETCH,
+    budget: FetchBudget | None = None,
+    response_sink: ResponseSink | None = None,
+) -> object:
+    """One HTTPS GET returning parsed JSON (raises on transport/JSON errors).
+
+    M2 A4 bounded read (m2-plan section 2.5): the body comes through
+    :func:`polymarket_alpha_lab.public_http.read_public_body` — declared
+    framing enforced, body capped at ``budget.next_response_read_limit()``
+    (:data:`_RESPONSE_READ_LIMIT_DEFAULT` without a budget) — and both
+    the request URL and the final (post-redirect) URL must sit inside
+    the frozen origin allowlist. The explicit network permission is
+    re-checked here so no connection is ever built without an
+    ``allow_public_fetch=True`` somewhere in the chain.
+    """
+    require_public_fetch(allow_public_fetch)
+    _verify_origin(url)
     request = urllib.request.Request(
         url,
         headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
     )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        body = response.read()
+    effective_timeout = float(timeout)
+    if budget is not None:
+        effective_timeout = min(
+            effective_timeout, budget.effective_timeout_seconds()
+        )
+    with urllib.request.urlopen(request, timeout=effective_timeout) as response:
+        _verify_origin(response.geturl())
+        read_limit = (
+            budget.next_response_read_limit()
+            if budget is not None
+            else _RESPONSE_READ_LIMIT_DEFAULT
+        )
+        body = public_http.read_public_body(response, read_limit)
+    if budget is not None:
+        budget.charge_response_bytes(len(body))
+    if response_sink is not None:
+        response_sink(url, body)
     try:
         return json.loads(body)
     except json.JSONDecodeError as exc:
@@ -192,17 +306,41 @@ def _http_get_json(url: str, *, timeout: float) -> object:
         ) from exc
 
 
-def _fetch_json(url: str, *, timeout: float) -> object:
-    """Fetch with retry/backoff and polite spacing; fail via FotMobError."""
+def _fetch_json(
+    url: str,
+    *,
+    timeout: float,
+    allow_public_fetch: bool = DEFAULT_ALLOW_PUBLIC_FETCH,
+    budget: FetchBudget | None = None,
+    response_sink: ResponseSink | None = None,
+) -> object:
+    """Fetch with retry/backoff and polite spacing; fail via FotMobError.
+
+    The retry/backoff rules keep their frozen Phase 1 semantics
+    (:data:`FETCH_ATTEMPTS` transport-error attempts, ``5 s x attempt``
+    backoff, :data:`SLEEP_S` polite spacing). With a shared budget every
+    actual attempt charges ``budget.charge_request()`` and every wait is
+    clamped to the remaining round time, so budget or deadline
+    exhaustion stops the loop immediately — never retried past.
+    """
+    require_public_fetch(allow_public_fetch)
     last_exc: Exception | None = None
     for attempt in range(FETCH_ATTEMPTS):
-        _polite_pause()
+        if budget is not None:
+            budget.charge_request()
+        _polite_pause(budget)
         try:
-            return _http_get_json(url, timeout=timeout)
+            return _http_get_json(
+                url,
+                timeout=timeout,
+                allow_public_fetch=allow_public_fetch,
+                budget=budget,
+                response_sink=response_sink,
+            )
         except (urllib.error.URLError, OSError, FotMobError) as exc:
             last_exc = exc
             if attempt < FETCH_ATTEMPTS - 1:
-                time.sleep(5.0 * (attempt + 1))
+                _sleep_bounded(5.0 * (attempt + 1), budget)
     raise FotMobError(f"giving up after {FETCH_ATTEMPTS} attempts: {url} ({last_exc})")
 
 
@@ -211,6 +349,9 @@ def fetch_fotmob_league(
     season: str | None = None,
     *,
     timeout: float = FETCH_TIMEOUT_S,
+    allow_public_fetch: bool = DEFAULT_ALLOW_PUBLIC_FETCH,
+    budget: FetchBudget | None = None,
+    response_sink: ResponseSink | None = None,
 ) -> dict:
     """Fetch one league-season fixtures payload (NETWORK, rate-limited).
 
@@ -222,11 +363,24 @@ def fetch_fotmob_league(
     no caching — resumable on-disk caches stay with the server-side
     Phase 1 tool. Raises :class:`FotMobError` when the payload is not a
     JSON object or all retries fail.
+
+    M2 A4: ``allow_public_fetch`` defaults to the paper-only denial —
+    no connection is built without an explicit ``True``. With a shared
+    ``budget`` every attempt/wait is charged/clamped against the round
+    and ``response_sink`` receives ``(url, raw_bytes)`` per successful
+    bounded read.
     """
+    require_public_fetch(allow_public_fetch)
     url = f"https://{HOST}/api/data/leagues?id={_league_id(league_id)}"
     if season is not None:
         url += "&season=" + urllib.parse.quote(str(season), safe="")
-    payload = _fetch_json(url, timeout=timeout)
+    payload = _fetch_json(
+        url,
+        timeout=timeout,
+        allow_public_fetch=allow_public_fetch,
+        budget=budget,
+        response_sink=response_sink,
+    )
     if not isinstance(payload, dict):
         raise FotMobSchemaError(f"leagues payload for {url} is not an object")
     return payload
@@ -236,16 +390,27 @@ def fetch_match_details(
     match_id: str | int,
     *,
     timeout: float = FETCH_TIMEOUT_S,
+    allow_public_fetch: bool = DEFAULT_ALLOW_PUBLIC_FETCH,
+    budget: FetchBudget | None = None,
+    response_sink: ResponseSink | None = None,
 ) -> dict:
     """Fetch one match's details payload (NETWORK, rate-limited).
 
     ``GET https://www.fotmob.com/api/data/matchDetails?matchId=<id>`` —
     the per-match payload holding the score header and the Periods.All
     xG rows the transform extracts. Same contract as
-    :func:`fetch_fotmob_league`: parsed payload verbatim, no cache.
+    :func:`fetch_fotmob_league`: parsed payload verbatim, no cache;
+    same M2 A4 permission/budget/``response_sink`` parameters.
     """
+    require_public_fetch(allow_public_fetch)
     url = f"https://{HOST}/api/data/matchDetails?matchId={match_id}"
-    payload = _fetch_json(url, timeout=timeout)
+    payload = _fetch_json(
+        url,
+        timeout=timeout,
+        allow_public_fetch=allow_public_fetch,
+        budget=budget,
+        response_sink=response_sink,
+    )
     if not isinstance(payload, dict):
         raise FotMobSchemaError(f"matchDetails payload for {url} is not an object")
     return payload
