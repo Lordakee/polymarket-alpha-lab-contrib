@@ -1,0 +1,1976 @@
+{
+  "schema": "papersim-m2-understat-fixture-v1",
+  "description": "Synthetic offline fixture for the M2 A3 Understat adapter tests. Fabricated league blocks in the understat getLeagueData wire shape; no real network bytes are recorded or replayed.",
+  "season": "2026",
+  "prior_season": "2025",
+  "now": "2026-11-03T12:00:00+00:00",
+  "expected": {
+    "per_league": {
+      "EPL": {
+        "team_count": 6,
+        "completed_matches": 4,
+        "scheduled_matches": 2,
+        "latest_match_date": "2026-11-01 13:00:00",
+        "baseline_completed_matches": 2
+      },
+      "La_liga": {
+        "team_count": 6,
+        "completed_matches": 4,
+        "scheduled_matches": 2,
+        "latest_match_date": "2026-11-02 20:00:00",
+        "baseline_completed_matches": 2
+      },
+      "Serie_A": {
+        "team_count": 6,
+        "completed_matches": 4,
+        "scheduled_matches": 2,
+        "latest_match_date": "2026-11-01 18:00:00",
+        "baseline_completed_matches": 2
+      },
+      "Bundesliga": {
+        "team_count": 6,
+        "completed_matches": 4,
+        "scheduled_matches": 2,
+        "latest_match_date": "2026-10-31 16:30:00",
+        "baseline_completed_matches": 2
+      },
+      "Ligue_1": {
+        "team_count": 6,
+        "completed_matches": 4,
+        "scheduled_matches": 2,
+        "latest_match_date": "2026-11-02 21:00:00",
+        "baseline_completed_matches": 2
+      }
+    },
+    "total_completed_matches": 20,
+    "total_scheduled_matches": 10,
+    "latest_match_date": "2026-11-02 21:00:00"
+  },
+  "leagues": {
+    "EPL": {
+      "teams": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6"
+      ],
+      "baseline": {
+        "teams": {
+          "1": {
+            "title": "EPL FC 1",
+            "history": [
+              {
+                "date": "2026-08-15 12:00:00",
+                "h_a": "h",
+                "xG": 1.5,
+                "xGA": 0.5,
+                "scored": 2,
+                "missed": 0
+              }
+            ]
+          },
+          "2": {
+            "title": "EPL FC 2",
+            "history": [
+              {
+                "date": "2026-08-15 12:00:00",
+                "h_a": "a",
+                "xG": 0.5,
+                "xGA": 1.5,
+                "scored": 0,
+                "missed": 2
+              }
+            ]
+          },
+          "3": {
+            "title": "EPL FC 3",
+            "history": [
+              {
+                "date": "2026-09-19 15:00:00",
+                "h_a": "h",
+                "xG": 0.0,
+                "xGA": 0.0,
+                "scored": 0,
+                "missed": 0
+              }
+            ]
+          },
+          "4": {
+            "title": "EPL FC 4",
+            "history": [
+              {
+                "date": "2026-09-19 15:00:00",
+                "h_a": "a",
+                "xG": 0.0,
+                "xGA": 0.0,
+                "scored": 0,
+                "missed": 0
+              }
+            ]
+          },
+          "5": {
+            "title": "EPL FC 5",
+            "history": []
+          },
+          "6": {
+            "title": "EPL FC 6",
+            "history": []
+          }
+        },
+        "players": [],
+        "dates": [
+          {
+            "id": "1",
+            "isResult": true,
+            "h": {
+              "id": "1",
+              "title": "HOME 1"
+            },
+            "a": {
+              "id": "2",
+              "title": "AWAY 2"
+            },
+            "datetime": "2026-08-15 12:00:00",
+            "xG": {
+              "h": "1.5",
+              "a": "0.5"
+            },
+            "goals": {
+              "h": "2",
+              "a": "0"
+            }
+          },
+          {
+            "id": "2",
+            "isResult": true,
+            "h": {
+              "id": "3",
+              "title": "HOME 3"
+            },
+            "a": {
+              "id": "4",
+              "title": "AWAY 4"
+            },
+            "datetime": "2026-09-19 15:00:00",
+            "xG": {
+              "h": "0.0",
+              "a": "0.0"
+            },
+            "goals": {
+              "h": "0",
+              "a": "0"
+            }
+          },
+          {
+            "id": "3",
+            "isResult": false,
+            "h": {
+              "id": "5",
+              "title": "HOME 5"
+            },
+            "a": {
+              "id": "6",
+              "title": "AWAY 6"
+            },
+            "datetime": "2026-11-20 15:00:00",
+            "xG": {
+              "h": null,
+              "a": null
+            },
+            "goals": {
+              "h": null,
+              "a": null
+            }
+          }
+        ]
+      },
+      "response": {
+        "teams": {
+          "1": {
+            "title": "EPL FC 1",
+            "history": [
+              {
+                "date": "2026-08-15 12:00:00",
+                "h_a": "h",
+                "xG": 1.5,
+                "xGA": 0.5,
+                "scored": 2,
+                "missed": 0
+              }
+            ]
+          },
+          "2": {
+            "title": "EPL FC 2",
+            "history": [
+              {
+                "date": "2026-08-15 12:00:00",
+                "h_a": "a",
+                "xG": 0.5,
+                "xGA": 1.5,
+                "scored": 0,
+                "missed": 2
+              },
+              {
+                "date": "2026-10-24 18:30:00",
+                "h_a": "h",
+                "xG": 2.25,
+                "xGA": 1.0,
+                "scored": 1,
+                "missed": 1
+              }
+            ]
+          },
+          "3": {
+            "title": "EPL FC 3",
+            "history": [
+              {
+                "date": "2026-09-19 15:00:00",
+                "h_a": "h",
+                "xG": 0.0,
+                "xGA": 0.0,
+                "scored": 0,
+                "missed": 0
+              },
+              {
+                "date": "2026-10-24 18:30:00",
+                "h_a": "a",
+                "xG": 1.0,
+                "xGA": 2.25,
+                "scored": 1,
+                "missed": 1
+              }
+            ]
+          },
+          "4": {
+            "title": "EPL FC 4",
+            "history": [
+              {
+                "date": "2026-09-19 15:00:00",
+                "h_a": "a",
+                "xG": 0.0,
+                "xGA": 0.0,
+                "scored": 0,
+                "missed": 0
+              },
+              {
+                "date": "2026-11-01 13:00:00",
+                "h_a": "h",
+                "xG": 0.75,
+                "xGA": 0.5,
+                "scored": 3,
+                "missed": 1
+              }
+            ]
+          },
+          "5": {
+            "title": "EPL FC 5",
+            "history": [
+              {
+                "date": "2026-11-01 13:00:00",
+                "h_a": "a",
+                "xG": 0.5,
+                "xGA": 0.75,
+                "scored": 1,
+                "missed": 3
+              }
+            ]
+          },
+          "6": {
+            "title": "EPL FC 6",
+            "history": []
+          }
+        },
+        "players": [],
+        "dates": [
+          {
+            "id": "1",
+            "isResult": true,
+            "h": {
+              "id": "1",
+              "title": "HOME 1"
+            },
+            "a": {
+              "id": "2",
+              "title": "AWAY 2"
+            },
+            "datetime": "2026-08-15 12:00:00",
+            "xG": {
+              "h": "1.5",
+              "a": "0.5"
+            },
+            "goals": {
+              "h": "2",
+              "a": "0"
+            }
+          },
+          {
+            "id": "2",
+            "isResult": true,
+            "h": {
+              "id": "3",
+              "title": "HOME 3"
+            },
+            "a": {
+              "id": "4",
+              "title": "AWAY 4"
+            },
+            "datetime": "2026-09-19 15:00:00",
+            "xG": {
+              "h": "0.0",
+              "a": "0.0"
+            },
+            "goals": {
+              "h": "0",
+              "a": "0"
+            }
+          },
+          {
+            "id": "10",
+            "isResult": true,
+            "h": {
+              "id": "2",
+              "title": "HOME 2"
+            },
+            "a": {
+              "id": "3",
+              "title": "AWAY 3"
+            },
+            "datetime": "2026-10-24 18:30:00",
+            "xG": {
+              "h": "2.25",
+              "a": "1.0"
+            },
+            "goals": {
+              "h": "1",
+              "a": "1"
+            }
+          },
+          {
+            "id": "11",
+            "isResult": true,
+            "h": {
+              "id": "4",
+              "title": "HOME 4"
+            },
+            "a": {
+              "id": "5",
+              "title": "AWAY 5"
+            },
+            "datetime": "2026-11-01 13:00:00",
+            "xG": {
+              "h": "0.75",
+              "a": "0.5"
+            },
+            "goals": {
+              "h": "3",
+              "a": "1"
+            }
+          },
+          {
+            "id": "3",
+            "isResult": false,
+            "h": {
+              "id": "5",
+              "title": "HOME 5"
+            },
+            "a": {
+              "id": "6",
+              "title": "AWAY 6"
+            },
+            "datetime": "2026-11-20 15:00:00",
+            "xG": {
+              "h": null,
+              "a": null
+            },
+            "goals": {
+              "h": null,
+              "a": null
+            }
+          },
+          {
+            "id": "12",
+            "isResult": false,
+            "h": {
+              "id": "1",
+              "title": "HOME 1"
+            },
+            "a": {
+              "id": "6",
+              "title": "AWAY 6"
+            },
+            "datetime": "2026-11-28 17:00:00",
+            "xG": {
+              "h": null,
+              "a": null
+            },
+            "goals": {
+              "h": null,
+              "a": null
+            }
+          }
+        ]
+      },
+      "prior": {
+        "teams": {
+          "1": {
+            "title": "EPL FC 1",
+            "history": [
+              {
+                "date": "2025-05-18 15:00:00",
+                "h_a": "h",
+                "xG": 1.1,
+                "xGA": 0.9,
+                "scored": 2,
+                "missed": 1
+              }
+            ]
+          }
+        },
+        "players": [],
+        "dates": []
+      }
+    },
+    "La_liga": {
+      "teams": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6"
+      ],
+      "baseline": {
+        "teams": {
+          "1": {
+            "title": "La_liga FC 1",
+            "history": [
+              {
+                "date": "2026-08-15 12:00:00",
+                "h_a": "h",
+                "xG": 1.5,
+                "xGA": 0.5,
+                "scored": 2,
+                "missed": 0
+              }
+            ]
+          },
+          "2": {
+            "title": "La_liga FC 2",
+            "history": [
+              {
+                "date": "2026-08-15 12:00:00",
+                "h_a": "a",
+                "xG": 0.5,
+                "xGA": 1.5,
+                "scored": 0,
+                "missed": 2
+              }
+            ]
+          },
+          "3": {
+            "title": "La_liga FC 3",
+            "history": [
+              {
+                "date": "2026-09-19 15:00:00",
+                "h_a": "h",
+                "xG": 0.0,
+                "xGA": 0.0,
+                "scored": 0,
+                "missed": 0
+              }
+            ]
+          },
+          "4": {
+            "title": "La_liga FC 4",
+            "history": [
+              {
+                "date": "2026-09-19 15:00:00",
+                "h_a": "a",
+                "xG": 0.0,
+                "xGA": 0.0,
+                "scored": 0,
+                "missed": 0
+              }
+            ]
+          },
+          "5": {
+            "title": "La_liga FC 5",
+            "history": []
+          },
+          "6": {
+            "title": "La_liga FC 6",
+            "history": []
+          }
+        },
+        "players": [],
+        "dates": [
+          {
+            "id": "1",
+            "isResult": true,
+            "h": {
+              "id": "1",
+              "title": "HOME 1"
+            },
+            "a": {
+              "id": "2",
+              "title": "AWAY 2"
+            },
+            "datetime": "2026-08-15 12:00:00",
+            "xG": {
+              "h": "1.5",
+              "a": "0.5"
+            },
+            "goals": {
+              "h": "2",
+              "a": "0"
+            }
+          },
+          {
+            "id": "2",
+            "isResult": true,
+            "h": {
+              "id": "3",
+              "title": "HOME 3"
+            },
+            "a": {
+              "id": "4",
+              "title": "AWAY 4"
+            },
+            "datetime": "2026-09-19 15:00:00",
+            "xG": {
+              "h": "0.0",
+              "a": "0.0"
+            },
+            "goals": {
+              "h": "0",
+              "a": "0"
+            }
+          },
+          {
+            "id": "3",
+            "isResult": false,
+            "h": {
+              "id": "5",
+              "title": "HOME 5"
+            },
+            "a": {
+              "id": "6",
+              "title": "AWAY 6"
+            },
+            "datetime": "2026-11-20 15:00:00",
+            "xG": {
+              "h": null,
+              "a": null
+            },
+            "goals": {
+              "h": null,
+              "a": null
+            }
+          }
+        ]
+      },
+      "response": {
+        "teams": {
+          "1": {
+            "title": "La_liga FC 1",
+            "history": [
+              {
+                "date": "2026-08-15 12:00:00",
+                "h_a": "h",
+                "xG": 1.5,
+                "xGA": 0.5,
+                "scored": 2,
+                "missed": 0
+              }
+            ]
+          },
+          "2": {
+            "title": "La_liga FC 2",
+            "history": [
+              {
+                "date": "2026-08-15 12:00:00",
+                "h_a": "a",
+                "xG": 0.5,
+                "xGA": 1.5,
+                "scored": 0,
+                "missed": 2
+              },
+              {
+                "date": "2026-10-24 18:30:00",
+                "h_a": "h",
+                "xG": 2.25,
+                "xGA": 1.0,
+                "scored": 1,
+                "missed": 1
+              }
+            ]
+          },
+          "3": {
+            "title": "La_liga FC 3",
+            "history": [
+              {
+                "date": "2026-09-19 15:00:00",
+                "h_a": "h",
+                "xG": 0.0,
+                "xGA": 0.0,
+                "scored": 0,
+                "missed": 0
+              },
+              {
+                "date": "2026-10-24 18:30:00",
+                "h_a": "a",
+                "xG": 1.0,
+                "xGA": 2.25,
+                "scored": 1,
+                "missed": 1
+              }
+            ]
+          },
+          "4": {
+            "title": "La_liga FC 4",
+            "history": [
+              {
+                "date": "2026-09-19 15:00:00",
+                "h_a": "a",
+                "xG": 0.0,
+                "xGA": 0.0,
+                "scored": 0,
+                "missed": 0
+              },
+              {
+                "date": "2026-11-02 20:00:00",
+                "h_a": "h",
+                "xG": 0.75,
+                "xGA": 0.5,
+                "scored": 3,
+                "missed": 1
+              }
+            ]
+          },
+          "5": {
+            "title": "La_liga FC 5",
+            "history": [
+              {
+                "date": "2026-11-02 20:00:00",
+                "h_a": "a",
+                "xG": 0.5,
+                "xGA": 0.75,
+                "scored": 1,
+                "missed": 3
+              }
+            ]
+          },
+          "6": {
+            "title": "La_liga FC 6",
+            "history": []
+          }
+        },
+        "players": [],
+        "dates": [
+          {
+            "id": "1",
+            "isResult": true,
+            "h": {
+              "id": "1",
+              "title": "HOME 1"
+            },
+            "a": {
+              "id": "2",
+              "title": "AWAY 2"
+            },
+            "datetime": "2026-08-15 12:00:00",
+            "xG": {
+              "h": "1.5",
+              "a": "0.5"
+            },
+            "goals": {
+              "h": "2",
+              "a": "0"
+            }
+          },
+          {
+            "id": "2",
+            "isResult": true,
+            "h": {
+              "id": "3",
+              "title": "HOME 3"
+            },
+            "a": {
+              "id": "4",
+              "title": "AWAY 4"
+            },
+            "datetime": "2026-09-19 15:00:00",
+            "xG": {
+              "h": "0.0",
+              "a": "0.0"
+            },
+            "goals": {
+              "h": "0",
+              "a": "0"
+            }
+          },
+          {
+            "id": "10",
+            "isResult": true,
+            "h": {
+              "id": "2",
+              "title": "HOME 2"
+            },
+            "a": {
+              "id": "3",
+              "title": "AWAY 3"
+            },
+            "datetime": "2026-10-24 18:30:00",
+            "xG": {
+              "h": "2.25",
+              "a": "1.0"
+            },
+            "goals": {
+              "h": "1",
+              "a": "1"
+            }
+          },
+          {
+            "id": "11",
+            "isResult": true,
+            "h": {
+              "id": "4",
+              "title": "HOME 4"
+            },
+            "a": {
+              "id": "5",
+              "title": "AWAY 5"
+            },
+            "datetime": "2026-11-02 20:00:00",
+            "xG": {
+              "h": "0.75",
+              "a": "0.5"
+            },
+            "goals": {
+              "h": "3",
+              "a": "1"
+            }
+          },
+          {
+            "id": "3",
+            "isResult": false,
+            "h": {
+              "id": "5",
+              "title": "HOME 5"
+            },
+            "a": {
+              "id": "6",
+              "title": "AWAY 6"
+            },
+            "datetime": "2026-11-20 15:00:00",
+            "xG": {
+              "h": null,
+              "a": null
+            },
+            "goals": {
+              "h": null,
+              "a": null
+            }
+          },
+          {
+            "id": "12",
+            "isResult": false,
+            "h": {
+              "id": "1",
+              "title": "HOME 1"
+            },
+            "a": {
+              "id": "6",
+              "title": "AWAY 6"
+            },
+            "datetime": "2026-11-28 17:00:00",
+            "xG": {
+              "h": null,
+              "a": null
+            },
+            "goals": {
+              "h": null,
+              "a": null
+            }
+          }
+        ]
+      },
+      "prior": {
+        "teams": {
+          "1": {
+            "title": "La_liga FC 1",
+            "history": [
+              {
+                "date": "2025-05-18 15:00:00",
+                "h_a": "h",
+                "xG": 1.1,
+                "xGA": 0.9,
+                "scored": 2,
+                "missed": 1
+              }
+            ]
+          }
+        },
+        "players": [],
+        "dates": []
+      }
+    },
+    "Serie_A": {
+      "teams": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6"
+      ],
+      "baseline": {
+        "teams": {
+          "1": {
+            "title": "Serie_A FC 1",
+            "history": [
+              {
+                "date": "2026-08-15 12:00:00",
+                "h_a": "h",
+                "xG": 1.5,
+                "xGA": 0.5,
+                "scored": 2,
+                "missed": 0
+              }
+            ]
+          },
+          "2": {
+            "title": "Serie_A FC 2",
+            "history": [
+              {
+                "date": "2026-08-15 12:00:00",
+                "h_a": "a",
+                "xG": 0.5,
+                "xGA": 1.5,
+                "scored": 0,
+                "missed": 2
+              }
+            ]
+          },
+          "3": {
+            "title": "Serie_A FC 3",
+            "history": [
+              {
+                "date": "2026-09-19 15:00:00",
+                "h_a": "h",
+                "xG": 0.0,
+                "xGA": 0.0,
+                "scored": 0,
+                "missed": 0
+              }
+            ]
+          },
+          "4": {
+            "title": "Serie_A FC 4",
+            "history": [
+              {
+                "date": "2026-09-19 15:00:00",
+                "h_a": "a",
+                "xG": 0.0,
+                "xGA": 0.0,
+                "scored": 0,
+                "missed": 0
+              }
+            ]
+          },
+          "5": {
+            "title": "Serie_A FC 5",
+            "history": []
+          },
+          "6": {
+            "title": "Serie_A FC 6",
+            "history": []
+          }
+        },
+        "players": [],
+        "dates": [
+          {
+            "id": "1",
+            "isResult": true,
+            "h": {
+              "id": "1",
+              "title": "HOME 1"
+            },
+            "a": {
+              "id": "2",
+              "title": "AWAY 2"
+            },
+            "datetime": "2026-08-15 12:00:00",
+            "xG": {
+              "h": "1.5",
+              "a": "0.5"
+            },
+            "goals": {
+              "h": "2",
+              "a": "0"
+            }
+          },
+          {
+            "id": "2",
+            "isResult": true,
+            "h": {
+              "id": "3",
+              "title": "HOME 3"
+            },
+            "a": {
+              "id": "4",
+              "title": "AWAY 4"
+            },
+            "datetime": "2026-09-19 15:00:00",
+            "xG": {
+              "h": "0.0",
+              "a": "0.0"
+            },
+            "goals": {
+              "h": "0",
+              "a": "0"
+            }
+          },
+          {
+            "id": "3",
+            "isResult": false,
+            "h": {
+              "id": "5",
+              "title": "HOME 5"
+            },
+            "a": {
+              "id": "6",
+              "title": "AWAY 6"
+            },
+            "datetime": "2026-11-20 15:00:00",
+            "xG": {
+              "h": null,
+              "a": null
+            },
+            "goals": {
+              "h": null,
+              "a": null
+            }
+          }
+        ]
+      },
+      "response": {
+        "teams": {
+          "1": {
+            "title": "Serie_A FC 1",
+            "history": [
+              {
+                "date": "2026-08-15 12:00:00",
+                "h_a": "h",
+                "xG": 1.5,
+                "xGA": 0.5,
+                "scored": 2,
+                "missed": 0
+              }
+            ]
+          },
+          "2": {
+            "title": "Serie_A FC 2",
+            "history": [
+              {
+                "date": "2026-08-15 12:00:00",
+                "h_a": "a",
+                "xG": 0.5,
+                "xGA": 1.5,
+                "scored": 0,
+                "missed": 2
+              },
+              {
+                "date": "2026-10-24 18:30:00",
+                "h_a": "h",
+                "xG": 2.25,
+                "xGA": 1.0,
+                "scored": 1,
+                "missed": 1
+              }
+            ]
+          },
+          "3": {
+            "title": "Serie_A FC 3",
+            "history": [
+              {
+                "date": "2026-09-19 15:00:00",
+                "h_a": "h",
+                "xG": 0.0,
+                "xGA": 0.0,
+                "scored": 0,
+                "missed": 0
+              },
+              {
+                "date": "2026-10-24 18:30:00",
+                "h_a": "a",
+                "xG": 1.0,
+                "xGA": 2.25,
+                "scored": 1,
+                "missed": 1
+              }
+            ]
+          },
+          "4": {
+            "title": "Serie_A FC 4",
+            "history": [
+              {
+                "date": "2026-09-19 15:00:00",
+                "h_a": "a",
+                "xG": 0.0,
+                "xGA": 0.0,
+                "scored": 0,
+                "missed": 0
+              },
+              {
+                "date": "2026-11-01 18:00:00",
+                "h_a": "h",
+                "xG": 0.75,
+                "xGA": 0.5,
+                "scored": 3,
+                "missed": 1
+              }
+            ]
+          },
+          "5": {
+            "title": "Serie_A FC 5",
+            "history": [
+              {
+                "date": "2026-11-01 18:00:00",
+                "h_a": "a",
+                "xG": 0.5,
+                "xGA": 0.75,
+                "scored": 1,
+                "missed": 3
+              }
+            ]
+          },
+          "6": {
+            "title": "Serie_A FC 6",
+            "history": []
+          }
+        },
+        "players": [],
+        "dates": [
+          {
+            "id": "1",
+            "isResult": true,
+            "h": {
+              "id": "1",
+              "title": "HOME 1"
+            },
+            "a": {
+              "id": "2",
+              "title": "AWAY 2"
+            },
+            "datetime": "2026-08-15 12:00:00",
+            "xG": {
+              "h": "1.5",
+              "a": "0.5"
+            },
+            "goals": {
+              "h": "2",
+              "a": "0"
+            }
+          },
+          {
+            "id": "2",
+            "isResult": true,
+            "h": {
+              "id": "3",
+              "title": "HOME 3"
+            },
+            "a": {
+              "id": "4",
+              "title": "AWAY 4"
+            },
+            "datetime": "2026-09-19 15:00:00",
+            "xG": {
+              "h": "0.0",
+              "a": "0.0"
+            },
+            "goals": {
+              "h": "0",
+              "a": "0"
+            }
+          },
+          {
+            "id": "10",
+            "isResult": true,
+            "h": {
+              "id": "2",
+              "title": "HOME 2"
+            },
+            "a": {
+              "id": "3",
+              "title": "AWAY 3"
+            },
+            "datetime": "2026-10-24 18:30:00",
+            "xG": {
+              "h": "2.25",
+              "a": "1.0"
+            },
+            "goals": {
+              "h": "1",
+              "a": "1"
+            }
+          },
+          {
+            "id": "11",
+            "isResult": true,
+            "h": {
+              "id": "4",
+              "title": "HOME 4"
+            },
+            "a": {
+              "id": "5",
+              "title": "AWAY 5"
+            },
+            "datetime": "2026-11-01 18:00:00",
+            "xG": {
+              "h": "0.75",
+              "a": "0.5"
+            },
+            "goals": {
+              "h": "3",
+              "a": "1"
+            }
+          },
+          {
+            "id": "3",
+            "isResult": false,
+            "h": {
+              "id": "5",
+              "title": "HOME 5"
+            },
+            "a": {
+              "id": "6",
+              "title": "AWAY 6"
+            },
+            "datetime": "2026-11-20 15:00:00",
+            "xG": {
+              "h": null,
+              "a": null
+            },
+            "goals": {
+              "h": null,
+              "a": null
+            }
+          },
+          {
+            "id": "12",
+            "isResult": false,
+            "h": {
+              "id": "1",
+              "title": "HOME 1"
+            },
+            "a": {
+              "id": "6",
+              "title": "AWAY 6"
+            },
+            "datetime": "2026-11-28 17:00:00",
+            "xG": {
+              "h": null,
+              "a": null
+            },
+            "goals": {
+              "h": null,
+              "a": null
+            }
+          }
+        ]
+      },
+      "prior": {
+        "teams": {
+          "1": {
+            "title": "Serie_A FC 1",
+            "history": [
+              {
+                "date": "2025-05-18 15:00:00",
+                "h_a": "h",
+                "xG": 1.1,
+                "xGA": 0.9,
+                "scored": 2,
+                "missed": 1
+              }
+            ]
+          }
+        },
+        "players": [],
+        "dates": []
+      }
+    },
+    "Bundesliga": {
+      "teams": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6"
+      ],
+      "baseline": {
+        "teams": {
+          "1": {
+            "title": "Bundesliga FC 1",
+            "history": [
+              {
+                "date": "2026-08-15 12:00:00",
+                "h_a": "h",
+                "xG": 1.5,
+                "xGA": 0.5,
+                "scored": 2,
+                "missed": 0
+              }
+            ]
+          },
+          "2": {
+            "title": "Bundesliga FC 2",
+            "history": [
+              {
+                "date": "2026-08-15 12:00:00",
+                "h_a": "a",
+                "xG": 0.5,
+                "xGA": 1.5,
+                "scored": 0,
+                "missed": 2
+              }
+            ]
+          },
+          "3": {
+            "title": "Bundesliga FC 3",
+            "history": [
+              {
+                "date": "2026-09-19 15:00:00",
+                "h_a": "h",
+                "xG": 0.0,
+                "xGA": 0.0,
+                "scored": 0,
+                "missed": 0
+              }
+            ]
+          },
+          "4": {
+            "title": "Bundesliga FC 4",
+            "history": [
+              {
+                "date": "2026-09-19 15:00:00",
+                "h_a": "a",
+                "xG": 0.0,
+                "xGA": 0.0,
+                "scored": 0,
+                "missed": 0
+              }
+            ]
+          },
+          "5": {
+            "title": "Bundesliga FC 5",
+            "history": []
+          },
+          "6": {
+            "title": "Bundesliga FC 6",
+            "history": []
+          }
+        },
+        "players": [],
+        "dates": [
+          {
+            "id": "1",
+            "isResult": true,
+            "h": {
+              "id": "1",
+              "title": "HOME 1"
+            },
+            "a": {
+              "id": "2",
+              "title": "AWAY 2"
+            },
+            "datetime": "2026-08-15 12:00:00",
+            "xG": {
+              "h": "1.5",
+              "a": "0.5"
+            },
+            "goals": {
+              "h": "2",
+              "a": "0"
+            }
+          },
+          {
+            "id": "2",
+            "isResult": true,
+            "h": {
+              "id": "3",
+              "title": "HOME 3"
+            },
+            "a": {
+              "id": "4",
+              "title": "AWAY 4"
+            },
+            "datetime": "2026-09-19 15:00:00",
+            "xG": {
+              "h": "0.0",
+              "a": "0.0"
+            },
+            "goals": {
+              "h": "0",
+              "a": "0"
+            }
+          },
+          {
+            "id": "3",
+            "isResult": false,
+            "h": {
+              "id": "5",
+              "title": "HOME 5"
+            },
+            "a": {
+              "id": "6",
+              "title": "AWAY 6"
+            },
+            "datetime": "2026-11-20 15:00:00",
+            "xG": {
+              "h": null,
+              "a": null
+            },
+            "goals": {
+              "h": null,
+              "a": null
+            }
+          }
+        ]
+      },
+      "response": {
+        "teams": {
+          "1": {
+            "title": "Bundesliga FC 1",
+            "history": [
+              {
+                "date": "2026-08-15 12:00:00",
+                "h_a": "h",
+                "xG": 1.5,
+                "xGA": 0.5,
+                "scored": 2,
+                "missed": 0
+              }
+            ]
+          },
+          "2": {
+            "title": "Bundesliga FC 2",
+            "history": [
+              {
+                "date": "2026-08-15 12:00:00",
+                "h_a": "a",
+                "xG": 0.5,
+                "xGA": 1.5,
+                "scored": 0,
+                "missed": 2
+              },
+              {
+                "date": "2026-10-24 18:30:00",
+                "h_a": "h",
+                "xG": 2.25,
+                "xGA": 1.0,
+                "scored": 1,
+                "missed": 1
+              }
+            ]
+          },
+          "3": {
+            "title": "Bundesliga FC 3",
+            "history": [
+              {
+                "date": "2026-09-19 15:00:00",
+                "h_a": "h",
+                "xG": 0.0,
+                "xGA": 0.0,
+                "scored": 0,
+                "missed": 0
+              },
+              {
+                "date": "2026-10-24 18:30:00",
+                "h_a": "a",
+                "xG": 1.0,
+                "xGA": 2.25,
+                "scored": 1,
+                "missed": 1
+              }
+            ]
+          },
+          "4": {
+            "title": "Bundesliga FC 4",
+            "history": [
+              {
+                "date": "2026-09-19 15:00:00",
+                "h_a": "a",
+                "xG": 0.0,
+                "xGA": 0.0,
+                "scored": 0,
+                "missed": 0
+              },
+              {
+                "date": "2026-10-31 16:30:00",
+                "h_a": "h",
+                "xG": 0.75,
+                "xGA": 0.5,
+                "scored": 3,
+                "missed": 1
+              }
+            ]
+          },
+          "5": {
+            "title": "Bundesliga FC 5",
+            "history": [
+              {
+                "date": "2026-10-31 16:30:00",
+                "h_a": "a",
+                "xG": 0.5,
+                "xGA": 0.75,
+                "scored": 1,
+                "missed": 3
+              }
+            ]
+          },
+          "6": {
+            "title": "Bundesliga FC 6",
+            "history": []
+          }
+        },
+        "players": [],
+        "dates": [
+          {
+            "id": "1",
+            "isResult": true,
+            "h": {
+              "id": "1",
+              "title": "HOME 1"
+            },
+            "a": {
+              "id": "2",
+              "title": "AWAY 2"
+            },
+            "datetime": "2026-08-15 12:00:00",
+            "xG": {
+              "h": "1.5",
+              "a": "0.5"
+            },
+            "goals": {
+              "h": "2",
+              "a": "0"
+            }
+          },
+          {
+            "id": "2",
+            "isResult": true,
+            "h": {
+              "id": "3",
+              "title": "HOME 3"
+            },
+            "a": {
+              "id": "4",
+              "title": "AWAY 4"
+            },
+            "datetime": "2026-09-19 15:00:00",
+            "xG": {
+              "h": "0.0",
+              "a": "0.0"
+            },
+            "goals": {
+              "h": "0",
+              "a": "0"
+            }
+          },
+          {
+            "id": "10",
+            "isResult": true,
+            "h": {
+              "id": "2",
+              "title": "HOME 2"
+            },
+            "a": {
+              "id": "3",
+              "title": "AWAY 3"
+            },
+            "datetime": "2026-10-24 18:30:00",
+            "xG": {
+              "h": "2.25",
+              "a": "1.0"
+            },
+            "goals": {
+              "h": "1",
+              "a": "1"
+            }
+          },
+          {
+            "id": "11",
+            "isResult": true,
+            "h": {
+              "id": "4",
+              "title": "HOME 4"
+            },
+            "a": {
+              "id": "5",
+              "title": "AWAY 5"
+            },
+            "datetime": "2026-10-31 16:30:00",
+            "xG": {
+              "h": "0.75",
+              "a": "0.5"
+            },
+            "goals": {
+              "h": "3",
+              "a": "1"
+            }
+          },
+          {
+            "id": "3",
+            "isResult": false,
+            "h": {
+              "id": "5",
+              "title": "HOME 5"
+            },
+            "a": {
+              "id": "6",
+              "title": "AWAY 6"
+            },
+            "datetime": "2026-11-20 15:00:00",
+            "xG": {
+              "h": null,
+              "a": null
+            },
+            "goals": {
+              "h": null,
+              "a": null
+            }
+          },
+          {
+            "id": "12",
+            "isResult": false,
+            "h": {
+              "id": "1",
+              "title": "HOME 1"
+            },
+            "a": {
+              "id": "6",
+              "title": "AWAY 6"
+            },
+            "datetime": "2026-11-28 17:00:00",
+            "xG": {
+              "h": null,
+              "a": null
+            },
+            "goals": {
+              "h": null,
+              "a": null
+            }
+          }
+        ]
+      },
+      "prior": {
+        "teams": {
+          "1": {
+            "title": "Bundesliga FC 1",
+            "history": [
+              {
+                "date": "2025-05-18 15:00:00",
+                "h_a": "h",
+                "xG": 1.1,
+                "xGA": 0.9,
+                "scored": 2,
+                "missed": 1
+              }
+            ]
+          }
+        },
+        "players": [],
+        "dates": []
+      }
+    },
+    "Ligue_1": {
+      "teams": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6"
+      ],
+      "baseline": {
+        "teams": {
+          "1": {
+            "title": "Ligue_1 FC 1",
+            "history": [
+              {
+                "date": "2026-08-15 12:00:00",
+                "h_a": "h",
+                "xG": 1.5,
+                "xGA": 0.5,
+                "scored": 2,
+                "missed": 0
+              }
+            ]
+          },
+          "2": {
+            "title": "Ligue_1 FC 2",
+            "history": [
+              {
+                "date": "2026-08-15 12:00:00",
+                "h_a": "a",
+                "xG": 0.5,
+                "xGA": 1.5,
+                "scored": 0,
+                "missed": 2
+              }
+            ]
+          },
+          "3": {
+            "title": "Ligue_1 FC 3",
+            "history": [
+              {
+                "date": "2026-09-19 15:00:00",
+                "h_a": "h",
+                "xG": 0.0,
+                "xGA": 0.0,
+                "scored": 0,
+                "missed": 0
+              }
+            ]
+          },
+          "4": {
+            "title": "Ligue_1 FC 4",
+            "history": [
+              {
+                "date": "2026-09-19 15:00:00",
+                "h_a": "a",
+                "xG": 0.0,
+                "xGA": 0.0,
+                "scored": 0,
+                "missed": 0
+              }
+            ]
+          },
+          "5": {
+            "title": "Ligue_1 FC 5",
+            "history": []
+          },
+          "6": {
+            "title": "Ligue_1 FC 6",
+            "history": []
+          }
+        },
+        "players": [],
+        "dates": [
+          {
+            "id": "1",
+            "isResult": true,
+            "h": {
+              "id": "1",
+              "title": "HOME 1"
+            },
+            "a": {
+              "id": "2",
+              "title": "AWAY 2"
+            },
+            "datetime": "2026-08-15 12:00:00",
+            "xG": {
+              "h": "1.5",
+              "a": "0.5"
+            },
+            "goals": {
+              "h": "2",
+              "a": "0"
+            }
+          },
+          {
+            "id": "2",
+            "isResult": true,
+            "h": {
+              "id": "3",
+              "title": "HOME 3"
+            },
+            "a": {
+              "id": "4",
+              "title": "AWAY 4"
+            },
+            "datetime": "2026-09-19 15:00:00",
+            "xG": {
+              "h": "0.0",
+              "a": "0.0"
+            },
+            "goals": {
+              "h": "0",
+              "a": "0"
+            }
+          },
+          {
+            "id": "3",
+            "isResult": false,
+            "h": {
+              "id": "5",
+              "title": "HOME 5"
+            },
+            "a": {
+              "id": "6",
+              "title": "AWAY 6"
+            },
+            "datetime": "2026-11-20 15:00:00",
+            "xG": {
+              "h": null,
+              "a": null
+            },
+            "goals": {
+              "h": null,
+              "a": null
+            }
+          }
+        ]
+      },
+      "response": {
+        "teams": {
+          "1": {
+            "title": "Ligue_1 FC 1",
+            "history": [
+              {
+                "date": "2026-08-15 12:00:00",
+                "h_a": "h",
+                "xG": 1.5,
+                "xGA": 0.5,
+                "scored": 2,
+                "missed": 0
+              }
+            ]
+          },
+          "2": {
+            "title": "Ligue_1 FC 2",
+            "history": [
+              {
+                "date": "2026-08-15 12:00:00",
+                "h_a": "a",
+                "xG": 0.5,
+                "xGA": 1.5,
+                "scored": 0,
+                "missed": 2
+              },
+              {
+                "date": "2026-10-24 18:30:00",
+                "h_a": "h",
+                "xG": 2.25,
+                "xGA": 1.0,
+                "scored": 1,
+                "missed": 1
+              }
+            ]
+          },
+          "3": {
+            "title": "Ligue_1 FC 3",
+            "history": [
+              {
+                "date": "2026-09-19 15:00:00",
+                "h_a": "h",
+                "xG": 0.0,
+                "xGA": 0.0,
+                "scored": 0,
+                "missed": 0
+              },
+              {
+                "date": "2026-10-24 18:30:00",
+                "h_a": "a",
+                "xG": 1.0,
+                "xGA": 2.25,
+                "scored": 1,
+                "missed": 1
+              }
+            ]
+          },
+          "4": {
+            "title": "Ligue_1 FC 4",
+            "history": [
+              {
+                "date": "2026-09-19 15:00:00",
+                "h_a": "a",
+                "xG": 0.0,
+                "xGA": 0.0,
+                "scored": 0,
+                "missed": 0
+              },
+              {
+                "date": "2026-11-02 21:00:00",
+                "h_a": "h",
+                "xG": 0.75,
+                "xGA": 0.5,
+                "scored": 3,
+                "missed": 1
+              }
+            ]
+          },
+          "5": {
+            "title": "Ligue_1 FC 5",
+            "history": [
+              {
+                "date": "2026-11-02 21:00:00",
+                "h_a": "a",
+                "xG": 0.5,
+                "xGA": 0.75,
+                "scored": 1,
+                "missed": 3
+              }
+            ]
+          },
+          "6": {
+            "title": "Ligue_1 FC 6",
+            "history": []
+          }
+        },
+        "players": [],
+        "dates": [
+          {
+            "id": "1",
+            "isResult": true,
+            "h": {
+              "id": "1",
+              "title": "HOME 1"
+            },
+            "a": {
+              "id": "2",
+              "title": "AWAY 2"
+            },
+            "datetime": "2026-08-15 12:00:00",
+            "xG": {
+              "h": "1.5",
+              "a": "0.5"
+            },
+            "goals": {
+              "h": "2",
+              "a": "0"
+            }
+          },
+          {
+            "id": "2",
+            "isResult": true,
+            "h": {
+              "id": "3",
+              "title": "HOME 3"
+            },
+            "a": {
+              "id": "4",
+              "title": "AWAY 4"
+            },
+            "datetime": "2026-09-19 15:00:00",
+            "xG": {
+              "h": "0.0",
+              "a": "0.0"
+            },
+            "goals": {
+              "h": "0",
+              "a": "0"
+            }
+          },
+          {
+            "id": "10",
+            "isResult": true,
+            "h": {
+              "id": "2",
+              "title": "HOME 2"
+            },
+            "a": {
+              "id": "3",
+              "title": "AWAY 3"
+            },
+            "datetime": "2026-10-24 18:30:00",
+            "xG": {
+              "h": "2.25",
+              "a": "1.0"
+            },
+            "goals": {
+              "h": "1",
+              "a": "1"
+            }
+          },
+          {
+            "id": "11",
+            "isResult": true,
+            "h": {
+              "id": "4",
+              "title": "HOME 4"
+            },
+            "a": {
+              "id": "5",
+              "title": "AWAY 5"
+            },
+            "datetime": "2026-11-02 21:00:00",
+            "xG": {
+              "h": "0.75",
+              "a": "0.5"
+            },
+            "goals": {
+              "h": "3",
+              "a": "1"
+            }
+          },
+          {
+            "id": "3",
+            "isResult": false,
+            "h": {
+              "id": "5",
+              "title": "HOME 5"
+            },
+            "a": {
+              "id": "6",
+              "title": "AWAY 6"
+            },
+            "datetime": "2026-11-20 15:00:00",
+            "xG": {
+              "h": null,
+              "a": null
+            },
+            "goals": {
+              "h": null,
+              "a": null
+            }
+          },
+          {
+            "id": "12",
+            "isResult": false,
+            "h": {
+              "id": "1",
+              "title": "HOME 1"
+            },
+            "a": {
+              "id": "6",
+              "title": "AWAY 6"
+            },
+            "datetime": "2026-11-28 17:00:00",
+            "xG": {
+              "h": null,
+              "a": null
+            },
+            "goals": {
+              "h": null,
+              "a": null
+            }
+          }
+        ]
+      },
+      "prior": {
+        "teams": {
+          "1": {
+            "title": "Ligue_1 FC 1",
+            "history": [
+              {
+                "date": "2025-05-18 15:00:00",
+                "h_a": "h",
+                "xG": 1.1,
+                "xGA": 0.9,
+                "scored": 2,
+                "missed": 1
+              }
+            ]
+          }
+        },
+        "players": [],
+        "dates": []
+      }
+    }
+  }
+}
