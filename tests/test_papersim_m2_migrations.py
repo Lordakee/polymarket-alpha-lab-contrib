@@ -1,12 +1,13 @@
 """M2 full papersim catalog proofs (S0, M2 plan sections 3.1 and 6.3).
 
-Offline: the current manifest lists exactly three migrations (the frozen
+Offline: the current manifest lists exactly four migrations (the frozen
 two M1 entries byte-identical to their published hashes, plus the M2
-operations migration), the directory glob matches, and the frozen M1
-fixture stays self-consistent. Native (opt-in disposable cluster): full
-apply from an empty face, upgrade from the M1 nine-table face with M1
-rows unchanged, M2 drift stop with receipt rollback, append protection
-and the new uniqueness contracts.
+operations migration and, since M3/V2, the reporting-views migration),
+the directory glob matches, and the frozen M1 fixture stays
+self-consistent. Native (opt-in disposable cluster): full apply from an
+empty face, upgrade from the M1 nine-table face with M1 rows unchanged,
+M2 drift stop with receipt rollback, append protection and the new
+uniqueness contracts.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -27,8 +28,12 @@ CATALOG_DIR = ROOT / 'database/papersim/migrations'
 MANIFEST_PATH = ROOT / 'database/papersim/migrations.lock.json'
 M2_MIGRATION = ('20261116000000_papersim_m2_operations.sql',
                 '428a8fd5ebf84f945dc4ae78d02f99f61ba39b8743c0bd78b2380e67a013df2d')
-FULL_CATALOG = M1_MIGRATIONS + (M2_MIGRATION,)
+V2_MIGRATION = ('20261116000010_papersim_reporting_views.sql',
+                '87b802b547f1ffc1d25fa3c8cb401ef643fc5a34f35e6450e5bc56261af1a293')
+FULL_CATALOG = M1_MIGRATIONS + (M2_MIGRATION, V2_MIGRATION)
 M2_TABLES = ('command_run_events', 'candidate_marks', 'queue_control_events', 'bankroll_checks')
+PAPERSIM_VIEWS = ('candidate_scoring_view', 'natural_settlement_summary',
+                  'queue_summary_view')
 ENABLED = os.environ.get('POLYMARKET_ALPHA_LAB_RUN_NATIVE_PROJECT_POSTGRES') == '1'
 OWNER_DSN = os.environ.get('PAPERSIM_NATIVE_MANAGED_OWNER_DSN', '')
 NATIVE = pytest.mark.skipif(not ENABLED or not OWNER_DSN,
@@ -54,7 +59,9 @@ def test_full_manifest_lists_the_frozen_m1_pair_plus_the_m2_entry():
 
 def test_full_catalog_hashes_match_file_bytes_and_strip_wrappers():
     catalog = pm.papersim_migration_catalog(ROOT)
-    assert len(catalog) == 3
+    # Full-catalog inventory count 3 -> 4 (M3/V2 option 1: the fourth
+    # managed migration 20261116000010_papersim_reporting_views.sql).
+    assert len(catalog) == 4
     for (name, digest, body), (expected_name, expected_digest) in zip(catalog, FULL_CATALOG,
                                                                       strict=True):
         assert name == expected_name
@@ -121,9 +128,13 @@ def _ledger(owner):
 
 
 def _papersim_tables(owner) -> list:
+    # Restricted to BASE TABLE so the M3/V2 reporting views are not
+    # counted as business relations (M3/V2 option 1); the three
+    # designated views have their own independent assertion below.
     with owner.cursor() as cursor:
         cursor.execute("SELECT table_name FROM information_schema.tables "
-                       "WHERE table_schema = 'papersim' ORDER BY table_name")
+                       "WHERE table_schema = 'papersim' "
+                       "AND table_type = 'BASE TABLE' ORDER BY table_name")
         return [row[0] for row in cursor.fetchall()]
 
 
@@ -160,11 +171,17 @@ def test_native_full_catalog_applies_from_an_empty_face():
     owner_dsn = _fresh_managed_database()
     owner = _connect(owner_dsn, autocommit=False)
     result = pm.apply_pending_migrations(owner, ROOT)
-    assert result == {'applied': 3, 'pending_before': 3}
+    # Fresh-apply inventory count 3 -> 4 migrations (M3/V2 option 1).
+    assert result == {'applied': 4, 'pending_before': 4}
     assert _ledger(owner) == [(name, digest) for name, digest, _ in
                               pm.papersim_migration_catalog(ROOT)]
     assert len(_papersim_tables(owner)) == 13
     with owner.cursor() as cursor:
+        # Independent assertion: exactly the three designated reporting
+        # views exist in the papersim schema (M3/V2 option 1).
+        cursor.execute("SELECT table_name FROM information_schema.views "
+                       "WHERE table_schema = 'papersim' ORDER BY table_name")
+        assert [row[0] for row in cursor.fetchall()] == list(PAPERSIM_VIEWS)
         cursor.execute("SELECT column_name, is_nullable FROM information_schema.columns "
                        "WHERE table_schema = 'papersim' AND table_name = 'scan_runs' "
                        "AND column_name = 'operation_key'")
@@ -192,7 +209,9 @@ def test_native_upgrade_from_the_m1_nine_table_face_preserves_m1_rows(tmp_path):
     app.close()
     owner = _connect(owner_dsn, autocommit=False)
     result = pm.apply_pending_migrations(owner, ROOT)
-    assert result == {'applied': 1, 'pending_before': 1}
+    # From the frozen M1 pair the full catalog now adds exactly the two
+    # post-M1 migrations (M2 operations + the M3/V2 reporting views).
+    assert result == {'applied': 2, 'pending_before': 2}
     assert set(M2_TABLES) <= set(_papersim_tables(owner))
     owner.commit()
     owner.close()

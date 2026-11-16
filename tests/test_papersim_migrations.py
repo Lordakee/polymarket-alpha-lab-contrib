@@ -13,7 +13,8 @@ environment.
 M1 migration history runs against the frozen TWO-entry M1 catalog
 (``tests/papersim_m1_catalog.py``, M2 plan section 6.3) so the original
 "two migrations, nine tables" assertions stay exact; the current full
-manifest including the M2 operations migration is proven in
+manifest (every post-M1 migration, currently the M2 operations and the
+M3/V2 reporting-views entries) is proven in
 ``tests/test_papersim_m2_migrations.py``.
 """
 
