@@ -73,7 +73,7 @@ PREFLIGHT_HEADER_NAMES = frozenset(('accept', 'accept-encoding', 'connection',
                                     'host', 'user-agent'))
 # --- Owner-approved L7-Q2 five-entry bootstrap exception (2026-09-29, section 63) --
 # Closed schemas derived only from the demonstrated diagnostic capture
-# (ubuntu@166.1.232.93:~/pal-artifacts/l7-work/diag/export/pytest-tmp/
+# (pal-dev:~/pal-artifacts/l7-work/diag/export/pytest-tmp/
 # test_supplied_claude_profile_l0/claude-probe/): the real config/.claude.json
 # the CLI wrote (423 bytes, exactly nine bootstrap keys) and the real backup
 # (84 bytes, exactly the two-key pre-migration subset; it is NOT byte-identical

@@ -9,7 +9,7 @@ execution of the same seven-stage shape stays frozen historical evidence
 here relabels that evidence as Linux: Linux acceptance requires this proof to
 actually run on Linux against the pinned PG18 prefix.
 
-Exact server run (ubuntu@166.1.232.93, repository at ~/polymarket-alpha-lab,
+Exact server run (SSH alias pal-dev, repository at ~/polymarket-alpha-lab,
 prefix assembled once and reused verbatim by every stage):
 
     cd ~/polymarket-alpha-lab
