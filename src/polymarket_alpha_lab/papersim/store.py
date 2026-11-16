@@ -50,6 +50,15 @@ BANKROLL_REASONS = ('INITIAL', 'SCAN_ENTRY', 'SETTLE_NATURAL', 'SETTLE_EXIT',
                     'VOIDED_REFUND', 'FEE', 'ADJUSTMENT', 'REVERSAL', 'LEGACY_IMPORT')
 STAKE_SHARE_TOLERANCE = Decimal('0.01')
 
+# M2 closed-loop operations (S0, M2 plan sections 3.1, 3.2 and 5.3).
+COMMAND_PHASES = ('STARTED', 'PREPARED', 'SUCCEEDED', 'FAILED', 'RECOVERY_READ')
+MARK_SAMPLING_KINDS = ('PERIODIC', 'CLOSE')
+QUEUE_CONTROL_KINDS = ('PAUSE', 'RESUME')
+BANKROLL_BASE_REASONS = ('INITIAL', 'ADJUSTMENT', 'LEGACY_IMPORT')
+BANKROLL_TOLERANCE = Decimal('0.005')
+SETTLEMENT_CASH_REASONS = {'NATURAL': 'SETTLE_NATURAL', 'EXIT': 'SETTLE_EXIT',
+                           'VOIDED_REFUND': 'VOIDED_REFUND'}
+
 
 class PapersimStoreError(ValueError):
     """Validation failure carrying one fixed public code."""
@@ -667,3 +676,294 @@ class ScanSubmission:
                        'legacy_source_id': candidate.entry.legacy_source_id,
                        'is_legacy': candidate.entry.is_legacy}}
         return payload
+
+
+# ---------------------------------------------------------------------------
+# M2 closed-loop operations (S0; M2 plan sections 3.1, 3.2, 3.5, 3.6, 5.3).
+# Idempotency is two-layered (plan section 3.2): a stable scheduling
+# identity (operation key / mark identity / check identity) and exact
+# content comparison. Same key + same content returns the original row;
+# same key + changed content is a conflict; nothing is ever updated.
+# ---------------------------------------------------------------------------
+
+def _require_commit40(value, name: str) -> str:
+    if type(value) is not str or len(value) != 40 \
+            or any(c not in '0123456789abcdef' for c in value):
+        _fail(f'papersim_{name}_invalid')
+    return value
+
+
+def _require_positive_int(value, name: str) -> int:
+    if type(value) is not int or value < 1:
+        _fail(f'papersim_{name}_invalid')
+    return value
+
+
+def command_run_event_key(operation_key, attempt, phase) -> str:
+    """Writer-side idempotency key for ``papersim.command_run_events``.
+
+    The scheduling identity (operation key + attempt + phase) is stable:
+    a retry may never mint a fresh identity from the current clock.
+    """
+    if phase not in COMMAND_PHASES:
+        _fail('papersim_phase_invalid')
+    return '|'.join(('cre', _require_text(operation_key, 'operation_key'),
+                     str(_require_positive_int(attempt, 'attempt')), phase))
+
+
+def candidate_mark_key(candidate_id, market_ref_kind, market_ref, side,
+                       source_kind, observed_at) -> str:
+    """Writer-side idempotency key for ``papersim.candidate_marks`` (4.4 shape)."""
+    if type(candidate_id) is not int:
+        _fail('papersim_candidate_id_invalid')
+    return '|'.join(('cm', str(candidate_id), _require_text(market_ref_kind, 'market_ref_kind'),
+                     _require_text(market_ref, 'market_ref'), _require_text(side, 'side'),
+                     _require_text(source_kind, 'source_kind'), utc_stamp(observed_at)))
+
+
+def entry_mark_key(entry_id, source_kind, marked_at) -> str:
+    """Writer-side idempotency key for the ``papersim.marks`` row of a capture."""
+    if type(entry_id) is not int:
+        _fail('papersim_entry_id_invalid')
+    return '|'.join(('mk', str(entry_id), _require_text(source_kind, 'source_kind'),
+                     utc_stamp(marked_at)))
+
+
+def queue_control_key(queue_id, control_kind, rule, rule_version, observed_at) -> str:
+    """Writer-side idempotency key for ``papersim.queue_control_events``."""
+    if control_kind not in QUEUE_CONTROL_KINDS:
+        _fail('papersim_control_kind_invalid')
+    return '|'.join(('qc', _require_text(queue_id, 'queue_id'), control_kind,
+                     _require_text(rule, 'rule'), _require_text(rule_version, 'rule_version'),
+                     utc_stamp(observed_at)))
+
+
+def bankroll_check_key(as_of, code_commit, event_watermark) -> str:
+    """Writer-side idempotency key for ``papersim.bankroll_checks``.
+
+    Day (UTC) + code commit + event watermark: a re-run against an
+    unchanged ledger returns the original receipt; a later watermark is a
+    new appended check, never an overwrite.
+    """
+    if type(event_watermark) is not int or event_watermark < 0:
+        _fail('papersim_event_watermark_invalid')
+    day = _require_timestamp(as_of, 'as_of').astimezone(UTC).strftime('%Y%m%d')
+    return '|'.join(('bc', day, _require_commit40(code_commit, 'code_commit'),
+                     str(event_watermark)))
+
+
+def bankroll_identity_difference(cash_total, deployed_total, initial_and_adjustments,
+                                 realized_net, open_entry_fees) -> Decimal:
+    """C + D - B0 - P_closed_net + F_open_entry (M2 plan section 5.3).
+
+    D is the OPEN PRINCIPAL (stake only); open entry fees enter through
+    their own term so settled and open positions reconcile to the same
+    base funds within the half-cent tolerance.
+    """
+    names = ('cash_total', 'deployed_total', 'initial_and_adjustments',
+             'realized_net', 'open_entry_fees')
+    values = [_as_decimal(_require_number(value, name))
+              for value, name in zip((cash_total, deployed_total, initial_and_adjustments,
+                                      realized_net, open_entry_fees), names, strict=True)]
+    cash, deployed, base, realized, fees = values
+    return cash + deployed - base - realized + fees
+
+
+@dataclass(frozen=True)
+class CandidateMarkCapture:
+    """One periodic or close mark observation of ANY candidate (M2 B2).
+
+    Marks do not depend on entries: rejected and construction-failed
+    candidates keep their periodic marks so scoring stays free of entry
+    selection bias. Value columns use the closed interval [0,1] (mark
+    semantics, mirroring M1 marks): terminal 0/1 prices are legal states
+    while executable quotes stay open-interval in candidate_price_evidence.
+    """
+
+    candidate_id: int = 0
+    sampling_kind: str = 'PERIODIC'
+    observed_at: datetime | None = None
+    market_ref_kind: str = 'market_slug'
+    market_ref: str = ''
+    token_ref: str | None = None
+    side: str = 'YES'
+    bid: Decimal | float | int | None = None
+    ask: Decimal | float | int | None = None
+    mid: Decimal | float | int | None = None
+    last: Decimal | float | int | None = None
+    source_kind: str = 'operator_attestation'
+    source_ref: str | None = None
+    snapshot_sha256: str | None = None
+
+    def validate(self) -> 'CandidateMarkCapture':
+        if type(self.candidate_id) is not int:
+            _fail('papersim_candidate_id_invalid')
+        if self.sampling_kind not in MARK_SAMPLING_KINDS:
+            _fail('papersim_sampling_kind_invalid')
+        if self.market_ref_kind not in MARKET_REF_KINDS:
+            _fail('papersim_market_ref_kind_invalid')
+        _require_text(self.market_ref, 'market_ref')
+        _optional_text(self.token_ref, 'token_ref')
+        if self.side not in SIDE_TOKENS:
+            _fail('papersim_side_token_invalid')
+        _require_timestamp(self.observed_at, 'observed_at')
+        _optional_interval_closed(self.bid, 'bid')
+        _optional_interval_closed(self.ask, 'ask')
+        _optional_interval_closed(self.mid, 'mid')
+        _optional_interval_closed(self.last, 'last')
+        if self.bid is not None and self.ask is not None \
+                and _as_decimal(self.bid) > _as_decimal(self.ask):
+            _fail('papersim_bid_ask_crossed')
+        if all(value is None for value in (self.bid, self.ask, self.mid, self.last)):
+            _fail('papersim_mark_price_missing')
+        _require_text(self.source_kind, 'source_kind')
+        _optional_text(self.source_ref, 'source_ref')
+        _optional_hash64(self.snapshot_sha256, 'snapshot_sha256')
+        return self
+
+    def mark_key(self) -> str:
+        return candidate_mark_key(self.candidate_id, self.market_ref_kind, self.market_ref,
+                                  self.side, self.source_kind, self.observed_at)
+
+    def comparison(self) -> dict:
+        return {'candidate_id': self.candidate_id, 'sampling_kind': self.sampling_kind,
+                'observed_at': self.observed_at, 'market_ref_kind': self.market_ref_kind,
+                'market_ref': self.market_ref, 'token_ref': self.token_ref,
+                'side': self.side, 'bid': self.bid, 'ask': self.ask, 'mid': self.mid,
+                'last': self.last, 'source_kind': self.source_kind,
+                'source_ref': self.source_ref, 'snapshot_sha256': self.snapshot_sha256}
+
+
+@dataclass(frozen=True)
+class SettlementRecord:
+    """One settlement plus its single cash leg, committed atomically (M2 B3).
+
+    Idempotency is the entry_id uniqueness plus exact content comparison:
+    a duplicate settlement of the same entry with different content is a
+    conflict and never an update. ``exit_fee`` is the sell-leg fee used
+    only for the cash leg (proceeds minus exit fee); ``fee_total`` keeps
+    the full settlement fee of the pnl identity (M1 CHECK:
+    ``pnl_net = pnl_gross - fee_total``). The entry fee was already paid
+    in SCAN_ENTRY and is never charged again here.
+    """
+
+    entry_id: int = 0
+    classification: str = ''
+    outcome_label: str | None = None
+    win_loss: str | None = None
+    exit_price: Decimal | float | int | None = None
+    exit_fee: Decimal | float | int = 0
+    proceeds: Decimal | float | int = 0
+    pnl_gross: Decimal | float | int = 0
+    fee_total: Decimal | float | int = 0
+    fee_source: str = 'schedule'
+    pnl_net: Decimal | float | int = 0
+    source_outcome_id: int | None = None
+    exit_mark_id: int | None = None
+    evidence: str | None = None
+    confirmed_by: str = ''
+    confirmed_at: datetime | None = None
+    is_legacy: bool = False
+
+    def validate(self) -> 'SettlementRecord':
+        if type(self.entry_id) is not int:
+            _fail('papersim_entry_id_invalid')
+        validate_settlement_consistency(self.classification, self.win_loss)
+        _optional_interval_closed(self.exit_price, 'exit_price')
+        if self.classification == 'EXIT' and self.exit_price is None:
+            _fail('papersim_settlement_exit_price_missing')
+        exit_fee = _as_decimal(_require_number(self.exit_fee, 'exit_fee'))
+        if exit_fee < 0:
+            _fail('papersim_settlement_exit_fee_invalid')
+        if self.classification != 'EXIT' and exit_fee != 0:
+            _fail('papersim_settlement_exit_fee_invalid')
+        proceeds = _as_decimal(_require_number(self.proceeds, 'proceeds'))
+        if proceeds < 0:
+            _fail('papersim_proceeds_invalid')
+        fee_total = _as_decimal(_require_number(self.fee_total, 'fee_total'))
+        if fee_total < 0:
+            _fail('papersim_fee_total_invalid')
+        pnl_gross = _as_decimal(_require_number(self.pnl_gross, 'pnl_gross'))
+        pnl_net = _as_decimal(_require_number(self.pnl_net, 'pnl_net'))
+        if pnl_net != pnl_gross - fee_total:
+            _fail('papersim_settlement_pnl_mismatch')
+        if self.fee_source not in FEE_SOURCES:
+            _fail('papersim_fee_source_invalid')
+        for name, value in (('source_outcome_id', self.source_outcome_id),
+                            ('exit_mark_id', self.exit_mark_id)):
+            if value is not None and type(value) is not int:
+                _fail(f'papersim_{name}_invalid')
+        _require_text(self.confirmed_by, 'confirmed_by')
+        _require_timestamp(self.confirmed_at, 'confirmed_at')
+        return self
+
+    def cash_reason(self) -> str:
+        return SETTLEMENT_CASH_REASONS[self.classification]
+
+    def cash_amount(self) -> Decimal:
+        amount = _as_decimal(self.proceeds)
+        if self.classification == 'EXIT':
+            amount -= _as_decimal(self.exit_fee)
+        if amount < 0:
+            _fail('papersim_settlement_cash_invalid')
+        return amount
+
+    def event_key(self) -> str:
+        return f'settle:{self.entry_id}'
+
+    def comparison(self) -> dict:
+        return {'classification': self.classification, 'outcome_label': self.outcome_label,
+                'win_loss': self.win_loss, 'exit_price': self.exit_price,
+                'proceeds': self.proceeds, 'pnl_gross': self.pnl_gross,
+                'fee_total': self.fee_total, 'fee_source': self.fee_source,
+                'pnl_net': self.pnl_net, 'source_outcome_id': self.source_outcome_id,
+                'exit_mark_id': self.exit_mark_id, 'evidence': self.evidence,
+                'confirmed_by': self.confirmed_by, 'confirmed_at': self.confirmed_at,
+                'is_legacy': self.is_legacy}
+
+
+@dataclass(frozen=True)
+class BankrollCheckRequest:
+    """Parameters of one daily cash identity check (M2 plan section 5.3).
+
+    The totals themselves are recomputed by the transactional adapter
+    inside one read transaction; this record carries only the check
+    identity, the half-cent tolerance and the evidence digests.
+    """
+
+    as_of: datetime | None = None
+    code_commit: str = ''
+    tolerance: Decimal | float | int = BANKROLL_TOLERANCE
+    queue_id: str | None = None
+    report_digest: str | None = None
+
+    def validate(self) -> 'BankrollCheckRequest':
+        _require_timestamp(self.as_of, 'as_of')
+        _require_commit40(self.code_commit, 'code_commit')
+        if _as_decimal(_require_number(self.tolerance, 'tolerance')) < 0:
+            _fail('papersim_tolerance_invalid')
+        _optional_text(self.queue_id, 'queue_id')
+        _optional_hash64(self.report_digest, 'report_digest')
+        return self
+
+    def key(self, event_watermark: int) -> str:
+        return bankroll_check_key(self.as_of, self.code_commit, event_watermark)
+
+
+@dataclass(frozen=True)
+class BankrollCheckResult:
+    """The persisted outcome of one daily cash identity check."""
+
+    check_id: int
+    check_key: str
+    inserted: bool
+    as_of: datetime
+    event_watermark: int
+    cash_total: Decimal
+    deployed_total: Decimal
+    initial_and_adjustments: Decimal
+    realized_net: Decimal
+    open_entry_fees: Decimal
+    identity_difference: Decimal
+    tolerance: Decimal
+    passed: bool

@@ -914,8 +914,12 @@ def connect(dsn, *, autocommit=False):
 def managed_face():
     from polymarket_alpha_lab.papersim import migrations as pm
     owner = connect(OWNER_DSN)
+    # Cluster-preparation wiring (M2 plan section 6.3): the applied count
+    # follows the CURRENT catalog size; migration-history count assertions
+    # live against the frozen M1 catalog fixture.
+    catalog = pm.papersim_migration_catalog(ROOT)
     result = pm.apply_pending_migrations(owner, ROOT)
-    assert result['applied'] in (0, 1, 2)
+    assert result['applied'] in range(len(catalog) + 1)
     assert pm.migration_status(owner, ROOT)['pending'] == []
     owner.close()
     return OWNER_DSN, APP_DSN
