@@ -53,6 +53,14 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 _SOURCE = ROOT / 'src'
 
+# M3 H2 (CI run 43819998740): bounded-read capacity for the /proc/net/tcp{,6}
+# readers.  A busy CI runner's whole-namespace v4 socket table legitimately
+# exceeds the old 64 KiB ceiling (~430 rows), so a well-formed table up to
+# this limit must parse; anything longer is still 'UNAVAILABLE' (fail-closed
+# stays: truncated read, missing trailing newline, bad header/row, any
+# error).  The read itself stays finite and single-shot.
+_PROC_NET_READ_LIMIT = 1 << 20
+
 
 def _select_adjacent_worktree_source() -> None:
     """This file's own tree is CURRENT; never run an unrelated editable copy."""
@@ -434,6 +442,10 @@ _SEED_STATES = {'01': 'ESTABLISHED', '02': 'SYN_SENT', '03': 'SYN_RECV',
                 '0A': 'LISTEN', '0B': 'CLOSING', '0C': 'NEW_SYN_RECV',
                 '0D': 'BOUND_INACTIVE'}
 
+# Same bounded-read capacity as the test module's _PROC_NET_READ_LIMIT
+# (M3 H2); a longer well-formed table is still UNAVAILABLE, never zero.
+_PROC_NET_READ_LIMIT = 1 << 20
+
 
 def _seed_diag_root():
     """sys.path[0] is the OLD src directory injected by the runner."""
@@ -500,16 +512,17 @@ def _seed_diag_chain(exc):
 def _seed_diag_tcp(name, port):
     """Bounded /proc/net/tcp{,6} counts for the task port only.
 
-    Mirrors _old_seed_tcp_counts semantics: read at most 65537 bytes; a
-    longer (truncated) read, a missing trailing newline or any malformed
-    row yields 'UNAVAILABLE', never a zero count.
+    Mirrors _old_seed_tcp_counts semantics: read at most
+    _PROC_NET_READ_LIMIT bytes; a longer (truncated) read, a missing
+    trailing newline or any malformed row yields 'UNAVAILABLE', never a
+    zero count.
     """
     try:
         with open('/proc/net/' + name, 'rb') as stream:
-            raw = stream.read(65537)
+            raw = stream.read(_PROC_NET_READ_LIMIT + 1)
     except Exception:
         return 'UNAVAILABLE'
-    if len(raw) > 65536 or not raw.endswith(b'\n'):
+    if len(raw) > _PROC_NET_READ_LIMIT or not raw.endswith(b'\n'):
         return 'UNAVAILABLE'
     try:
         lines = raw.decode('ascii').splitlines()
@@ -1000,8 +1013,8 @@ def _old_seed_tcp_counts(path: Path, port: int) -> str:
     }
     try:
         with path.open('rb') as stream:
-            raw = stream.read(65537)
-        if len(raw) > 65536 or not raw.endswith(b'\n'):
+            raw = stream.read(_PROC_NET_READ_LIMIT + 1)
+        if len(raw) > _PROC_NET_READ_LIMIT or not raw.endswith(b'\n'):
             return 'UNAVAILABLE'
         lines = raw.decode('ascii').splitlines()
         if not lines or lines[0].split()[:4] not in (
@@ -1843,7 +1856,7 @@ def _synthetic_seed_proc(monkeypatch, tmp_path, tcp, tcp6, *, port=40000):
 
     class Stream(BytesIO):
         def read(self, size=-1):
-            assert 0 < size <= 65537
+            assert 0 < size <= _PROC_NET_READ_LIMIT + 1
             reads.append(size)
             return super().read(size)
 
@@ -1873,7 +1886,8 @@ def test_old_seed_proc_observer_counts_only_local_and_peer_task_port(monkeypatch
         rig, reads = _synthetic_seed_proc(patch, tmp_path, tcp, tcp6)
         _observe_old_seed_exit(rig)
     out, err = capsys.readouterr()
-    assert err == '' and reads == [65537, 65537]
+    assert err == '' and reads == [_PROC_NET_READ_LIMIT + 1,
+                                  _PROC_NET_READ_LIMIT + 1]
     assert out == ('OLD_SEED_AFTER_CHILD_EXIT OWNER_UNKNOWN '
                    'tcp={"local":{"LISTEN":1,"TIME_WAIT":2},'
                    '"peer":{"ESTABLISHED":1,"TIME_WAIT":1}} '
@@ -1883,7 +1897,8 @@ def test_old_seed_proc_observer_counts_only_local_and_peer_task_port(monkeypatch
 
 @pytest.mark.parametrize('unavailable', [
     PermissionError('PRIVATE_SENTINEL'), FileNotFoundError('PRIVATE_SENTINEL'),
-    b'x' * 65537, b'sl local_address rem_address st\n0: 0100007F:9C40',
+    b'x' * (_PROC_NET_READ_LIMIT + 1),
+    b'sl local_address rem_address st\n0: 0100007F:9C40',
     b'', b'wrong header\n', b'sl local_address rem_address st\nmalformed\n',
     b'sl local_address rem_address st\n0: 0100007F:9C40 0100007F:9C41 FF\n',
     b'sl local_address rem_address st\n0: PRIVATE_SENTINEL 0100007F:9C40 06\n',
@@ -1917,6 +1932,59 @@ def test_old_seed_proc_observer_refuses_root_outside_fixture(monkeypatch, tmp_pa
         rig['original'] = tmp_path.parent / 'another-root'
         _observe_old_seed_exit(rig)
     assert reads == [] and 'tcp=UNAVAILABLE tcp6=UNAVAILABLE' in capsys.readouterr().out
+
+
+def _large_proc_net_table(min_bytes, task_time_wait_rows):
+    """Well-formed /proc/net/tcp table padded to at least `min_bytes`:
+    exactly `task_time_wait_rows` local TIME_WAIT rows on the task port
+    40000 (0x9C40); filler rows use unrelated ports only (the reader
+    validates endpoints/states, not sl uniqueness, mirroring
+    _seed_wait_busy's repeated '0:' rows)."""
+    rows = ['sl local_address rem_address st']
+    rows.extend(
+        '0: 0100007F:9C40 0100007F:9C51 06 PRIVATE_SENTINEL'
+        for _ in range(task_time_wait_rows))
+    filler = '0: 0100007F:9C50 0100007F:9C51 01 PRIVATE_SENTINEL'
+    base = len(('\n'.join(rows) + '\n').encode('ascii'))
+    count = max(0, -(-(min_bytes - base) // (len(filler) + 1)))
+    rows.extend([filler] * count)
+    table = ('\n'.join(rows) + '\n').encode('ascii')
+    assert len(table) >= min_bytes
+    return table
+
+
+def test_old_seed_proc_observer_parses_over_64kib_wellformed_table(
+        monkeypatch, tmp_path, capsys):
+    # M3 H2 (native CI run 43819998740): a busy runner's /proc/net/tcp
+    # legitimately exceeds the old 64 KiB bounded read; a well-formed
+    # larger table must still parse and count only the task port.
+    table = _large_proc_net_table(70000, 12)
+    with monkeypatch.context() as patch:
+        rig, reads = _synthetic_seed_proc(patch, tmp_path, table,
+                                          b'sl local_address remote_address st\n')
+        _observe_old_seed_exit(rig)
+    out, err = capsys.readouterr()
+    assert err == ''
+    assert reads == [_PROC_NET_READ_LIMIT + 1, _PROC_NET_READ_LIMIT + 1]
+    assert out == ('OLD_SEED_AFTER_CHILD_EXIT OWNER_UNKNOWN '
+                   'tcp={"local":{"TIME_WAIT":12},"peer":{}} '
+                   'tcp6={"local":{},"peer":{}}\n')
+    assert 'PRIVATE_SENTINEL' not in out and '0100007F' not in out
+
+
+def test_old_seed_proc_observer_over_limit_wellformed_table_is_unavailable(
+        monkeypatch, tmp_path, capsys):
+    # Fail-closed is unchanged (M3 H2): even a perfectly well-formed table
+    # beyond _PROC_NET_READ_LIMIT stays UNAVAILABLE, never a partial count.
+    table = _large_proc_net_table(_PROC_NET_READ_LIMIT + 2, 12)
+    with monkeypatch.context() as patch:
+        rig, _ = _synthetic_seed_proc(patch, tmp_path, table,
+                                      b'sl local_address remote_address st\n')
+        _observe_old_seed_exit(rig)
+    out, err = capsys.readouterr()
+    assert err == ''
+    assert out == ('OLD_SEED_AFTER_CHILD_EXIT OWNER_UNKNOWN tcp=UNAVAILABLE '
+                   'tcp6={"local":{},"peer":{}}\n')
 
 
 # ----------------------------------------------------------------------------
@@ -2030,7 +2098,7 @@ def _seed_diag_proc_open(monkeypatch, tcp, tcp6):
 
 
 @pytest.mark.parametrize('content', [
-    b'x' * 65537,
+    b'x' * (_PROC_NET_READ_LIMIT + 1),
     b'sl local_address rem_address st\n0: 0100007F:9C40',
     b'',
     b'wrong header\n',
@@ -2076,6 +2144,26 @@ def test_seed_diag_tcp_counts_only_task_port(monkeypatch):
         'peer': {'ESTABLISHED': 1}}
     assert namespace['_seed_diag_tcp']('tcp', 40003) == {'local': {},
                                                          'peer': {}}
+
+
+def test_seed_diag_tcp_parses_over_64kib_wellformed_table(monkeypatch):
+    # M3 H2 mirrors the observer probe: the payload-side bounded reader
+    # must also parse a well-formed table larger than the old 64 KiB cap.
+    namespace = _seed_diag_exec()
+    _seed_diag_proc_open(monkeypatch, _large_proc_net_table(70000, 12),
+                         b'sl local_address remote_address st\n')
+    assert namespace['_seed_diag_tcp']('tcp', 40000) == {
+        'local': {'TIME_WAIT': 12}, 'peer': {}}
+
+
+def test_seed_diag_tcp_over_limit_wellformed_table_is_unavailable(monkeypatch):
+    # Fail-closed is unchanged (M3 H2) on the payload side too: a
+    # well-formed table beyond _PROC_NET_READ_LIMIT is still UNAVAILABLE.
+    namespace = _seed_diag_exec()
+    _seed_diag_proc_open(monkeypatch, _large_proc_net_table(
+        _PROC_NET_READ_LIMIT + 2, 12),
+        b'sl local_address remote_address st\n')
+    assert namespace['_seed_diag_tcp']('tcp', 40000) == 'UNAVAILABLE'
 
 
 def test_seed_diag_chain_terminates_on_cycles():
