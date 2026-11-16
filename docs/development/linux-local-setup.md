@@ -168,10 +168,12 @@ flags exist.
 
 ## Platform boundary notes
 
-- The recorded development host (`ubuntu@166.1.232.93`) is a shared,
-  development-only machine. It holds no provider credentials; real research
-  activation requires a separately approved Linux operating installation and
-  concrete execution authorization (DELIVERY_PLAN.md section 61).
+- The recorded development host (project SSH alias `pal-dev`; the actual
+  HostName/User are kept in each operator's own SSH configuration, never in
+  this repository) is a shared, development-only machine. It holds no
+  provider credentials; real research activation requires a separately
+  approved Linux operating installation and concrete execution
+  authorization (DELIVERY_PLAN.md section 61).
 - Do not copy `.local`, clusters, backups or credentials between platforms or
   machines. Moving an existing Windows cluster is outside the Linux pivot; a
   later business-history transfer would be a separately reviewed migration

@@ -18,7 +18,7 @@ Target tuple: Ubuntu 26.04.1 x86_64, Python 3.12.14, pinned PostgreSQL 18
     find ~/pg-runtime-src -type l -ls    # evidence line; must print nothing
     test "$(find ~/pg-runtime-src -type l | wc -l)" -eq 0
 
-Run on the Linux development host (ubuntu@166.1.232.93) with:
+Run on the Linux development host (SSH alias pal-dev) with:
 
     POLYMARKET_ALPHA_LAB_RUN_NATIVE_DISTRIBUTION=1 \\
     POLYMARKET_ALPHA_LAB_NATIVE_PG_PREFIX=$HOME/pg-runtime-src \\

@@ -201,7 +201,7 @@ KAPPA = LeagueStrengthTable(
 #: production table from 2026-11-06 (WP-P2b validation) until the
 #: WP-P5 swap on 2026-11-10, archived verbatim at
 #: ``~/paper-sim/round31/raw/league_strength_kappa.json`` (server
-#: ubuntu@154.89.153.24): an in-sample fit over the full three-season
+#: pal-dev): an in-sample fit over the full three-season
 #: UCL/UEL window (n=835, ridge_lambda 15, UEFA-coefficient ridge
 #: targets, nuisance at the 0.300105 cap) that reused the Understat
 #: 2025/26 club multipliers for the earlier seasons. The WP-P5 refit
