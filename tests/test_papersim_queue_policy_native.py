@@ -49,8 +49,9 @@ def managed_face():
     store_psycopg = adapter()
     owner = store_psycopg.connect_explicit(
         OWNER_DSN, label='PAPERSIM_NATIVE_MANAGED_OWNER_DSN')
+    catalog = pm.papersim_migration_catalog(ROOT)
     result = pm.apply_pending_migrations(owner, ROOT)
-    assert result['applied'] in (0, 1, 2)
+    assert result['applied'] in range(len(catalog) + 1)
     assert pm.migration_status(owner, ROOT)['pending'] == []
     owner.close()
     return OWNER_DSN, APP_DSN
