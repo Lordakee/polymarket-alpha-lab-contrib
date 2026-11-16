@@ -310,13 +310,13 @@ def _package_root_bound_names(tree: ast.Module) -> set[str]:
 
 def _package_root_problems(tree: ast.Module, service_names: set[str]) -> list[str]:
     problems: list[str] = []
-    canonical = [n for n in tree.body if isinstance(n, ast.ImportFrom) and n.module == PRODUCTION_IMPORT]
-    members = sorted(a.name for n in canonical for a in n.names)
-    if len(canonical) != 1 or members != sorted(SERVICE_EXPORTS):
-        problems.append(f"the package root must import exactly the three Node 7 service names from {PRODUCTION_IMPORT}")
-    problems.extend(f"line {n.lineno}: package-root service import must not use aliases" for n in canonical for a in n.names if a.asname is not None)
-    problems.extend(f"line {n.lineno}: the service module must be imported at module top level" for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module == PRODUCTION_IMPORT and n not in tree.body)
-    problems.extend(f"line {n.lineno}: direct module import of the service module is not the export form" for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names if a.name == PRODUCTION_IMPORT)
+    problems.extend(f"line {n.lineno}: package root must not import the service module directly" for n in ast.walk(tree) if isinstance(n, ast.Import) and any(a.name == PRODUCTION_IMPORT for a in n.names))
+    problems.extend(f"line {n.lineno}: package root must not eagerly import from the service module" for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module == PRODUCTION_IMPORT)
+    tables = [ast.literal_eval(node.value) for node in ast.walk(tree) if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None and any(isinstance(t, ast.Name) and t.id == "_EXPORT_PROVIDERS" for t in (node.targets if isinstance(node, ast.Assign) else [node.target]))]
+    if len(tables) != 1: problems.append("package root must declare exactly one _EXPORT_PROVIDERS export table")
+    table = tables[0] if tables else {}
+    if {name for name, (module_name, _attribute) in table.items() if module_name == PRODUCTION_IMPORT} != set(SERVICE_EXPORTS): problems.append(f"package root must map exactly the three Node 7 service names to {PRODUCTION_IMPORT} in _EXPORT_PROVIDERS")
+    problems.extend(f"service export '{name}' must resolve to its own attribute in _EXPORT_PROVIDERS" for name in SERVICE_EXPORTS if table.get(name) != (PRODUCTION_IMPORT, name))
     bound = _package_root_bound_names(tree)
     problems.extend(f"package root must bind service export '{name}'" for name in SERVICE_EXPORTS if name not in bound)
     problems.extend(f"package root leaks non-export Node 7 name '{name}'" for name in sorted(bound & (service_names - set(SERVICE_EXPORTS))))
@@ -447,14 +447,14 @@ CLASS_MUTATIONS = (
     ('flag_false', 'readonly: bool = True', 'readonly: bool = False'), ('flag_missing', '    readonly: bool = True\n', ''),
     ('flag_wrong_annotation', 'paper_only: bool', 'paper_only: object'), ('flag_no_default', 'paper_only: bool = True', 'paper_only: bool'),)
 ROOT_SYNTHETIC_SERVICE_NAMES = set(SERVICE_EXPORTS) | {"_combine_publication_status", "_merge_reason_codes"}
-_ROOT_TRIO = ("from polymarket_alpha_lab.crypto_btc_forecast_service import CryptoBtcForecastServiceInput, "
-              "CryptoBtcForecastServiceResult, evaluate_and_persist_crypto_btc_forecast\n")
-PACKAGE_ROOT_CLEAN_CASE = _ROOT_TRIO + '__all__ = ["CryptoBtcForecastServiceInput", "CryptoBtcForecastServiceResult", "evaluate_and_persist_crypto_btc_forecast"]\n'
+_ROOT_TRIO = "from polymarket_alpha_lab.crypto_btc_forecast_service import CryptoBtcForecastServiceInput, CryptoBtcForecastServiceResult, evaluate_and_persist_crypto_btc_forecast\n"
+_ROOT_TABLE = "_EXPORT_PROVIDERS = {\n" + "".join(f'    "{name}": ("{PRODUCTION_IMPORT}", "{name}"),\n' for name in SERVICE_EXPORTS) + "}\n"
+_ROOT_ALL = '__all__ = ["CryptoBtcForecastServiceInput", "CryptoBtcForecastServiceResult", "evaluate_and_persist_crypto_btc_forecast"]\n'
+PACKAGE_ROOT_CLEAN_CASE = _ROOT_TABLE + _ROOT_ALL
 PACKAGE_ROOT_REJECT_CASES = (
-    ('missing_result_class', 'from polymarket_alpha_lab.crypto_btc_forecast_service import CryptoBtcForecastServiceInput, evaluate_and_persist_crypto_btc_forecast\n'), ('extra_service_member', _ROOT_TRIO + 'from polymarket_alpha_lab.crypto_btc_forecast_service import _combine_publication_status\n'),
-    ('asname_binding', 'from polymarket_alpha_lab.crypto_btc_forecast_service import evaluate_and_persist_crypto_btc_forecast as run_crypto_btc_forecast\n' + _ROOT_TRIO), ('conditional_import', 'if True:\n    ' + _ROOT_TRIO),
-    ('nested_import', 'def helper():\n    ' + _ROOT_TRIO), ('direct_module_import', 'import polymarket_alpha_lab.crypto_btc_forecast_service\n'),
-    ('extra_name_assign', _ROOT_TRIO + '_merge_reason_codes = None\n'),)
+    ('missing_result_class', _ROOT_TABLE.replace(f'    "CryptoBtcForecastServiceResult": ("{PRODUCTION_IMPORT}", "CryptoBtcForecastServiceResult"),\n', "") + _ROOT_ALL), ('extra_service_member', _ROOT_TABLE[:-2] + f'    "_combine_publication_status": ("{PRODUCTION_IMPORT}", "_combine_publication_status"),\n' + "}\n" + _ROOT_ALL), ('aliased_attribute', _ROOT_TABLE.replace(f'("{PRODUCTION_IMPORT}", "CryptoBtcForecastServiceResult")', f'("{PRODUCTION_IMPORT}", "RenamedResult")') + _ROOT_ALL),
+    ('foreign_provider', _ROOT_TABLE.replace(f'("{PRODUCTION_IMPORT}", "CryptoBtcForecastServiceResult")', '("polymarket_alpha_lab.team_forecast_packet", "CryptoBtcForecastServiceResult")') + _ROOT_ALL), ('second_table', _ROOT_TABLE + _ROOT_TABLE + _ROOT_ALL), ('eager_import_returned', _ROOT_TRIO + _ROOT_TABLE + _ROOT_ALL),
+    ('missing_table', _ROOT_ALL), ('direct_module_import', f"import {PRODUCTION_IMPORT}\n" + _ROOT_TABLE + _ROOT_ALL), ('extra_name_assign', _ROOT_TABLE + "_merge_reason_codes = None\n" + _ROOT_ALL),)
 
 
 def _conforming_module() -> str:

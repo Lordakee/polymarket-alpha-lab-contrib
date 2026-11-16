@@ -73,6 +73,13 @@ def _install_metrics_api_stub_for_package_import() -> None:
     sys.modules[METRICS_MODULE] = module
 
 
+# M3-A1 (FX-20) lazy root: importing cli no longer preloads the provider
+# modules through the package root, so the stub installer below would always
+# run and permanently shadow the real metrics module in sys.modules for every
+# later-collected test module. Import the real module first so the baseline
+# (eager root) condition -- real module already in sys.modules, stub inert --
+# is restored.
+importlib.import_module(METRICS_MODULE)
 _install_metrics_api_stub_for_package_import()
 
 from polymarket_alpha_lab import cli
