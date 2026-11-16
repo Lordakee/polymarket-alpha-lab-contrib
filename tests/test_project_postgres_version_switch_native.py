@@ -1126,6 +1126,24 @@ def _old_payload(rig, name: str, text: str, *arguments, timeout: int = 900):
     return result
 
 
+def _old_cli_bind(rig, *arguments, timeout: int = 900,
+                  _clock=None, _sleep=None) -> subprocess.CompletedProcess:
+    """`_old_cli` for the CLI command that starts the frozen OLD engine and
+    so reaches _start's no-reuse port precheck (`up` binds the task port
+    like every session-opening payload): the same bounded readiness wait
+    (codex DECISION 4, R03-fix semantics) runs first, so a lingering local
+    TIME_WAIT from an earlier phase is waited out instead of mis-refused
+    as project_postgres_port_in_use (errno 98).  Exactly one child starts
+    after the wait; a failing child keeps its first error, stderr and exit
+    code verbatim, with no automatic re-run.  Non-bind commands (status,
+    down, install-runtime, init, backup, verify-backup) keep plain
+    _old_cli semantics and never wait.  Production callers use the real
+    clock/sleep defaults; the injectable pair exists only for the offline
+    synthetic probes."""
+    _wait_for_old_port_ready(rig, _clock=_clock, _sleep=_sleep)
+    return _old_cli(rig, *arguments, timeout=timeout)
+
+
 def _old_bind_payload(rig, name: str, text: str, *arguments, timeout: int = 900,
                       _clock=None, _sleep=None):
     """`_old_payload` for payloads that open a session and therefore bind
@@ -1257,7 +1275,7 @@ def prove_lifecycle_and_prepare_cold_backup(rig) -> None:
     assert outcomes[0].to_dict() == rig['records'][RECORD_IDS[0]]
     del rig['drain_session']
     assert ProjectPostgres(original).status()['status'] == 'stopped'
-    started = _old_cli(rig, '--root', str(original), 'up')
+    started = _old_cli_bind(rig, '--root', str(original), 'up')
     assert _json_stdout(started)['status'] == 'running'
     with ProjectPostgres(original).session() as borrowed:
         assert borrowed.inspect(record_id=RECORD_IDS[0]).to_dict() == \
@@ -2532,6 +2550,154 @@ def test_old_bind_payload_unavailable_fails_without_starting_payload(
     assert events == []
     out = capsys.readouterr().out
     assert 'tcp=UNAVAILABLE' in out
+
+
+# ----------------------------------------------------------------------------
+# M3 H1 (plan section 7.3): the same bounded readiness wait now also guards
+# the ONE OLD CLI command that binds the frozen engine -- `up` -- through
+# _old_cli_bind, while every non-bind _old_cli call keeps its exact
+# semantics.  Offline probes only: synthetic /proc rows, fake clock/sleep,
+# fake child; no native bind, no SQL, no PG.
+# ----------------------------------------------------------------------------
+
+
+def _old_cli_children(monkeypatch, events, *, returncode=0,
+                      stdout=b'{"status": "running"}', stderr=b''):
+    """Fake CLI child: record the exact command once; never spawn a process."""
+
+    def run(*args, **kwargs):
+        events.append(('run', list(args[0]), kwargs.get('timeout')))
+        return subprocess.CompletedProcess(args[0], returncode, stdout, stderr)
+
+    monkeypatch.setitem(globals(), '_run', run)
+
+
+def test_old_cli_bind_zero_time_wait_runs_up_immediately(
+        monkeypatch, tmp_path, capsys):
+    _old_bind_proc(monkeypatch, [('tcp', _seed_wait_clean()),
+                                 ('tcp6', _seed_wait_clean6())])
+    events = []
+    _old_cli_children(monkeypatch, events)
+    sleeps = []
+
+    def fake_sleep(seconds):
+        sleeps.append(seconds)
+
+    result = _old_cli_bind(_old_bind_rig(tmp_path), '--root', 'synthetic-root',
+                           'up', _clock=_FakeClock([0.0, 0.0]), _sleep=fake_sleep)
+    # Exactly one child, started immediately with the exact _old_cli command
+    # and default timeout; nothing slept, nothing re-run.
+    assert result.returncode == 0 and sleeps == []
+    assert len(events) == 1 and events[0][0] == 'run'
+    assert events[0][1][:5] == ['synthetic-python', '-I', '-B', '-c', _OLD_ENTRY]
+    assert events[0][1][-4:] == ['project_database.py', '--root',
+                                  'synthetic-root', 'up']
+    assert events[0][2] == 900
+    out = capsys.readouterr().out
+    assert out.count('OLD_SEED_WAIT_BEFORE') == 1
+    assert out.count('OLD_SEED_WAIT_AFTER') == 1
+    assert 'elapsed_s=0.000' in out
+    assert 'PRIVATE_SENTINEL' not in out
+
+
+def test_old_cli_bind_waits_until_local_time_wait_clears(
+        monkeypatch, tmp_path, capsys):
+    _old_bind_proc(monkeypatch, [
+        ('tcp', _seed_wait_busy(1)), ('tcp6', _seed_wait_clean6()),
+        ('tcp', _seed_wait_busy(1)), ('tcp6', _seed_wait_clean6()),
+        ('tcp', _seed_wait_clean()), ('tcp6', _seed_wait_clean6()),
+    ])
+    events = []
+    _old_cli_children(monkeypatch, events)
+
+    def fake_sleep(seconds):
+        events.append(('sleep', seconds))
+
+    result = _old_cli_bind(_old_bind_rig(tmp_path), '--root', 'synthetic-root',
+                           'up', _clock=_FakeClock([0.0, 1.0, 2.0, 3.0]),
+                           _sleep=fake_sleep)
+    assert result.returncode == 0
+    # Both polls ran strictly before the single child started.
+    assert [event[0] for event in events] == ['sleep', 'sleep', 'run']
+    assert len(events) == 3 and events[2][1][-1] == 'up'
+    out = capsys.readouterr().out
+    assert out.count('OLD_SEED_WAIT_BEFORE') == 1
+    assert 'OLD_SEED_WAIT_AFTER' in out and 'elapsed_s=3.000' in out
+    assert 'PRIVATE_SENTINEL' not in out
+
+
+def test_old_cli_bind_timeout_fails_without_starting_child(
+        monkeypatch, tmp_path, capsys):
+    _old_bind_proc(monkeypatch, [('tcp', _seed_wait_busy(3)),
+                                 ('tcp6', _seed_wait_clean6())])
+    events = []
+    _old_cli_children(monkeypatch, events)
+
+    with pytest.raises(pytest.fail.Exception, match='OLD_SEED_WAIT_TIMEOUT'):
+        _old_cli_bind(_old_bind_rig(tmp_path), '--root', 'synthetic-root', 'up',
+                      _clock=_FakeClock([0.0, 100.0, 100.0]),
+                      _sleep=lambda seconds: None)
+    assert events == []
+    out = capsys.readouterr().out
+    assert 'OLD_SEED_WAIT_BEFORE' in out and 'OLD_SEED_WAIT_AFTER' not in out
+
+
+def test_old_cli_bind_unavailable_fails_without_starting_child(
+        monkeypatch, tmp_path, capsys):
+    _old_bind_proc(monkeypatch, [('tcp', b'garbage\n'),
+                                 ('tcp6', _seed_wait_clean6())])
+    events = []
+    _old_cli_children(monkeypatch, events)
+
+    with pytest.raises(pytest.fail.Exception, match='OLD_SEED_WAIT_UNAVAILABLE'):
+        _old_cli_bind(_old_bind_rig(tmp_path), '--root', 'synthetic-root', 'up',
+                      _clock=_FakeClock([0.0, 0.0]),
+                      _sleep=lambda seconds: None)
+    assert events == []
+    out = capsys.readouterr().out
+    assert 'tcp=UNAVAILABLE' in out
+
+
+def test_old_cli_bind_child_failure_returned_verbatim_without_retry(
+        monkeypatch, tmp_path, capsys):
+    _old_bind_proc(monkeypatch, [('tcp', _seed_wait_clean()),
+                                 ('tcp6', _seed_wait_clean6())])
+    events = []
+    _old_cli_children(monkeypatch, events, returncode=1,
+                      stdout=b'{"reason_code": "synthetic_up_failure"}',
+                      stderr=b'synthetic up first error\n')
+
+    result = _old_cli_bind(_old_bind_rig(tmp_path), '--root', 'synthetic-root',
+                           'up', _clock=_FakeClock([0.0, 0.0]),
+                           _sleep=lambda seconds: None)
+    # The wait completed, the child failed once and its first error, stderr
+    # and exit code are returned as-is; `up` is not re-run.
+    assert result.returncode == 1
+    assert result.stdout == b'{"reason_code": "synthetic_up_failure"}'
+    assert result.stderr == b'synthetic up first error\n'
+    assert len(events) == 1 and events[0][0] == 'run'
+    out = capsys.readouterr().out
+    assert 'OLD_SEED_WAIT_AFTER' in out
+
+
+def test_old_cli_nonbind_commands_do_not_wait(monkeypatch, tmp_path, capsys):
+    real_open = Path.open
+
+    def opened(path, mode='rb', *args, **kwargs):
+        assert not path.as_posix().startswith('/proc/net/tcp'), \
+            'non-bind OLD CLI commands must not read /proc or wait'
+        return real_open(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, 'open', opened)
+    events = []
+    _old_cli_children(monkeypatch, events)
+
+    result = _old_cli(_old_bind_rig(tmp_path), '--root', 'synthetic-root',
+                      'status')
+    assert result.returncode == 0 and len(events) == 1
+    assert events[0][1][-1] == 'status'
+    out = capsys.readouterr().out
+    assert 'OLD_SEED_WAIT_BEFORE' not in out
 
 
 def test_echo_seed_child_stderr_verbatim_on_failure(capsys):
