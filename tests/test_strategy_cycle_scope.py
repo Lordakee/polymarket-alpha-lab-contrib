@@ -331,6 +331,22 @@ def test_strategy_cycle_does_not_define_forbidden_live_or_advice_surface_names()
         )
 
 
+def package_root_export_providers(tree):
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+            value = node.value
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            targets = [node.target]
+            value = node.value
+        else:
+            continue
+        for target in targets:
+            if isinstance(target, ast.Name) and target.id == "_EXPORT_PROVIDERS":
+                return ast.literal_eval(value)
+    raise AssertionError("_EXPORT_PROVIDERS table missing from package root")
+
+
 def test_package_root_exports_strategy_cycle_api_only():
     tree = parse_module(PACKAGE_ROOT_PATH)
     package_exports = module_exports(tree)
@@ -339,14 +355,18 @@ def test_package_root_exports_strategy_cycle_api_only():
     for name in strategy_cycle_exports(package_exports):
         assert not public_export_fragment_matches(name), name
 
-    imported_names = set()
-    for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.ImportFrom)
-            and node.module == "polymarket_alpha_lab.strategy_cycle"
-        ):
-            imported_names.update(alias.name for alias in node.names)
-    assert imported_names == set(EXPECTED_EXPORTS)
+    # M3-A1 (FX-20) lazy root: the provider-discipline guard pins the
+    # _EXPORT_PROVIDERS mapping instead of eager import statements.
+    export_providers = package_root_export_providers(tree)
+    provider_module = "polymarket_alpha_lab.strategy_cycle"
+    provided_names = {
+        name
+        for name, (module_name, _attribute) in export_providers.items()
+        if module_name == provider_module
+    }
+    assert provided_names == set(EXPECTED_EXPORTS)
+    for name in EXPECTED_EXPORTS:
+        assert export_providers[name] == (provider_module, name), name
 
 
 def test_readme_strategy_cycle_sections_keep_paper_boundaries():
