@@ -280,18 +280,19 @@ def __getattr__(name: str):
         from polymarket_alpha_lab.papersim.cli import main
 
         return main
-    if name in _INTL_EXPORTS:
+    if name in _INTL_EXPORTS or name in {"intl_data", "intl_model"}:
         from importlib import import_module
 
-        module, attr = _INTL_EXPORTS[name]
-        value = getattr(import_module(f".{module}", __name__), attr)
+        module_name, attr = _INTL_EXPORTS.get(name, (name, None))
+        module = import_module(f".{module_name}", __name__)
+        value = module if attr is None else getattr(module, attr)
         globals()[name] = value
         return value
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def __dir__() -> list[str]:
-    return sorted(set(globals()) | _INTL_EXPORTS.keys())
+    return sorted(set(globals()) | _INTL_EXPORTS.keys() | {"intl_data", "intl_model"})
 
 
 __all__ = [
