@@ -468,11 +468,20 @@ def _market_probability(raw: object) -> float | None:
 
 
 def _regular_time_rules(raw: object) -> bool:
+    """Require a standalone regulation-time scope without a conflicting period."""
     rules = " ".join(str(raw or "").casefold().split())
     return bool(
-        re.search(r"\b(?:first )?90 minutes of (?:regular|regulation) play plus stoppage time\b", rules)
+        re.search(
+            r"(?:^|[.!?] )this market refers (?:only )?to the outcome within the "
+            r"(?:first )?90 minutes of (?:regular|regulation) play plus stoppage time\.(?= |$)",
+            rules,
+        )
         and not re.search(
-            r"\b(?:extra[ -]time|overtime|penalt(?:y|ies) shoot[ -]?outs?|spot kicks)\b",
+            r"\b(?:extra[ -]time|overtime|penalt(?:y|ies) shoot[ -]?outs?|spot kicks"
+            r"|(?:first|second|1st|2nd|opening|closing)[ \-–‐‑]+half|half[ \-–‐‑]?time"
+            r"|(?:first|second|third|fourth|[1-4](?:st|nd|rd|th))[ -]+(?:quarter|period)"
+            r"|(?:quarter|period)[ -]+[1-4]"
+            r"|(?:first|last|opening|closing|final)[ -]+[0-8]?\d[ -]+minutes?)\b",
             rules,
         )
     )
@@ -2601,7 +2610,10 @@ def main(argv: list[str] | None = None) -> int:
         help="skip networked Polymarket closings and still check any supplied local board",
     )
     validate_parser.add_argument("--self-check-samples", type=int, default=12)
-    validate_parser.add_argument("--revision", default="uncommitted WP-INTL-2 modules (intl_data + intl_model)")
+    validate_parser.add_argument(
+        "--revision", default="uncommitted WP-INTL-2 modules (intl_data + intl_model)",
+        help="exact Git commit under validation, recorded in the report",
+    )
 
     shadow_parser = subparsers.add_parser("shadow", help="record pretip model-vs-market rows for an NL matchday")
     shadow_parser.add_argument("--snapshot", required=True, help="intl snapshot JSON path")

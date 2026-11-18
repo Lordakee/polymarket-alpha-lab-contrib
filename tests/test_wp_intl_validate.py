@@ -362,6 +362,11 @@ def test_frozen_board_compares_only_identified_over_outcome(tmp_path):
     market = total_market(
         observed_utc=BEFORE.isoformat(), outcomes='["Under", "Over"]',
         outcomePrices='["0.42", "0.58"]',
+        description=(
+            total_market()["description"]
+            + " If the game is abandoned and has no official result, this market will resolve 50-50."
+            + " If the final score is unavailable within 2 hours, official results may be used."
+        ),
     )
     _, totals, _ = _collect_board(_write_board(tmp_path / "board.json", BEFORE, [market]))
     assert len(totals) == 1
@@ -369,6 +374,22 @@ def test_frozen_board_compares_only_identified_over_outcome(tmp_path):
     assert totals[0]["condition_id"] == "total-condition"
     assert totals[0]["token"] == "1002"
     assert totals[0]["pm_raw"] == 0.58
+
+
+@pytest.mark.parametrize("replace_scope", [True, False])
+def test_frozen_board_rejects_first_half_settlement_even_with_regulation_text(tmp_path, replace_scope):
+    description = total_market()["description"]
+    if replace_scope:
+        description = description.replace(
+            "This market refers only to the outcome within the first 90 minutes of regular play plus stoppage time.",
+            "Only goals in the first half of the 90 minutes of regular play plus stoppage time count toward settlement.",
+        )
+    else:
+        description += " Only first-half goals count toward settlement."
+    market = total_market(description=description, observed_utc=BEFORE.isoformat())
+    _, totals, failures = _collect_board(_write_board(tmp_path / "board.json", BEFORE, [market]))
+    assert totals == []
+    assert any("full-match O/U 2.5 contract" in item["reason"] for item in failures)
 
 
 def test_frozen_board_compares_three_distinct_regular_time_moneylines(tmp_path):
@@ -385,8 +406,8 @@ def test_frozen_board_compares_three_distinct_regular_time_moneylines(tmp_path):
             clobTokenIds=[str(2000 + 2 * index), str(2001 + 2 * index)],
             observed_utc=BEFORE.isoformat(),
             description=(
-                "In the UEFA Nations League game between AAA and BBB, this market "
-                "refers to the outcome within the first 90 minutes of regular play plus stoppage time."
+                "This is a UEFA Nations League game between AAA and BBB. "
+                "This market refers only to the outcome within the first 90 minutes of regular play plus stoppage time."
             ),
         ))
     ml, totals, failures = _collect_board(_write_board(tmp_path / "board.json", BEFORE, quotes))
