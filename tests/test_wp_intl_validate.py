@@ -34,8 +34,9 @@ def total_market(**overrides):
         "outcomePrices": '["0.55", "0.45"]',
         "clobTokenIds": '["1001", "1002"]',
         "description": (
-            "Resolves Over if both teams combine to score 3 or more goals in "
-            "the first 90 minutes of regular play plus stoppage time."
+            'This market will resolve to "Over" if AAA and BBB combine to score 3 or more goals in this game. '
+            'If the combined total is less than 3, this market will resolve to "Under". '
+            'This market refers only to the outcome within the first 90 minutes of regular play plus stoppage time.'
         ),
         "updatedAt": (BEFORE - timedelta(minutes=1)).isoformat(),
         "bestBid": 0.54,
@@ -180,6 +181,9 @@ def test_shadow_ignores_corners_and_first_half_and_keeps_source_observed_unknown
     assert row["market_ou25.observed_utc"] == ""
     assert row["model.rating_source"] == "replay"
     assert row["model_totals_shadow.fallback_reason"] == "insufficient_recent_matches"
+    assert row["neutral"] == ""
+    assert row["model.neutral_assumed"] == "False"
+    assert row["model.neutral_source"] == "home-field assumption"
 
 
 def test_shadow_rejects_conflicting_start_times_across_sibling_events(run_shadow):
@@ -192,6 +196,46 @@ def test_shadow_rejects_conflicting_start_times_across_sibling_events(run_shadow
     assert {failure["reason"] for failure in summary["failures"]} == {"conflicting fixture kickoff times"}
     assert calls == []
     assert not path.exists()
+
+
+def test_shadow_rejects_conflicting_kickoffs_on_different_utc_dates(run_shadow):
+    summary, path, calls = run_shadow([
+        event(total_market()),
+        event(
+            total_market(gameStartTime=(KICKOFF + timedelta(hours=6)).isoformat()),
+            id="2", title=f"{GAME} - More Markets",
+        ),
+    ])
+    assert summary["rows_prepared"] == 0
+    assert summary["failures"] == [{"game": GAME, "reason": "conflicting fixture kickoff times"}]
+    assert calls == []
+    assert not path.exists()
+
+
+def test_shadow_uses_explicit_neutral_venue_from_event_detail(run_shadow):
+    payload = event(total_market())
+    summary, path, _ = run_shadow([payload], detail={**payload, "neutral": True})
+    assert summary["rows_recorded"] == 1
+    with path.open(newline="") as handle:
+        row = next(csv.DictReader(handle))
+    assert row["neutral"] == "True"
+    assert row["model.neutral_assumed"] == ""
+    assert row["model.neutral_source"] == "Gamma"
+    expected = harness.intl_model.fixture_prediction(
+        snapshot(match()), harness.intl_model.IntlFixture("AAA", "BBB", MATCHDAY, neutral=True),
+        tournament=TOURNAMENT,
+    )
+    assert expected is not None
+    assert float(row["model.lambda_home"]) == pytest.approx(expected.lambda_home, abs=0.00005)
+
+
+def test_shadow_records_reason_for_missing_valid_over_price(run_shadow):
+    summary, path, _ = run_shadow([event(total_market(outcomePrices="[]"))])
+    assert summary["rows_recorded"] == 1
+    assert any("lacks a valid Over price" in item["reason"] for item in summary["failures"])
+    with path.open(newline="") as handle:
+        row = next(csv.DictReader(handle))
+    assert row["market_ou25.yes"] == row["model_vs_market.cents.over_2p5"] == ""
 
 
 def test_shadow_over_is_aligned_to_its_token_and_observed_timestamp(run_shadow):
@@ -213,7 +257,7 @@ def test_shadow_rejects_stale_current_table_quotes(run_shadow):
     summary, path, calls = run_shadow([event(total_market())], model_snapshot=snapshot())
     assert summary["rows_prepared"] == summary["rows_recorded"] == 0
     assert summary["failures"][0]["reason"] == "strictly prior replay ratings required"
-    assert calls == []
+    assert calls == ["1"]
     assert not path.exists()
 
 
@@ -254,3 +298,167 @@ def test_totals_replay_cli_scores_two_predictions_on_each_fixture(monkeypatch, t
     assert report["shadow"]["matchup_coverage"] == 0.0
     assert report["shadow"]["fallback_counts"] == {"insufficient_recent_matches": 1}
     assert report["snapshot"]["sha256"]
+    assert report["fixed_elo_slope_evidence"]["reference_fit"] == "2018–2026 UEFA Nations League"
+
+
+def _write_board(path, generated, markets):
+    game = {
+        "fixture": GAME, "kickoff_utc": KICKOFF.isoformat(),
+        "ml_yes_prices": {"home": 0.34, "draw": 0.33, "away": 0.33},
+        "ou25_yes_price": 0.99,
+    }
+    if markets is not None:
+        game["market_evidence"] = markets
+    path.write_text(json.dumps({
+        "generated_utc": generated.isoformat(),
+        "soccer": {"nations_league_nov12": [game]},
+    }), encoding="utf-8")
+    return path
+
+
+def _collect_board(path):
+    return harness.collect_pretip_board(
+        path,
+        {f"{MATCHDAY}|AAA|BBB": {"p_home": 0.4, "p_draw": 0.25, "p_away": 0.35, "p_over25": 0.55}},
+        {"AAA", "BBB"},
+    )
+
+
+@pytest.mark.parametrize("generated", [KICKOFF, KICKOFF + timedelta(hours=3)])
+def test_frozen_board_cannot_turn_late_prices_into_prekickoff_evidence(tmp_path, generated):
+    path = _write_board(tmp_path / "board.json", generated, None)
+    ml, totals, failures = _collect_board(path)
+    assert ml == totals == []
+    assert failures == [{"game": GAME, "reason": "board capture is not verified before kickoff"}]
+    assert harness.gate_e_market([], ml, totals, {"board_failures": failures})["verdict"] == "INSUFFICIENT-DATA"
+
+
+def test_pregame_legacy_board_requires_contract_and_market_observation(tmp_path):
+    path = _write_board(tmp_path / "board.json", BEFORE, None)
+    ml, totals, failures = _collect_board(path)
+    assert ml == totals == []
+    assert failures == [{"game": GAME, "reason": "missing frozen market and observation evidence"}]
+
+
+@pytest.mark.parametrize("invalid_market", [
+    {"sportsMarketType": "first_half_totals"},
+    {"description": total_market()["description"].replace("3 or more", "4 or more")},
+    {"description": total_market()["description"].replace("less than 3", "less than 4")},
+    {"description": total_market()["description"] + " This market includes any extra time and penalty shootouts."},
+    {"question": f"{GAME}: Corners O/U 2.5"},
+    {"conditionId": ""},
+    {"observed_utc": KICKOFF.isoformat()},
+    {"observed_utc": None},
+])
+def test_frozen_board_rejects_wrong_total_scope_threshold_or_observation(tmp_path, invalid_market):
+    market = total_market(**{"observed_utc": BEFORE.isoformat(), **invalid_market})
+    _, totals, failures = _collect_board(_write_board(tmp_path / "board.json", BEFORE, [market]))
+    assert totals == []
+    assert any("full-match O/U 2.5 contract" in item["reason"] for item in failures)
+
+
+def test_frozen_board_compares_only_identified_over_outcome(tmp_path):
+    market = total_market(
+        observed_utc=BEFORE.isoformat(), outcomes='["Under", "Over"]',
+        outcomePrices='["0.42", "0.58"]',
+    )
+    _, totals, _ = _collect_board(_write_board(tmp_path / "board.json", BEFORE, [market]))
+    assert len(totals) == 1
+    assert totals[0]["market_observed_utc"] == BEFORE.isoformat()
+    assert totals[0]["condition_id"] == "total-condition"
+    assert totals[0]["token"] == "1002"
+    assert totals[0]["pm_raw"] == 0.58
+
+
+def test_frozen_board_compares_three_distinct_regular_time_moneylines(tmp_path):
+    quotes = []
+    for index, (question, price) in enumerate([
+        ("Will AAA win on 2026-01-10?", "0.4"),
+        ("Will AAA vs. BBB end in a draw?", "0.25"),
+        ("Will BBB win on 2026-01-10?", "0.35"),
+    ]):
+        quotes.append(total_market(
+            question=question, sportsMarketType="moneyline", line=None,
+            outcomes=["Yes", "No"], outcomePrices=[price, str(1 - float(price))],
+            conditionId=f"moneyline-condition-{index}",
+            clobTokenIds=[str(2000 + 2 * index), str(2001 + 2 * index)],
+            observed_utc=BEFORE.isoformat(),
+            description=(
+                "In the UEFA Nations League game between AAA and BBB, this market "
+                "refers to the outcome within the first 90 minutes of regular play plus stoppage time."
+            ),
+        ))
+    ml, totals, failures = _collect_board(_write_board(tmp_path / "board.json", BEFORE, quotes))
+    assert {row["side"]: row["pm_raw"] for row in ml} == {"home": 0.4, "draw": 0.25, "away": 0.35}
+    assert all(row["market_observed_utc"] == BEFORE.isoformat() for row in ml)
+    assert totals == []
+    assert len(failures) == 1
+
+
+def test_gate_a_uses_refresh_manifest_and_checks_input_hashes(monkeypatch, tmp_path):
+    frozen = snapshot(match())
+    frozen.update(source="intl-martj42-eloratings", elo_history=[])
+    target = tmp_path / "snapshot.json"
+    target.write_text(json.dumps(frozen), encoding="utf-8")
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    manifest_sources = {}
+    for key, name in zip(harness._REFRESH_INPUTS, [
+        "results.csv", "world.tsv", "latest.tsv", "en.teams.tsv", "en.tournaments.tsv",
+    ]):
+        path = (tmp_path if key == "results" else cache) / name
+        path.write_text(key, encoding="utf-8")
+        manifest_sources[key] = {"file": name, "sha256": harness._sha256(path)}
+    espn = tmp_path / "scoreboard.json"
+    espn.write_text("[]", encoding="utf-8")
+    manifest = {
+        "sources": manifest_sources,
+        "espn_scoreboards": [{"file": espn.name, "sha256": harness._sha256(espn)}],
+        "generated_at": frozen["generated_at"],
+        "cutoff_utc_date_exclusive": "2026-01-10",
+        "date_basis": "source_fixture_calendar_date",
+        "exclude_late_espn_kickoffs": True,
+        "espn_kickoff_excluded_count": 1,
+        "model_date_shifted_count": 1,
+        "seed_match_count": 1, "supplement_match_count": 0, "match_count": 1,
+    }
+    evidence_path = tmp_path / "evidence.json"
+    evidence_path.write_text(json.dumps(manifest), encoding="utf-8")
+    calls = []
+
+    def rebuild(seed, world, **kwargs):
+        calls.append((seed, world, kwargs))
+        return frozen, manifest
+
+    monkeypatch.setattr(harness.intl_data, "build_refreshed_snapshot", rebuild)
+    monkeypatch.setattr(harness.intl_data, "build_snapshot", lambda *args: pytest.fail("used legacy rebuild"))
+    kwargs = {"refresh_evidence_path": evidence_path, "results_csv_path": tmp_path / "results.csv"}
+    report = harness.gate_a_integrity(target, frozen, cache, espn_scoreboards=[espn], **kwargs)
+    assert report["rebuild_from_cache_equal"] is True
+    assert report["snapshot_sha256"] == harness._sha256(target)
+    assert report["refresh"]["cutoff_utc_date_exclusive"] == "2026-01-10"
+    assert report["refresh"]["espn_kickoff_excluded_count"] == 1
+    assert report["refresh"]["model_date_shifted_count"] == 1
+    assert calls[0][0] == tmp_path / "results.csv"
+    assert calls[0][2]["cutoff_date"] == "2026-01-10"
+    assert calls[0][2]["exclude_late_espn_kickoffs"] is True
+    assert calls[0][2]["espn_scoreboards"] == [espn]
+    missing = harness.gate_a_integrity(target, frozen, cache, **kwargs)
+    assert "ESPN scoreboard paths/SHA-256 do not match" in missing["rebuild_from_cache_equal"]
+    (cache / "latest.tsv").write_text("something else", encoding="utf-8")
+    bad = harness.gate_a_integrity(target, frozen, cache, espn_scoreboards=[espn], **kwargs)
+    assert "refresh input latest SHA-256 does not match" in bad["rebuild_from_cache_equal"]
+    assert len(calls) == 1
+
+
+def test_gate_a_retains_legacy_two_source_rebuild(monkeypatch, tmp_path):
+    frozen = snapshot(match())
+    frozen.update(source="intl-martj42-eloratings", elo_history=[])
+    target = tmp_path / "snapshot.json"
+    target.write_text(json.dumps(frozen), encoding="utf-8")
+    (tmp_path / "results.csv").touch()
+    (tmp_path / "world.tsv").touch()
+    monkeypatch.setattr(harness.intl_data, "build_snapshot", lambda *args: frozen)
+    report = harness.gate_a_integrity(target, frozen, tmp_path)
+    assert report["rebuild_from_cache_equal"] is True
+    assert report["rebuild_mode"] == "legacy two-source rebuild"
