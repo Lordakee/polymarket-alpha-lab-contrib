@@ -42,8 +42,14 @@ adds recent fixtures from `latest.tsv`. Use an explicit cutoff when
 replaying a historical window. The default cache lifetime is one hour.
 
 ```bash
+research_dir=$(mktemp -d)
+source_dir="$research_dir/sources"
+snapshot="$research_dir/snapshot.json"
+evidence="$research_dir/refresh-evidence.json"
+cutoff=$(date -u +%F)
 .venv/bin/python -m polymarket_alpha_lab.papersim.intl_data \
-  --before-date YYYY-MM-DD --out /path/to/research-snapshot.json --evidence-json
+  --cache-dir "$source_dir" --before-date "$cutoff" \
+  --out "$snapshot" --evidence-json > "$evidence"
 ```
 
 For offline replay, pass `--source-dir` with `results.csv`, `World.tsv`,
@@ -63,8 +69,9 @@ the same cached or frozen sources.
 
 ```bash
 .venv/bin/python tools/wp_intl_validate.py validate \
-  --snapshot /path/to/research-snapshot.json --cache-dir /path/to/frozen-sources \
-  --refresh-evidence /path/to/refresh-evidence.json --skip-pm
+  --snapshot "$snapshot" --cache-dir "$source_dir" \
+  --refresh-evidence "$evidence" --out-dir "$research_dir/validation" \
+  --revision "$(git rev-parse HEAD)" --skip-pm
 ```
 
 If the snapshot was built with `--results-csv` or `--espn-scoreboard`, pass
@@ -78,7 +85,7 @@ data that overlaps the example evaluation window.
 
 ```bash
 .venv/bin/python tools/wp_intl_validate.py totals-replay \
-  --snapshot /path/to/research-snapshot.json --date-lo 2024-01-01 --date-hi 2026-11-17
+  --snapshot "$snapshot" --date-lo 2024-01-01 --date-hi 2026-11-17
 ```
 
 For a market-reference comparison, use the normalized fixture, rules, and
