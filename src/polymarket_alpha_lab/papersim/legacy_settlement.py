@@ -13,15 +13,33 @@ from . import ledger, store
 _CENT = Decimal("0.01")
 _HALF_CENT = _CENT / 2
 _DECISION_REFERENCE = re.compile(r"#([0-9]+)\b")
-# Free-form notes also mention other legs. Match IDs attached to an explicit
-# settlement statement and stop the list before ordinary contextual prose.
-_SETTLEMENT_ATTRIBUTION = re.compile(
-    r"\b(?:settles?|settled|(?:settlement|resolution)\s+for|applies\s+to|"
-    r"covers?|attributed\s+to|voided|refunded|exited)\s+(?:only\s+)?"
-    r"(?:the\s+)?(?:decisions?|entries|entry|positions?)\s*:?\s*"
-    r"(#[0-9]+\b(?:\s*(?:,\s*(?:and\s+)?|[+&/]|and\b)\s*"
-    r"(?:decisions?\s+)?#[0-9]+\b)*)",
-    re.IGNORECASE,
+_POSITION_NOUN = r"(?:decisions?|entry|entries|positions?)"
+_DECISION_LIST = (
+    r"#[0-9]+\b(?:\s*(?:,\s*(?:and\s+)?|[+&/]|and\b)\s*"
+    rf"(?:{_POSITION_NOUN}\s+)?#[0-9]+\b)*"
+)
+_EXCLUSIVE = r"(?:(?:only|solely|exclusively)\s+)?"
+_BE = r"(?:is|are|was|were|(?:has|have|had)\s+been)"
+_CLOSED = r"(?:settled|voided|refunded|exited)"
+# In free-form notes, IDs can be the target of a settlement claim or the
+# subject of a closure statement. Capture those IDs separately from references
+# to other decisions in the surrounding prose.
+_SETTLEMENT_ATTRIBUTION_PATTERNS = (
+    re.compile(
+        rf"\b(?:(?P<negated>(?:not|never|\w+n['’]t)\s+))?"
+        rf"(?:settles?|{_CLOSED}|covers?|"
+        rf"(?:settlement|resolution|payout)(?:\s+{_BE})?\s+{_EXCLUSIVE}(?:for|of)|"
+        rf"(?:applies|applied|attributed|belongs)\s+{_EXCLUSIVE}to|"
+        rf"only\s+{_POSITION_NOUN}\s+(?:that\s+{_BE}\s+)?{_CLOSED}\s+{_BE})\s+"
+        rf"{_EXCLUSIVE}(?:the\s+)?(?:{_POSITION_NOUN}\s*:?\s*)?"
+        rf"(?P<decisions>{_DECISION_LIST})",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"\b{_EXCLUSIVE}{_POSITION_NOUN}\s+(?P<decisions>{_DECISION_LIST})"
+        rf"(?:\s+(?:only|alone))?\s+{_BE}\s+{_EXCLUSIVE}{_CLOSED}\b",
+        re.IGNORECASE,
+    ),
 )
 _REUSED_RESOLUTION = re.compile(
     r"\b(?:re[- ]?entr(?:y|ies)|re[- ]?enter(?:ed)?|overwrit(?:e|ten|ing)|overwrote)\b",
@@ -89,8 +107,10 @@ def attribute_resolution(
     evidence = str(resolution.get("evidence") or "")
     decision_ids = {str(row.get("id")) for row in decisions}
     if any(
-        set(_DECISION_REFERENCE.findall(claim)) != decision_ids
-        for claim in _SETTLEMENT_ATTRIBUTION.findall(evidence)
+        set(_DECISION_REFERENCE.findall(claim["decisions"])) != decision_ids
+        for pattern in _SETTLEMENT_ATTRIBUTION_PATTERNS
+        for claim in pattern.finditer(evidence)
+        if not claim.groupdict().get("negated")
     ):
         raise LegacyResolutionError(
             "papersim_legacy_resolution_evidence_conflict", market_id, decisions

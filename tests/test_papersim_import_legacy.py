@@ -596,10 +596,18 @@ def test_cli_blocks_a_settlement_before_a_single_decision(importer, tmp_path, ca
     [
         ("Settles decision #102 only.", True),
         ("Applies to decision #102.", True),
+        ("This settlement is for decision #102 only.", True),
+        ("Settlement applies only to decision #102.", True),
+        ("Only decision #102 was settled.", True),
+        ("The only decision that was settled was #102.", True),
         ("Resolution for decisions #101 and #102.", True),
         ("Settles decision #101. Same fixture as open #102 and #103.", False),
+        ("Only decision #101 was settled. Compare previous market from decision #102.", False),
+        ("Compare previous market from decision #102.", False),
+        ("This settlement does not settle decision #102.", False),
         ("Same fixture as open #102 and #103.", False),
         ("Match confirmed by the published final score.", False),
+        ("", False),
     ],
 )
 def test_single_decision_import_requires_consistent_explicit_attribution(
