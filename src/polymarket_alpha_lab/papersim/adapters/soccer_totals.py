@@ -14,8 +14,10 @@ ask books. Source references identify the underlying snapshots or rule text.
 * polymarket.market supplies source_reference, fetched_at, fixture_id,
   kickoff_at, market_id, condition_id, kind, period, line, outcomes and
   token_ids. Outcomes and token IDs preserve the corresponding Gamma list
-  order. Optional accepting_orders, fees_enabled and fee_schedule carry
-  Gamma's order availability and fee metadata.
+  order. The Gamma capture must show active=true, closed=false, and
+  accepting_orders=true (Gamma acceptingOrders). fetched_at is the Gamma
+  capture time. Use null for unavailable status fields or capture time.
+  Optional fees_enabled and fee_schedule carry Gamma's fee metadata.
   polymarket.books supplies raw CLOB market (condition ID), asset_id,
   timestamp (upstream epoch milliseconds), min_order_size and asks, plus
   source_reference and fetched_at for each book.
@@ -37,10 +39,11 @@ ask books. Source references identify the underlying snapshots or rule text.
   each documented rule or use null for unavailable evidence. Include any
   source eligibility time limits in the ordered result source identifiers.
 
-Quotes and books must be no more than five minutes old at decision_at. A
-rejected report may retain indicative differences when identity and usable
-prices are known. Differences use a single estimated taker fee at the
-rounded walk_book VWAP, consistent with the paper gate's pricing convention.
+Gamma status, quotes and books must be no more than five minutes old at
+decision_at. A rejected report may retain indicative differences when
+identity and prices are known. Differences use a single estimated taker fee
+at the rounded walk_book VWAP, consistent with the paper gate's pricing
+convention.
 """
 
 from __future__ import annotations
@@ -63,7 +66,7 @@ from polymarket_alpha_lab.team_research_agent_types import strict_json
 
 _SIDES = ("Over", "Under")
 _PERIOD = "regulation_90_plus_stoppage"
-_MAX_QUOTE_AGE = timedelta(minutes=5)
+_MAX_SNAPSHOT_AGE = timedelta(minutes=5)
 _UTC_TIMESTAMP = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}"
                             r"(?::[0-9]{2}(?:\.[0-9]{1,6})?)?(?:Z|\+00:00)")
 
@@ -127,13 +130,13 @@ def _fetched_at(row: Mapping, cutoff: datetime, label: str, *, recent: bool) -> 
     fetched_at = _utc(row.get("fetched_at"), f"{label}_fetched_at_invalid")
     _require(fetched_at < cutoff, f"{label}_fetched_at_or_after_decision")
     if recent:
-        _require(cutoff - fetched_at <= _MAX_QUOTE_AGE, f"{label}_capture_stale")
+        _require(cutoff - fetched_at <= _MAX_SNAPSHOT_AGE, f"{label}_capture_stale")
     return fetched_at
 
 
 def _check_observation(at: datetime, fetched_at: datetime, cutoff: datetime, label: str) -> None:
     _require(at <= fetched_at, f"{label}_observation_after_capture")
-    _require(cutoff - at <= _MAX_QUOTE_AGE, f"{label}_observation_stale")
+    _require(cutoff - at <= _MAX_SNAPSHOT_AGE, f"{label}_observation_stale")
 
 
 def _line(row: Mapping, label: str) -> Decimal:
@@ -185,6 +188,29 @@ def _token_map(market: Mapping) -> dict[str, str]:
              all(isinstance(token, str) and re.fullmatch(r"[0-9]{1,78}", token) for token in tokens)
              and tokens[0] != tokens[1], "polymarket_token_mapping_invalid")
     return dict(zip(labels, tokens, strict=True))
+
+
+def _market_availability(market: Mapping, fetched: datetime | None, cutoff: datetime,
+                         reasons: list[str]) -> dict[str, bool | None]:
+    if fetched is None:
+        reasons.append("polymarket_market_fetched_at_missing")
+    elif cutoff - fetched > _MAX_SNAPSHOT_AGE:
+        reasons.append("polymarket_market_capture_stale")
+
+    availability = {}
+    for field, expected, unavailable in (
+        ("active", True, "inactive"), ("closed", False, "closed"),
+        ("accepting_orders", True, "not_accepting_orders"),
+    ):
+        value = market.get(field)
+        availability[field] = value if type(value) is bool else None
+        if value is None:
+            reasons.append(f"polymarket_market_{field}_missing")
+        elif type(value) is not bool:
+            reasons.append(f"polymarket_market_{field}_invalid")
+        elif value is not expected:
+            reasons.append(f"polymarket_market_{unavailable}")
+    return availability
 
 
 def _fee_rate(market: Mapping) -> float:
@@ -367,14 +393,18 @@ def compare_totals(evidence: object) -> dict:
                  "polymarket_market_kickoff_conflict")
         market_id = _text(market.get("market_id"), "polymarket_market_id_missing")
         source = _text(market.get("source_reference"), "polymarket_market_source_missing")
-        fetched = _fetched_at(market, cutoff, "polymarket_market", recent=False)
+        fetched = None
+        if market.get("fetched_at") is not None:
+            fetched = _fetched_at(market, cutoff, "polymarket_market", recent=False)
         condition = _text(market.get("condition_id"), "polymarket_condition_invalid")
         _require(re.fullmatch(r"0x[0-9a-f]{64}", condition) is not None, "polymarket_condition_invalid")
         tokens = _token_map(market)
         line = _line(market, "polymarket")
         report.update(line=format(line, "f"), kind="total_goals", period=_PERIOD)
+        availability = _market_availability(market, fetched, cutoff, report["reasons"])
         report["polymarket"] = {"market_id": market_id, "condition_id": condition,
-                                "source_reference": source, "fetched_at": fetched.isoformat()}
+                                "source_reference": source, "fetched_at": fetched.isoformat() if fetched else None,
+                                **availability}
 
         sides = _external_quotes(external, binding["external"], line, cutoff, report)
         report["sides"] = sides
@@ -399,8 +429,6 @@ def compare_totals(evidence: object) -> dict:
                 report["settlement_rule_conflicts"] = conflicts
                 report["reasons"].append("settlement_rules_conflict")
 
-        _require(market.get("accepting_orders") is None or market["accepting_orders"] is True,
-                 "polymarket_market_not_accepting_orders")
         rate = _fee_rate(market)
         report["polymarket"]["taker_fee_rate"] = rate
         report["polymarket"]["fee_method"] = "fee_per_share_at_walked_vwap"
@@ -413,6 +441,8 @@ def compare_totals(evidence: object) -> dict:
                 reason = str(rejected)
                 sides[side]["book_rejection"] = reason
                 report["reasons"].append(f"{reason}:{side}")
+        if any("net_reference_difference_cents" in side for side in sides.values()):
+            report["differences_indicative"] = bool(report["reasons"])
     except _Rejected as rejected:
         report["reasons"].append(str(rejected))
     if not report["reasons"]:

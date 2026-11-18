@@ -20,10 +20,11 @@ def evidence():
     period = "regulation_90_plus_stoppage"
     total = dict(kind="total_goals", period=period, line="3.5")
     condition = "0x" + "a" * 64
-    market = dict(total, source_reference="gamma-snapshot", fetched_at="2026-11-17T18:45Z",
+    market = dict(total, source_reference="gamma-snapshot", fetched_at="2026-11-17T18:53Z",
                   kickoff_at=kickoff, fixture_id="90108501", market_id="6674237",
                   condition_id=condition, outcomes=["Under", "Over"], token_ids=["20", "10"],
-                  fee_schedule={"rate": "0.05", "exponent": 1, "takerOnly": True}, accepting_orders=True)
+                  fee_schedule={"rate": "0.05", "exponent": 1, "takerOnly": True},
+                  active=True, closed=False, accepting_orders=True)
     shared_rules = dict(
         fetched_at="2026-11-17T18:45Z", period=period,
         canceled="split_50_50", postponed="split_50_50", start_deadline_at="2026-11-20T04:59Z",
@@ -61,6 +62,7 @@ def test_same_line_comparison_preserves_outcome_labels_and_signed_cost_differenc
     result = compare_totals(evidence)
     assert result["status"] == "accepted"
     assert result["reasons"] == []
+    assert result["differences_indicative"] is False
     assert result["paper_only"] is result["report_only"] is result["readonly"] is True
     assert result["line"] == "3.5"
     assert result["polymarket"]["rules"]["canceled"] == "split_50_50"
@@ -77,16 +79,21 @@ def test_same_line_comparison_preserves_outcome_labels_and_signed_cost_differenc
     assert under["net_reference_difference_cents"] > 0
 
 
-def test_observed_at_and_rules_absent_in_frozen_bookmaker_response(evidence):
+def test_frozen_comparison_preserves_indicative_values_when_observations_are_missing(evidence):
     for quote in evidence["external"]["quotes"]:
         quote["observed_at"] = None
         quote["fetched_at"] = "2026-11-17T18:58:57.643079Z"
     evidence["external"]["rules"] = None
     evidence["decision_at"] = "2026-11-17T18:59Z"
+    del evidence["polymarket"]["market"]["fetched_at"]
 
     result = compare_totals(evidence)
     assert result["status"] == "rejected"
-    assert result["reasons"] == ["external_observed_at_missing", "external_rules_missing"]
+    assert result["differences_indicative"] is True
+    assert result["reasons"] == [
+        "polymarket_market_fetched_at_missing", "external_observed_at_missing", "external_rules_missing",
+    ]
+    assert result["polymarket"]["fetched_at"] is None
     assert result["external"]["fetched_at"] == "2026-11-17T18:58:57.643079+00:00"
     assert result["external"]["rules"] is None
     assert result["sides"]["Over"]["external_observed_at"] is None
@@ -100,6 +107,7 @@ def test_observed_at_and_rules_absent_in_frozen_bookmaker_response(evidence):
     (("polymarket", "market", "kickoff_at"), "2026-11-17T20:45Z", "polymarket_market_kickoff_conflict"),
     (("polymarket", "market", "fixture_id"), "90108502", "polymarket_market_fixture_conflict"),
     (("polymarket", "market", "outcomes"), ["Yes", "No"], "polymarket_outcomes_unsupported"),
+    (("polymarket", "market", "fetched_at"), "2026-11-17T18:58Z", "polymarket_market_fetched_at_or_after_decision"),
     (("external", "quotes"), [], "external_quote_pair_required"),
     (("external", "quotes", 1, "fixture_id"), "401861194", "external_quote_fixture_conflict"),
     (("external", "quotes", 1, "line"), "2.5", "external_line_conflict"),
@@ -124,7 +132,6 @@ def test_observed_at_and_rules_absent_in_frozen_bookmaker_response(evidence):
     (("polymarket", "books", 0, "fetched_at"), "2026-11-17T19:45Z", "book_fetched_at_or_after_decision:Over"),
     (("polymarket", "books", 0, "asks"), [], "book_depth_insufficient:Over"),
     (("polymarket", "books", 0, "min_order_size"), "60", "book_min_order_size_not_met:Over"),
-    (("polymarket", "market", "accepting_orders"), False, "polymarket_market_not_accepting_orders"),
     (("polymarket", "market", "fee_schedule", "rate"), "0.06", "polymarket_fee_schedule_conflict"),
 ])
 def test_rejects_unusable_evidence(evidence, path, value, reason):
@@ -136,6 +143,27 @@ def test_rejects_unusable_evidence(evidence, path, value, reason):
     result = compare_totals(evidence)
     assert result["status"] == "rejected"
     assert result["reasons"] == [reason]
+
+
+@pytest.mark.parametrize(("field", "value", "reason"), [
+    ("active", False, "inactive"),
+    ("closed", True, "closed"),
+    ("accepting_orders", False, "not_accepting_orders"),
+    ("active", None, "active_missing"),
+    ("closed", None, "closed_missing"),
+    ("accepting_orders", None, "accepting_orders_missing"),
+    ("active", 1, "active_invalid"),
+    ("closed", 0, "closed_invalid"),
+    ("accepting_orders", "true", "accepting_orders_invalid"),
+    ("fetched_at", "2026-11-17T18:52:59.999999Z", "capture_stale"),
+])
+def test_unavailable_or_stale_market_only_yields_indicative_differences(evidence, field, value, reason):
+    evidence["polymarket"]["market"][field] = value
+    result = compare_totals(evidence)
+    assert result["status"] == "rejected"
+    assert result["reasons"] == [f"polymarket_market_{reason}"]
+    assert result["differences_indicative"] is True
+    assert result["sides"]["Over"]["net_reference_difference_cents"] == pytest.approx(-0.8636573)
 
 
 def test_thin_book_reports_available_depth_without_full_fill_difference(evidence):
