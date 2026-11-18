@@ -589,3 +589,35 @@ def test_cli_blocks_a_settlement_before_a_single_decision(importer, tmp_path, ca
     assert captured.out == ""
     assert "papersim_legacy_resolution_precedes_entry" in captured.err
     assert "market_id='m-early' decision_ids=['1']" in captured.err
+
+
+@pytest.mark.parametrize(
+    ("evidence", "blocked"),
+    [
+        ("Settles decision #102 only.", True),
+        ("Applies to decision #102.", True),
+        ("Resolution for decisions #101 and #102.", True),
+        ("Settles decision #101. Same fixture as open #102 and #103.", False),
+        ("Same fixture as open #102 and #103.", False),
+        ("Match confirmed by the published final score.", False),
+    ],
+)
+def test_single_decision_import_requires_consistent_explicit_attribution(
+    evidence, blocked, importer, tmp_path, capsys,
+):
+    directory = _write_minimal_snapshot(
+        tmp_path,
+        decisions="101,2026-10-10 12:00:00+00,m-one,q1,YES,0.5,100,"
+                  "50.00,,,,,,,,crypto_eth,0.6,crypto_daily\n",
+        resolutions=f"m-one,2026-10-20 00:00:00+00,YES,100.00,50.00,{evidence}\n",
+        bankroll="2026-10-10 11:00:00+00,1000.00,0.00,initial\n",
+    )
+    assert importer.main(["--snapshot-dir", str(directory)]) == (2 if blocked else 0)
+    captured = capsys.readouterr()
+    if blocked:
+        assert captured.out == ""
+        assert "papersim_legacy_resolution_evidence_conflict" in captured.err
+        assert "market_id='m-one' decision_ids=['101']" in captured.err
+    else:
+        assert "total 50.00" in captured.out
+        assert captured.err == ""

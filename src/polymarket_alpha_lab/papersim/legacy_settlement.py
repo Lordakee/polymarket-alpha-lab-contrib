@@ -13,6 +13,16 @@ from . import ledger, store
 _CENT = Decimal("0.01")
 _HALF_CENT = _CENT / 2
 _DECISION_REFERENCE = re.compile(r"#([0-9]+)\b")
+# Free-form notes also mention other legs. Match IDs attached to an explicit
+# settlement statement and stop the list before ordinary contextual prose.
+_SETTLEMENT_ATTRIBUTION = re.compile(
+    r"\b(?:settles?|settled|(?:settlement|resolution)\s+for|applies\s+to|"
+    r"covers?|attributed\s+to|voided|refunded|exited)\s+(?:only\s+)?"
+    r"(?:the\s+)?(?:decisions?|entries|entry|positions?)\s*:?\s*"
+    r"(#[0-9]+\b(?:\s*(?:,\s*(?:and\s+)?|[+&/]|and\b)\s*"
+    r"(?:decisions?\s+)?#[0-9]+\b)*)",
+    re.IGNORECASE,
+)
 _REUSED_RESOLUTION = re.compile(
     r"\b(?:re[- ]?entr(?:y|ies)|re[- ]?enter(?:ed)?|overwrit(?:e|ten|ing)|overwrote)\b",
     re.IGNORECASE,
@@ -58,9 +68,10 @@ def attribute_resolution(
 ) -> dict[str, Decimal] | None:
     """Validate the row's scope and allocate a verified pooled P&L.
 
-    A single decision keeps its recorded result, including compatibility
-    with old exports that omitted timestamps. A shared resolution needs
-    chronological, directional and financial evidence covering all entries.
+    A single decision keeps its recorded result when explicit attribution
+    agrees, including old exports that omitted timestamps. A shared
+    resolution needs chronological, directional and financial evidence
+    covering all entries.
     """
     try:
         resolved_at = _timestamp(resolution.get("ts"))
@@ -74,6 +85,15 @@ def attribute_resolution(
     ):
         raise LegacyResolutionError(
             "papersim_legacy_resolution_precedes_entry", market_id, decisions
+        )
+    evidence = str(resolution.get("evidence") or "")
+    decision_ids = {str(row.get("id")) for row in decisions}
+    if any(
+        set(_DECISION_REFERENCE.findall(claim)) != decision_ids
+        for claim in _SETTLEMENT_ATTRIBUTION.findall(evidence)
+    ):
+        raise LegacyResolutionError(
+            "papersim_legacy_resolution_evidence_conflict", market_id, decisions
         )
     if len(decisions) < 2:
         return None
@@ -91,7 +111,6 @@ def attribute_resolution(
         )
 
     outcome = str(resolution.get("outcome") or "").strip()
-    evidence = str(resolution.get("evidence") or "")
     references = set(_DECISION_REFERENCE.findall(evidence))
     if (
         (references and not rows.keys() <= references)

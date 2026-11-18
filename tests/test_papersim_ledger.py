@@ -945,6 +945,34 @@ def test_report_csv_allocates_verified_recorded_market_pnl_once(report_tool):
     assert recorded.gross_pnl == pytest.approx(3768.33)
 
 
+def test_report_excludes_only_the_inconsistent_single_decision_attribution(
+    tmp_path, report_tool, capsys,
+):
+    decisions = tmp_path / "decisions.csv"
+    resolutions = tmp_path / "resolutions.csv"
+    decisions.write_text(
+        "id,market_id,team,market_type,side,stake,price\n"
+        "101,m-wrong,sports_soccer,btts,YES,50,.50\n"
+        "103,m-context,sports_soccer,btts,YES,80,.50\n",
+        encoding="utf-8",
+    )
+    resolutions.write_text(
+        "market_id,outcome,payoff,pnl,evidence\n"
+        "m-wrong,YES,100,50,Settles decision #102 only.\n"
+        "m-context,YES,160,80,Same fixture as open #104 and #105.\n",
+        encoding="utf-8",
+    )
+    assert report_tool.main([
+        "--decisions-csv", str(decisions), "--resolutions-csv", str(resolutions),
+    ]) == 0
+    out = capsys.readouterr().out
+    assert "entries counted: 1" in out
+    assert "gross pnl: 80.00" in out
+    assert "ambiguous settlements excluded: entries=1 markets=1" in out
+    assert ("papersim_legacy_resolution_evidence_conflict: "
+            "market_id='m-wrong' decision_ids=['101']") in out
+
+
 def test_report_tool_pg_mode_is_read_only_join(report_tool, monkeypatch):
     captured: dict[str, object] = {}
 
