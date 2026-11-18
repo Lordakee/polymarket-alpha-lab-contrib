@@ -1189,6 +1189,8 @@ _ESPN_TOURNAMENTS = {
     "CONCACAF Championship qualification": "concacaf.nations.league",
 }
 _ESPN_FINAL_STATUSES = {"STATUS_FULL_TIME", "STATUS_FINAL", "STATUS_FINAL_AET", "STATUS_FINAL_PEN"}
+_SOURCE_DATE_BASIS = "source_fixture_calendar_date"
+_ESPN_DATE_BASIS = "max_source_fixture_and_verified_espn_utc_kickoff_date"
 
 
 def _read_espn_scoreboard(path: str | Path, aliases: dict) -> tuple[list[dict], dict]:
@@ -1290,6 +1292,34 @@ def _add_score_evidence(added: list[dict], paths: Iterable[str | Path], aliases:
     return sources
 
 
+def _apply_espn_model_dates(added: list[dict], cutoff: str) -> list[dict]:
+    """Move known fixtures forward when needed before chronological Elo replay."""
+    by_fixture: dict[tuple[str, str, str], dict] = {}
+    for row in added:
+        match = row["match"]
+        source_day = match["date"]
+        kickoff_utc = row.get("espn_score_evidence", {}).get("kickoff_utc")
+        model_day = max(source_day, kickoff_utc[:10]) if kickoff_utc else source_day
+        row["source_fixture_date"] = source_day
+        row["model_fixture_date"] = model_day
+        row["model_fixture_date_basis"] = _ESPN_DATE_BASIS if kickoff_utc else _SOURCE_DATE_BASIS
+        row["match"] = dict(match, date=model_day)
+        if model_day >= cutoff:
+            continue
+        # Each supplemental source date is beyond the seed's last retained date.
+        # Moving it forward can only create collisions with other supplements.
+        key = _fixture_key(row["match"])
+        if key in by_fixture:
+            other = by_fixture[key]
+            raise IntlDataSchemaError(
+                f"latest.tsv lines {other['line']} and {row['line']}: duplicate fixture {key} "
+                "after applying ESPN UTC kickoff dates"
+            )
+        by_fixture[key] = row
+    # Keep the existing source order as the tie-breaker within one model date.
+    return sorted(by_fixture.values(), key=lambda row: row["model_fixture_date"])
+
+
 def build_refreshed_snapshot(
     matches_csv: str | Path,
     elo_tsv: str | Path,
@@ -1313,9 +1343,11 @@ def build_refreshed_snapshot(
     The Elo feed supplies completed scores after the last retained CSV date.
 
     Optional ESPN files corroborate team scores and record kickoff times.
-    ``exclude_late_espn_kickoffs`` removes supplemental matches with a known
-    ESPN kickoff on or after the cutoff. Matches without those timestamps
-    still use the source date rule.
+    With ``exclude_late_espn_kickoffs``, each supplement uses the later of
+    its source date and corroborated ESPN UTC kickoff date for chronological
+    replay and for the exclusive cutoff. Evidence records both dates and
+    the rule used for each row. The seed and supplements without kickoff
+    evidence use source dates. Kickoff data gives no final-whistle time.
     """
     cutoff = _parse_iso_date(cutoff_date, "UTC cutoff")
     sources: dict[str, dict] = {}
@@ -1350,14 +1382,26 @@ def build_refreshed_snapshot(
     late_kickoffs = [
         row for row in added if row.get("espn_score_evidence", {}).get("kickoff_utc", "")[:10] >= cutoff
     ]
-    excluded_lines = {row["line"] for row in late_kickoffs} if exclude_late_espn_kickoffs else set()
-    added = [row for row in added if row["line"] not in excluded_lines]
+    date_basis = _SOURCE_DATE_BASIS
+    date_evidence = {}
+    if exclude_late_espn_kickoffs:
+        added = _apply_espn_model_dates(added, cutoff)
+        date_basis = _ESPN_DATE_BASIS
+        date_evidence = {
+            "seed_date_basis": _SOURCE_DATE_BASIS,
+            "latest_included_source_fixture_date": max(
+                (row["source_fixture_date"] for row in added), default=seed[-1]["date"],
+            ),
+            "model_date_shifted_count": sum(
+                row["model_fixture_date"] != row["source_fixture_date"] for row in added
+            ),
+        }
     verified = [row for row in added if "espn_score_evidence" in row]
     matches = seed + [dict(row["match"]) for row in added]
     snapshot = _build_snapshot(matches, min_teams, home_adv, k, initial_elo)
     return snapshot, {
         "cutoff_utc_date_exclusive": cutoff,
-        "date_basis": "source_fixture_calendar_date",
+        "date_basis": date_basis,
         "generated_at": snapshot["generated_at"],
         "seed_input_count": len(seed_rows),
         "seed_match_count": len(seed),
@@ -1377,9 +1421,10 @@ def build_refreshed_snapshot(
         "elo_source_only_count": len(added) - len(verified),
         "exclude_late_espn_kickoffs": exclude_late_espn_kickoffs,
         "espn_kickoffs_at_or_after_cutoff": late_kickoffs,
-        "espn_kickoff_excluded_count": len(excluded_lines),
+        "espn_kickoff_excluded_count": len(late_kickoffs) if exclude_late_espn_kickoffs else 0,
         "supplement_matches": added,
         **merge_counts,
+        **date_evidence,
     }
 
 
@@ -1616,7 +1661,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--exclude-late-espn-kickoffs", action="store_true",
-        help="exclude supplemental matches with a verified ESPN kickoff on or after the cutoff",
+        help=(
+            "use the later source or verified ESPN UTC kickoff date for each supplement. "
+            "Exclude matches on or after the cutoff."
+        ),
     )
     parser.add_argument(
         "--evidence-json", action="store_true",
@@ -1685,8 +1733,12 @@ def main(argv: list[str] | None = None) -> int:
         f"generated_at={snapshot['generated_at']}"
     )
     print(f"top-10 elo: {table}")
+    date_rule = (
+        "source dates with known ESPN UTC kickoff dates" if args.exclude_late_espn_kickoffs
+        else "source calendar dates"
+    )
     print(
-        f"fixtures before {evidence['cutoff_utc_date_exclusive']} (source calendar dates): "
+        f"fixtures before {evidence['cutoff_utc_date_exclusive']} ({date_rule}): "
         f"seed={evidence['seed_match_count']} through {evidence['seed_latest_included_fixture_date']}, "
         f"supplement={evidence['supplement_match_count']}, "
         f"latest included={evidence['latest_included_fixture_date']}, "

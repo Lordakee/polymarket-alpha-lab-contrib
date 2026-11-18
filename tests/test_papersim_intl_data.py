@@ -781,13 +781,26 @@ def _refresh_inputs(tmp_path: Path, seed_rows: list[str], latest_rows: list[str]
         (tmp_path / name).write_text(text, encoding="utf-8")
 
 
-def _refresh(tmp_path: Path, **kwargs) -> tuple[dict, dict]:
+def _refresh(tmp_path: Path, *, cutoff_date: str = "2026-11-17", **kwargs) -> tuple[dict, dict]:
     return intl_data.build_refreshed_snapshot(
         tmp_path / "results.csv", tmp_path / "World.tsv",
         latest_tsv=tmp_path / "latest.tsv", teams_tsv=tmp_path / "en.teams.tsv",
-        tournaments_tsv=tmp_path / "en.tournaments.tsv", cutoff_date="2026-11-17",
+        tournaments_tsv=tmp_path / "en.tournaments.tsv", cutoff_date=cutoff_date,
         min_teams=2, **kwargs,
     )
+
+
+def _espn_event(
+    event_id: str, kickoff: str, home: str, away: str, scores: tuple[int, int] = (2, 1),
+) -> dict:
+    return {
+        "id": event_id, "date": kickoff,
+        "status": {"type": {"completed": True, "name": "STATUS_FULL_TIME"}},
+        "competitions": [{"competitors": [
+            {"homeAway": "home", "team": {"displayName": home}, "score": str(scores[0])},
+            {"homeAway": "away", "team": {"displayName": away}, "score": str(scores[1])},
+        ]}],
+    }
 
 
 def test_refresh_merges_by_calendar_date_and_reports_overlap(tmp_path: Path) -> None:
@@ -874,14 +887,7 @@ def test_refresh_checks_espn_scores_and_known_late_kickoffs(tmp_path: Path) -> N
         _latest_row("2026-11-16", "TR", "BA", tournament="F"),
     ])
     scoreboard = tmp_path / "scoreboard.json"
-    event = {
-        "id": "1234", "date": "2026-11-16T20:00:00-04:00",
-        "status": {"type": {"completed": True, "name": "STATUS_FULL_TIME"}},
-        "competitions": [{"competitors": [
-            {"homeAway": "home", "team": {"displayName": "Ireland"}, "score": "1"},
-            {"homeAway": "away", "team": {"displayName": "Czechia"}, "score": "2"},
-        ]}],
-    }
+    event = _espn_event("1234", "2026-11-16T20:00:00-04:00", "Ireland", "Czechia", scores=(1, 2))
     payload = {"leagues": [{"slug": "uefa.nations"}], "events": [event]}
     scoreboard.write_text(json.dumps(payload), encoding="utf-8")
     base, _ = _refresh(tmp_path)
@@ -898,7 +904,11 @@ def test_refresh_checks_espn_scores_and_known_late_kickoffs(tmp_path: Path) -> N
         tmp_path, espn_scoreboards=[scoreboard], exclude_late_espn_kickoffs=True,
     )
     assert filtered_evidence["espn_kickoff_excluded_count"] == 1
+    assert filtered_evidence["model_date_shifted_count"] == 0  # Included matches only.
     assert filtered_evidence["espn_score_verified_count"] == 0
+    excluded = filtered_evidence["espn_kickoffs_at_or_after_cutoff"][0]
+    assert excluded["source_fixture_date"] == "2026-11-16"
+    assert excluded["model_fixture_date"] == excluded["match"]["date"] == "2026-11-17"
     assert filtered["matches"] == [base["matches"][0], base["matches"][2]]
 
     event["competitions"][0]["competitors"][0]["score"] = "5"
@@ -910,6 +920,69 @@ def test_refresh_checks_espn_scores_and_known_late_kickoffs(tmp_path: Path) -> N
     _, incomplete = _refresh(tmp_path, espn_scoreboards=[scoreboard])
     assert incomplete["espn_score_verified_count"] == 0
     assert incomplete["elo_source_only_count"] == 2
+
+
+def test_refresh_models_utc_date_before_each_fixture_cutoff(tmp_path: Path) -> None:
+    _refresh_inputs(tmp_path, [
+        _row("2026-10-06", "Czech Republic", "Republic of Ireland", 1, 0),
+    ], [
+        _latest_row("2026-11-12", "CZ", "IE"),
+        _latest_row("2026-11-12", "BA", "CH", tournament="F"),
+        _latest_row("2026-11-12", "TR", "CH"),
+    ])
+    scoreboard = tmp_path / "scoreboard.json"
+    scoreboard.write_text(json.dumps({
+        "leagues": [{"slug": "uefa.nations"}],
+        "events": [
+            _espn_event("111", "2026-11-13T00:30:00Z", "Czechia", "Ireland"),
+            _espn_event("222", "2026-11-11T23:30:00Z", "Turkey", "Switzerland"),
+        ],
+    }), encoding="utf-8")
+    source, source_evidence = _refresh(tmp_path, espn_scoreboards=[scoreboard])
+    assert source_evidence["date_basis"] == "source_fixture_calendar_date"
+    assert "model_date_shifted_count" not in source_evidence
+    assert source["matches"][1]["date"] == "2026-11-12"
+
+    use_utc_dates = dict(espn_scoreboards=[scoreboard], exclude_late_espn_kickoffs=True)
+    full, evidence = _refresh(tmp_path, **use_utc_dates)
+    assert evidence["date_basis"] == "max_source_fixture_and_verified_espn_utc_kickoff_date"
+    assert evidence["seed_date_basis"] == "source_fixture_calendar_date"
+    assert evidence["model_date_shifted_count"] == 1
+    assert evidence["latest_included_fixture_date"] == "2026-11-13"
+    assert evidence["latest_included_source_fixture_date"] == "2026-11-12"
+    unknown, earlier, moved = evidence["supplement_matches"]
+    assert unknown["source_fixture_date"] == unknown["model_fixture_date"] == "2026-11-12"
+    assert unknown["model_fixture_date_basis"] == "source_fixture_calendar_date"
+    assert earlier["model_fixture_date"] == "2026-11-12"
+    assert earlier["espn_score_evidence"]["kickoff_utc"] == "2026-11-11T23:30:00+00:00"
+    assert moved["model_fixture_date_basis"] == evidence["date_basis"]
+    assert moved["source_fixture_date"] == "2026-11-12"
+    assert moved["model_fixture_date"] == "2026-11-13"
+    assert full["matches"] == [source["matches"][0], unknown["match"], earlier["match"], moved["match"]]
+
+    for fixture_date, expected_match_count in (("2026-11-12", 1), ("2026-11-13", 3), ("2026-11-14", 4)):
+        snapshot, _ = _refresh(tmp_path, cutoff_date=fixture_date, **use_utc_dates)
+        assert len(snapshot["matches"]) == expected_match_count
+        for field in ("matches", "elo_history"):
+            assert snapshot[field] == [row for row in full[field] if row["date"] < fixture_date]
+
+
+def test_refresh_rejects_duplicate_fixtures_after_espn_date_shift(tmp_path: Path) -> None:
+    _refresh_inputs(tmp_path, [
+        _row("2026-10-06", "Czech Republic", "Republic of Ireland", 1, 0),
+    ], [
+        _latest_row("2026-11-12", "CZ", "IE"),
+        _latest_row("2026-11-13", "CZ", "IE", tournament="F"),
+    ])
+    scoreboard = tmp_path / "scoreboard.json"
+    scoreboard.write_text(json.dumps({
+        "leagues": [{"slug": "uefa.nations"}],
+        "events": [_espn_event("111", "2026-11-13T00:30:00Z", "Czechia", "Ireland")],
+    }), encoding="utf-8")
+    source, _ = _refresh(tmp_path, espn_scoreboards=[scoreboard])
+    assert len(source["matches"]) == 3
+    with pytest.raises(intl_data.IntlDataSchemaError, match="duplicate fixture .* after applying ESPN UTC kickoff dates"):
+        _refresh(tmp_path, espn_scoreboards=[scoreboard], exclude_late_espn_kickoffs=True)
 
 
 def test_refresh_cli_expires_raw_cache_and_can_replay_offline(
