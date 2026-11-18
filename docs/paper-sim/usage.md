@@ -35,6 +35,49 @@ Run inside the project virtualenv from the repository root:
   opens a connection, never reads the password file, and never prints
   the DSN value.
 
+## International soccer inputs and totals research
+
+`intl_data` refreshes the history CSV, validates the Elo directories, and
+adds recent fixtures from `latest.tsv`. Use an explicit cutoff when
+replaying a historical window. The default cache lifetime is one hour.
+
+```bash
+.venv/bin/python -m polymarket_alpha_lab.papersim.intl_data \
+  --before-date YYYY-MM-DD --out /path/to/research-snapshot.json --evidence-json
+```
+
+For offline replay, pass `--source-dir` with `results.csv`, `World.tsv`,
+`latest.tsv`, `en.teams.tsv`, and `en.tournaments.tsv`. Use `--results-csv`
+if the seed CSV is elsewhere. Repeat `--espn-scoreboard` with frozen
+scoreboard responses to verify team scores. With those responses,
+`--exclude-late-espn-kickoffs` also removes supplementary fixtures whose
+known UTC kickoff is on or after the cutoff. The primary cutoff uses
+source fixture dates. Day-precision inputs lack a final-whistle timestamp.
+The evidence records source digests, coverage, overlap conflicts, and
+any independent score checks. Existing two-file callers of `build_snapshot`
+keep their historical input mode.
+
+Compare the causal tournament mean with the fixture-specific shadow model
+using the same matches and cutoff. The report includes Brier score, log
+loss, coverage, and fallback counts.
+
+```bash
+.venv/bin/python tools/wp_intl_validate.py totals-replay \
+  --snapshot /path/to/research-snapshot.json --date-lo 2024-01-01 --date-hi 2026-11-17
+```
+
+For a market-reference comparison, use the normalized fixture, rules, and
+two-sided quote evidence described by `soccer_totals --help`. The command
+walks the order book for the requested stake and reports the fee-adjusted
+price difference plus any missing or incompatible evidence.
+
+```bash
+.venv/bin/python -m polymarket_alpha_lab.papersim.adapters.soccer_totals evidence.json
+```
+
+The [paper-sim blueprint](blueprint.md) describes the remaining statistical
+and operational validation.
+
 ## How round scripts adopt the library incrementally
 
 The library replaces the per-round bespoke scripts one function at a
@@ -42,11 +85,8 @@ time; a round script can migrate one stage per round without big-bang
 rewrites:
 
 1. **Load xG data**: `xg.load_xg_snapshot(path)` reads a pre-fetched
-   Understat snapshot (no network access inside the loaders; fetching
-   stays with the external research tooling — FotMob is the one
-   sanctioned exception, see "FotMob Championship snapshots" below,
-   whose explicit fetch functions are the package's only network
-   surface).
+   Understat snapshot. Fetching runs through explicit public data
+   adapters. Loaders consume the supplied snapshot without network access.
 2. **Price a soccer fixture**: `soccer_model.fixture_variants(snapshot,
    home, home_league, away, away_league)` evaluates all ten sweep
    variants (or returns `None` when the fixture is refused — see the
@@ -74,7 +114,7 @@ rewrites:
 
 ## Trading-fee model and the net-edge exec bar
 
-Polymarket charges a trading fee of `notional * rate * p * (1 - p)` on
+The paper fee estimate is `shares * rate * p * (1 - p)` on
 a fill at price `p` — `rate` is 7% on crypto markets
 (`gates.FEE_RATE_CRYPTO`) and 5% on sports markets
 (`gates.FEE_RATE_SPORTS`). Per share bought, that is a fee cost of
