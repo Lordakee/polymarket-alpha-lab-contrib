@@ -22,6 +22,10 @@ MATCHDAY = KICKOFF.date().isoformat()
 TOURNAMENT = harness.NL_TOURNAMENT
 
 
+def condition_id(index):
+    return f"0x{index:064x}"
+
+
 def total_market(**overrides):
     return {
         "question": f"{GAME}: O/U 2.5",
@@ -29,7 +33,7 @@ def total_market(**overrides):
         "line": 2.5,
         "gameStartTime": KICKOFF.isoformat(),
         "endDate": (KICKOFF + timedelta(hours=2)).isoformat(),
-        "conditionId": "total-condition",
+        "conditionId": condition_id(1),
         "outcomes": '["Over", "Under"]',
         "outcomePrices": '["0.55", "0.45"]',
         "clobTokenIds": '["1001", "1002"]',
@@ -159,10 +163,10 @@ def test_live_and_unverifiable_timestamps_do_not_become_pregame_rows(run_shadow,
 def test_shadow_ignores_corners_and_first_half_and_keeps_source_observed_unknown(run_shadow):
     flagship = event(total_market(
         question=f"{GAME}: First Half O/U 2.5", sportsMarketType="first_half_totals",
-        conditionId="first-half", outcomePrices='["0.12", "0.88"]',
+        conditionId=condition_id(2), outcomePrices='["0.12", "0.88"]',
     ))
     sibling = event(
-        total_market(question=f"{GAME}: Corners O/U 2.5", line=2.5, conditionId="corners"),
+        total_market(question=f"{GAME}: Corners O/U 2.5", line=2.5, conditionId=condition_id(3)),
         total_market(),
         id="2", title=f"{GAME} - More Markets",
     )
@@ -174,7 +178,7 @@ def test_shadow_ignores_corners_and_first_half_and_keeps_source_observed_unknown
         row = next(csv.DictReader(handle))
     assert row["state_at_scan"] == "pre"
     assert row["tip_utc"] == KICKOFF.isoformat()
-    assert row["market_ou25.condition_id"] == "total-condition"
+    assert row["market_ou25.condition_id"] == condition_id(1)
     assert row["market_ou25.yes"] == "0.55"
     assert row["market_ou25.token"] == "1001"
     assert row["market_ou25.response_received_utc"] == BEFORE.isoformat()
@@ -348,6 +352,10 @@ def test_pregame_legacy_board_requires_contract_and_market_observation(tmp_path)
     {"description": total_market()["description"] + " This market includes any extra time and penalty shootouts."},
     {"question": f"{GAME}: Corners O/U 2.5"},
     {"conditionId": ""},
+    {"conditionId": "unknown"},
+    {"clobTokenIds": ["1001", "0"]},
+    {"clobTokenIds": ["1001", "01001"]},
+    {"clobTokenIds": ["1001", "unknown"]},
     {"observed_utc": KICKOFF.isoformat()},
     {"observed_utc": None},
 ])
@@ -371,7 +379,7 @@ def test_frozen_board_compares_only_identified_over_outcome(tmp_path):
     _, totals, _ = _collect_board(_write_board(tmp_path / "board.json", BEFORE, [market]))
     assert len(totals) == 1
     assert totals[0]["market_observed_utc"] == BEFORE.isoformat()
-    assert totals[0]["condition_id"] == "total-condition"
+    assert totals[0]["condition_id"] == condition_id(1)
     assert totals[0]["token"] == "1002"
     assert totals[0]["pm_raw"] == 0.58
 
@@ -392,7 +400,8 @@ def test_frozen_board_rejects_first_half_settlement_even_with_regulation_text(tm
     assert any("full-match O/U 2.5 contract" in item["reason"] for item in failures)
 
 
-def test_frozen_board_compares_three_distinct_regular_time_moneylines(tmp_path):
+@pytest.mark.parametrize("invalid_identity", [None, {"conditionId": "unknown"}, {"clobTokenIds": ["0", "2001"]}])
+def test_frozen_board_requires_three_distinct_identified_moneylines(tmp_path, invalid_identity):
     quotes = []
     for index, (question, price) in enumerate([
         ("Will AAA win on 2026-01-10?", "0.4"),
@@ -402,7 +411,7 @@ def test_frozen_board_compares_three_distinct_regular_time_moneylines(tmp_path):
         quotes.append(total_market(
             question=question, sportsMarketType="moneyline", line=None,
             outcomes=["Yes", "No"], outcomePrices=[price, str(1 - float(price))],
-            conditionId=f"moneyline-condition-{index}",
+            conditionId=condition_id(100 + index),
             clobTokenIds=[str(2000 + 2 * index), str(2001 + 2 * index)],
             observed_utc=BEFORE.isoformat(),
             description=(
@@ -410,11 +419,17 @@ def test_frozen_board_compares_three_distinct_regular_time_moneylines(tmp_path):
                 "This market refers only to the outcome within the first 90 minutes of regular play plus stoppage time."
             ),
         ))
+    if invalid_identity is not None:
+        quotes[0].update(invalid_identity)
     ml, totals, failures = _collect_board(_write_board(tmp_path / "board.json", BEFORE, quotes))
-    assert {row["side"]: row["pm_raw"] for row in ml} == {"home": 0.4, "draw": 0.25, "away": 0.35}
-    assert all(row["market_observed_utc"] == BEFORE.isoformat() for row in ml)
     assert totals == []
-    assert len(failures) == 1
+    if invalid_identity is None:
+        assert {row["side"]: row["pm_raw"] for row in ml} == {"home": 0.4, "draw": 0.25, "away": 0.35}
+        assert all(row["market_observed_utc"] == BEFORE.isoformat() for row in ml)
+        assert len(failures) == 1
+    else:
+        assert ml == []
+        assert any("ML contracts" in item["reason"] for item in failures)
 
 
 def test_gate_a_uses_refresh_manifest_and_checks_input_hashes(monkeypatch, tmp_path):

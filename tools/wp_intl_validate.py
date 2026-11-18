@@ -467,6 +467,22 @@ def _market_probability(raw: object) -> float | None:
     return price if 0.0 <= price <= 1.0 else None
 
 
+def _contract_identity(market: dict) -> tuple[str, list[str]] | None:
+    condition = market.get("conditionId")
+    if not isinstance(condition, str) or re.fullmatch(r"0x[0-9a-f]{64}", condition) is None:
+        return None
+    try:
+        tokens = _load_json_list(market.get("clobTokenIds"))
+    except (TypeError, ValueError):
+        return None
+    if (
+        len(tokens) != 2 or len(set(tokens)) != 2
+        or not all(re.fullmatch(r"[1-9][0-9]*", token) for token in tokens)
+    ):
+        return None
+    return condition, tokens
+
+
 def _regular_time_rules(raw: object) -> bool:
     """Require a standalone regulation-time scope without a conflicting period."""
     rules = " ".join(str(raw or "").casefold().split())
@@ -510,17 +526,13 @@ def _full_match_over_index(market: dict, root: str) -> int | None:
     )
     if over_claims != ["3"] or under_claims != ["3"]:
         return None
+    if _contract_identity(market) is None:
+        return None
     try:
         outcomes = [norm(label) for label in _load_json_list(market.get("outcomes"))]
-        tokens = _load_json_list(market.get("clobTokenIds"))
     except (TypeError, ValueError):
         return None
-    if (
-        sorted(outcomes) != ["over", "under"]
-        or len(tokens) != 2 or len(set(tokens)) != 2
-        or not all(token.isascii() and token.isdecimal() for token in tokens)
-        or not isinstance(market.get("conditionId"), str) or not market["conditionId"].strip()
-    ):
+    if sorted(outcomes) != ["over", "under"]:
         return None
     return outcomes.index("over")
 
@@ -1662,23 +1674,21 @@ def _board_market_quote(
 ) -> tuple[float, datetime, str, str] | None:
     """Return a selected outcome's price and identity from an observed Gamma quote."""
     observed = _source_observed_at(market)
-    condition = market.get("conditionId")
-    tokens = _prices_list(market.get("clobTokenIds"))
+    identity = _contract_identity(market)
     prices = _prices_list(market.get("outcomePrices"))
     if (
-        observed is None or not observed <= generated < kickoff
+        identity is None
+        or observed is None or not observed <= generated < kickoff
         or not _valid_source_times(market, generated, kickoff)
         or _true(market.get("closed")) or _started(market)
         or parse_kickoff(market.get("gameStartTime"), require_timezone=True) != kickoff
-        or not isinstance(condition, str) or not condition.strip()
-        or len(tokens) != 2 or len(set(tokens)) != 2
-        or not all(token.isascii() and token.isdecimal() for token in tokens)
         or len(prices) != 2
     ):
         return None
     price = _market_probability(prices[index])
     if price is None:
         return None
+    condition, tokens = identity
     return price, observed, condition, tokens[index]
 
 
