@@ -483,6 +483,26 @@ def _contract_identity(market: dict) -> tuple[str, list[str]] | None:
     return condition, tokens
 
 
+def _moneyline_yes_outcome(market: dict) -> tuple[int, str, str] | None:
+    """Return the index, condition and token of the Yes outcome."""
+    identity = _contract_identity(market)
+    if identity is None:
+        return None
+    labels = [label.strip().casefold() for label in _prices_list(market.get("outcomes"))]
+    if sorted(labels) != ["no", "yes"]:
+        return None
+    index = labels.index("yes")
+    condition, tokens = identity
+    return index, condition, tokens[index]
+
+
+def _paired_outcome_price(market: dict, index: int) -> float | None:
+    prices = [_market_probability(value) for value in _prices_list(market.get("outcomePrices"))]
+    if len(prices) != 2 or None in prices:
+        return None
+    return prices[index]
+
+
 def _regular_time_rules(raw: object) -> bool:
     """Require a standalone regulation-time scope without a conflicting period."""
     rules = " ".join(str(raw or "").casefold().split())
@@ -1594,9 +1614,9 @@ def collect_nov2024_closings(
             market = markets.get(side)
             if market is None:
                 continue
-            token_list = _load_json_list(market.get("clobTokenIds") or "[]")
-            if token_list:
-                tokens[side] = token_list[0]
+            outcome = _moneyline_yes_outcome(market)
+            if outcome is not None:
+                tokens[side] = outcome[2]
         missing = [s for s in ("home", "draw", "away") if s not in tokens]
         if missing:
             failures.append({"game": game, "reason": f"missing ML markets {missing}"})
@@ -1617,6 +1637,9 @@ def collect_nov2024_closings(
             continue
         raw = {s: prices[s] for s in ("home", "draw", "away")}  # type: ignore[union-attr]
         overround = sum(raw.values())
+        if overround <= 0.0:
+            failures.append({"game": game, "reason": "pre-kickoff ML prices have zero overround"})
+            continue
         devig = {s: raw[s] / overround for s in raw}
         model = {"home": quote["p_home"], "draw": quote["p_draw"], "away": quote["p_away"]}
         for side in ("home", "draw", "away"):
@@ -1631,6 +1654,7 @@ def collect_nov2024_closings(
                 "abs_dev_raw": abs(model[side] - raw[side]),
                 "minutes_before_kickoff": history_meta[side].get("minutes_before"),
                 "event_id": fixture["event_id"],
+                "token": tokens[side],
             })
         # O/U 2.5 in the same event family (expected dust per R47)
         over_tokens = set()
@@ -1670,26 +1694,22 @@ def collect_nov2024_closings(
 
 
 def _board_market_quote(
-    market: dict, index: int, generated: datetime, kickoff: datetime,
+    market: dict, outcome: tuple[int, str, str], generated: datetime, kickoff: datetime,
 ) -> tuple[float, datetime, str, str] | None:
     """Return a selected outcome's price and identity from an observed Gamma quote."""
     observed = _source_observed_at(market)
-    identity = _contract_identity(market)
-    prices = _prices_list(market.get("outcomePrices"))
     if (
-        identity is None
-        or observed is None or not observed <= generated < kickoff
+        observed is None or not observed <= generated < kickoff
         or not _valid_source_times(market, generated, kickoff)
         or _true(market.get("closed")) or _started(market)
         or parse_kickoff(market.get("gameStartTime"), require_timezone=True) != kickoff
-        or len(prices) != 2
     ):
         return None
-    price = _market_probability(prices[index])
+    index, condition, token = outcome
+    price = _paired_outcome_price(market, index)
     if price is None:
         return None
-    condition, tokens = identity
-    return price, observed, condition, tokens[index]
+    return price, observed, condition, token
 
 
 def _board_market_evidence(
@@ -1701,23 +1721,23 @@ def _board_market_evidence(
         if not isinstance(market, dict):
             continue
         side = None
+        outcome = None
         index = _full_match_over_index(market, f"{home} vs. {away}")
         if index is not None:
             side = "over"
+            outcome = (index, market["conditionId"], _load_json_list(market["clobTokenIds"])[index])
         elif market.get("sportsMarketType") == "moneyline":
             rules = str(market.get("description") or "")
             participant_clause = f"between {home} and {away}".casefold()
             if participant_clause not in rules.casefold() or not _regular_time_rules(rules):
                 continue
-            labels = [norm(value) for value in _prices_list(market.get("outcomes"))]
             question = str(market.get("question") or "")
-            if sorted(labels) == ["no", "yes"]:
-                index = labels.index("yes")
-                side = classify_ml_market(question, home, away)
-                if side == "draw" and not all(norm(team) in norm(question) for team in (home, away)):
-                    side = None
-        if side is not None and index is not None:
-            quote = _board_market_quote(market, index, generated, kickoff)
+            side = classify_ml_market(question, home, away)
+            if side == "draw" and not all(norm(team) in norm(question) for team in (home, away)):
+                continue
+            outcome = _moneyline_yes_outcome(market)
+        if side is not None and outcome is not None:
+            quote = _board_market_quote(market, outcome, generated, kickoff)
             if quote is not None:
                 quotes.setdefault(side, []).append(quote)
     return quotes
@@ -2315,17 +2335,23 @@ def _shadow_market_fields(
         if market is None:
             failures.append(f"no pre-kickoff ML market for {side}")
             continue
-        price = _market_probability(next(iter(_prices_list(market.get("outcomePrices"))), None))
-        tokens = _prices_list(market.get("clobTokenIds"))
+        outcome = _moneyline_yes_outcome(market)
+        if outcome is None:
+            failures.append(f"invalid binary ML contract for {side}")
+            continue
+        index, _, token = outcome
+        price = _paired_outcome_price(market, index)
+        if price is None:
+            failures.append(f"no valid Yes price for {side}")
+            continue
         fields[f"market_ml.prices.{side}"] = price
-        fields[f"market_ml.bid.{side}"] = _market_probability(market.get("bestBid"))
-        fields[f"market_ml.ask.{side}"] = _market_probability(market.get("bestAsk"))
+        if index == 0:  # Gamma's scalar bid/ask refers to the first outcome.
+            fields[f"market_ml.bid.{side}"] = _market_probability(market.get("bestBid"))
+            fields[f"market_ml.ask.{side}"] = _market_probability(market.get("bestAsk"))
         fields[f"market_ml.volume.{side}"] = market.get("volume")
-        if tokens:
-            fields[f"market_ml.tokens.{side}"] = tokens[0]
-        if price is not None:
-            raw[side] = price
-            fields[f"model_vs_market.cents.{side}"] = round(100 * (probability - price), 2)
+        fields[f"market_ml.tokens.{side}"] = token
+        raw[side] = price
+        fields[f"model_vs_market.cents.{side}"] = round(100 * (probability - price), 2)
     if len(raw) == len(model) and sum(raw.values()) > 0.0:
         overround = sum(raw.values())
         for side, probability in model.items():

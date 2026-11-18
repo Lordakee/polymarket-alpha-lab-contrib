@@ -49,6 +49,25 @@ def total_market(**overrides):
     }
 
 
+def moneyline_market(question="Will AAA beat BBB?", **overrides):
+    return total_market(**{
+        "question": question,
+        "sportsMarketType": "moneyline",
+        "line": None,
+        "conditionId": condition_id(100),
+        "clobTokenIds": ["2000", "2001"],
+        "outcomes": '["Yes", "No"]',
+        "outcomePrices": '["0.68", "0.32"]',
+        "bestBid": 0.67,
+        "bestAsk": 0.69,
+        "description": (
+            "This is a UEFA Nations League game between AAA and BBB. "
+            "This market refers only to the outcome within the first 90 minutes of regular play plus stoppage time."
+        ),
+        **overrides,
+    })
+
+
 def event(*markets, **overrides):
     return {
         "id": "1",
@@ -257,6 +276,43 @@ def test_shadow_over_is_aligned_to_its_token_and_observed_timestamp(run_shadow):
     assert row["market_ou25.bid"] == row["market_ou25.ask"] == ""
 
 
+@pytest.mark.parametrize("reverse", [False, True])
+def test_shadow_selects_yes_price_and_token_together(run_shadow, reverse):
+    market = moneyline_market()
+    if reverse:
+        market.update(
+            outcomes='["No", "Yes"]', outcomePrices='["0.32", "0.68"]',
+            clobTokenIds=["2001", "2000"], bestBid=0.31, bestAsk=0.33,
+        )
+    _, path, _ = run_shadow([event(market, total_market())])
+    with path.open(newline="") as handle:
+        row = next(csv.DictReader(handle))
+    assert row["market_ml.prices.home"] == "0.68"
+    assert row["market_ml.tokens.home"] == "2000"
+    assert row["market_ml.bid.home"] == ("" if reverse else "0.67")
+    assert row["market_ml.ask.home"] == ("" if reverse else "0.69")
+
+
+@pytest.mark.parametrize("overrides", [
+    {"outcomes": '["Yes"]'},
+    {"outcomes": '["Yes", "Yes"]'},
+    {"outcomes": '["Yes", "Maybe"]'},
+    {"clobTokenIds": ["2000"]},
+    {"outcomePrices": '["0.68"]'},
+    {"outcomePrices": '["0.68", "invalid"]'},
+])
+def test_shadow_reports_unusable_binary_moneyline(run_shadow, overrides):
+    summary, path, _ = run_shadow([event(moneyline_market(**overrides), total_market())])
+    assert any(
+        item["reason"] in {"invalid binary ML contract for home", "no valid Yes price for home"}
+        for item in summary["failures"]
+    )
+    with path.open(newline="") as handle:
+        row = next(csv.DictReader(handle))
+    assert row["market_ml.prices.home"] == row["market_ml.tokens.home"] == ""
+    assert row["model_vs_market.cents.home"] == ""
+
+
 def test_shadow_rejects_stale_current_table_quotes(run_shadow):
     summary, path, calls = run_shadow([event(total_market())], model_snapshot=snapshot())
     assert summary["rows_prepared"] == summary["rows_recorded"] == 0
@@ -408,28 +464,80 @@ def test_frozen_board_requires_three_distinct_identified_moneylines(tmp_path, in
         ("Will AAA vs. BBB end in a draw?", "0.25"),
         ("Will BBB win on 2026-01-10?", "0.35"),
     ]):
-        quotes.append(total_market(
-            question=question, sportsMarketType="moneyline", line=None,
+        quotes.append(moneyline_market(
+            question=question,
             outcomes=["Yes", "No"], outcomePrices=[price, str(1 - float(price))],
             conditionId=condition_id(100 + index),
             clobTokenIds=[str(2000 + 2 * index), str(2001 + 2 * index)],
             observed_utc=BEFORE.isoformat(),
-            description=(
-                "This is a UEFA Nations League game between AAA and BBB. "
-                "This market refers only to the outcome within the first 90 minutes of regular play plus stoppage time."
-            ),
         ))
+    for field in ("outcomes", "outcomePrices", "clobTokenIds"):
+        quotes[0][field].reverse()
     if invalid_identity is not None:
         quotes[0].update(invalid_identity)
     ml, totals, failures = _collect_board(_write_board(tmp_path / "board.json", BEFORE, quotes))
     assert totals == []
     if invalid_identity is None:
         assert {row["side"]: row["pm_raw"] for row in ml} == {"home": 0.4, "draw": 0.25, "away": 0.35}
+        assert {row["side"]: row["token"] for row in ml}["home"] == "2000"
         assert all(row["market_observed_utc"] == BEFORE.isoformat() for row in ml)
         assert len(failures) == 1
     else:
         assert ml == []
         assert any("ML contracts" in item["reason"] for item in failures)
+
+
+def test_historical_closings_use_yes_tokens_and_report_their_market_mad(monkeypatch):
+    kickoff = datetime(2024, 11, 15, 19, 45, tzinfo=timezone.utc)
+    day = kickoff.date().isoformat()
+    events, predictions, teams, token_prices = [], {}, {"BBB"}, {}
+    expected_tokens = set()
+    for number in range(10):
+        home = f"Team {number}"
+        teams.add(home)
+        markets = []
+        for side, (question, yes_price) in enumerate([
+            (f"Will {home} beat BBB?", 0.68),
+            (f"Will {home} vs. BBB end in a draw?", 0.20),
+            (f"Will BBB beat {home}?", 0.12),
+        ]):
+            no, yes = str(2000 + 6 * number + 2 * side), str(2001 + 6 * number + 2 * side)
+            token_prices.update({no: 1 - yes_price, yes: yes_price})
+            expected_tokens.add(yes)
+            markets.append(moneyline_market(
+                question=question, gameStartTime=kickoff.isoformat(), sportsMarketType=None,
+                outcomes='["No", "Yes"]', outcomePrices=None, clobTokenIds=[no, yes],
+                conditionId=condition_id(100 + 3 * number + side),
+            ))
+        events.append(event(*markets, title=f"{home} vs. BBB", id=str(number)))
+        predictions[f"{day}|{home}|BBB"] = {
+            "p_home": 0.16, "p_draw": 0.40, "p_away": 0.44, "p_over25": 0.5,
+        }
+    requested = []
+
+    def close(token, kickoff_epoch):
+        assert kickoff_epoch == int(kickoff.timestamp())
+        requested.append(token)
+        return {"price": token_prices[token], "minutes_before": 5}
+
+    monkeypatch.setattr(harness, "closing_yes_price", close)
+    monkeypatch.setattr(harness.time, "sleep", lambda _: None)
+    rows, totals, notes = harness.collect_nov2024_closings(predictions, teams, events=events)
+    assert len(requested) == 30 and set(requested) == expected_tokens
+    assert len(rows) == 30 and totals == [] and notes["failures"] == []
+    expected_prices = {"home": 0.68, "draw": 0.20, "away": 0.12}
+    assert {row["token"] for row in rows} == expected_tokens
+    for row in rows:
+        assert row["pm_devig"] == pytest.approx(expected_prices[row["side"]])
+    gate = harness.gate_e_market(rows, [], totals, notes)
+    assert gate["closing_1x2"]["mad"] == pytest.approx(1.04 / 3)
+    assert gate["verdict"] == "FAIL"
+
+    requested.clear()
+    events[0]["markets"][0]["outcomes"] = '["No", "No"]'
+    rows, _, notes = harness.collect_nov2024_closings(predictions, teams, events=events)
+    assert len(requested) == len(rows) == 27
+    assert notes["failures"] == [{"game": "Team 0 vs. BBB", "reason": "missing ML markets ['home']"}]
 
 
 def test_gate_a_uses_refresh_manifest_and_checks_input_hashes(monkeypatch, tmp_path):
