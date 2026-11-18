@@ -492,11 +492,11 @@ def _full_match_over_index(market: dict, root: str) -> int | None:
     teams = re.escape(f"{home} and {away}".casefold())
     rules = " ".join(str(market.get("description") or "").casefold().split())
     over_claims = re.findall(
-        rf'will resolve to "over" if {teams} combine to score (\d+) or more goals\b',
+        rf'will resolve to "over" if {teams} combine to score (\d+) or more goals in this game\.',
         rules,
     )
     under_claims = re.findall(
-        r'if the combined total is less than (\d+)(?: goals)?, this market will resolve to "under"',
+        r'if the combined total is less than (\d+)(?: goals)?, this market will resolve to "under"\.',
         rules,
     )
     if over_claims != ["3"] or under_claims != ["3"]:

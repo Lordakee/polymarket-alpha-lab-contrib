@@ -344,6 +344,7 @@ def test_pregame_legacy_board_requires_contract_and_market_observation(tmp_path)
     {"sportsMarketType": "first_half_totals"},
     {"description": total_market()["description"].replace("3 or more", "4 or more")},
     {"description": total_market()["description"].replace("less than 3", "less than 4")},
+    {"description": total_market()["description"].replace("goals in this game", "goals in the first half")},
     {"description": total_market()["description"] + " This market includes any extra time and penalty shootouts."},
     {"question": f"{GAME}: Corners O/U 2.5"},
     {"conditionId": ""},
