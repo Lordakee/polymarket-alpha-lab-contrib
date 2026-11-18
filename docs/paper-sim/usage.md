@@ -51,15 +51,30 @@ For offline replay, pass `--source-dir` with `results.csv`, `World.tsv`,
 if the seed CSV is elsewhere. Repeat `--espn-scoreboard` with frozen
 scoreboard responses to verify team scores. With those responses,
 `--exclude-late-espn-kickoffs` also removes supplementary fixtures whose
-known UTC kickoff is on or after the cutoff. The primary cutoff uses
-source fixture dates. Day-precision inputs lack a final-whistle timestamp.
-The evidence records source digests, coverage, overlap conflicts, and
-any independent score checks. Existing two-file callers of `build_snapshot`
-keep their historical input mode.
+known UTC kickoff is on or after the cutoff. For included fixtures with
+verified kickoffs, that option uses the later of the original fixture
+date and the UTC kickoff date for modelling. Other fixtures use the
+source fixture date. Day-precision inputs lack a final-whistle timestamp.
+The evidence records source digests, coverage, overlap conflicts, and any
+independent score checks. Existing two-file callers of `build_snapshot`
+keep their historical input mode. For full validation of a refreshed
+snapshot, retain the JSON output from `--evidence-json` and pass it with
+the same cached or frozen sources.
+
+```bash
+.venv/bin/python tools/wp_intl_validate.py validate \
+  --snapshot /path/to/research-snapshot.json --cache-dir /path/to/frozen-sources \
+  --refresh-evidence /path/to/refresh-evidence.json --skip-pm
+```
+
+If the snapshot was built with `--results-csv` or `--espn-scoreboard`, pass
+the corresponding source files to the validation command. It verifies
+the digests and uses the cutoff from the evidence.
 
 Compare the causal tournament mean with the fixture-specific shadow model
 using the same matches and cutoff. The report includes Brier score, log
-loss, coverage, and fallback counts.
+loss, coverage, and fallback counts. The fixed Elo slope was fitted on
+data that overlaps the example evaluation window.
 
 ```bash
 .venv/bin/python tools/wp_intl_validate.py totals-replay \
@@ -69,7 +84,10 @@ loss, coverage, and fallback counts.
 For a market-reference comparison, use the normalized fixture, rules, and
 two-sided quote evidence described by `soccer_totals --help`. The command
 walks the order book for the requested stake and reports the fee-adjusted
-price difference plus any missing or incompatible evidence.
+price difference plus any missing or incompatible evidence. A complete
+comparison needs a Gamma snapshot from the preceding five minutes that
+shows an active market accepting orders, and timestamped, equivalent
+rules and quotes from the other source.
 
 ```bash
 .venv/bin/python -m polymarket_alpha_lab.papersim.adapters.soccer_totals evidence.json
