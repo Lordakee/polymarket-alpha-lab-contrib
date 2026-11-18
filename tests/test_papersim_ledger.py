@@ -950,6 +950,9 @@ def test_report_csv_allocates_verified_recorded_market_pnl_once(report_tool):
     "This settlement is for decision #102 only.",
     "Settlement applies only to decision #102.",
     "Only decision #102 was settled.",
+    "This settlement does not settle decision #101.",
+    "Decision #101 was not settled.",
+    "Settles decision #101. Decision #101 was not settled.",
 ])
 def test_report_excludes_only_the_inconsistent_single_decision_attribution(
     evidence, tmp_path, report_tool, capsys,
@@ -960,22 +963,24 @@ def test_report_excludes_only_the_inconsistent_single_decision_attribution(
         "id,market_id,team,market_type,side,stake,price\n"
         "101,m-wrong,sports_soccer,btts,YES,50,.50\n"
         "103,m-context,sports_soccer,btts,YES,80,.50\n"
-        "104,m-blank,sports_soccer,btts,YES,40,.50\n",
+        "104,m-blank,sports_soccer,btts,YES,40,.50\n"
+        "105,m-other,sports_soccer,btts,YES,30,.50\n",
         encoding="utf-8",
     )
     resolutions.write_text(
         "market_id,outcome,payoff,pnl,evidence\n"
         f"m-wrong,YES,100,50,{evidence}\n"
         "m-context,YES,160,80,Compare previous market from decision #102.\n"
-        "m-blank,YES,80,40,\n",
+        "m-blank,YES,80,40,\n"
+        "m-other,YES,60,30,This settlement does not settle decision #102.\n",
         encoding="utf-8",
     )
     assert report_tool.main([
         "--decisions-csv", str(decisions), "--resolutions-csv", str(resolutions),
     ]) == 0
     out = capsys.readouterr().out
-    assert "entries counted: 2" in out
-    assert "gross pnl: 120.00" in out
+    assert "entries counted: 3" in out
+    assert "gross pnl: 150.00" in out
     assert "ambiguous settlements excluded: entries=1 markets=1" in out
     assert ("papersim_legacy_resolution_evidence_conflict: "
             "market_id='m-wrong' decision_ids=['101']") in out

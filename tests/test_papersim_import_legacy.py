@@ -418,14 +418,18 @@ def _write_minimal_snapshot(directory: Path, decisions: str,
     return directory
 
 
-def test_same_share_count_keeps_different_entry_costs(importer, tmp_path):
+@pytest.mark.parametrize("evidence", [
+    "Combined #1 and #2",
+    "Decision #102 was not voided.",
+])
+def test_same_share_count_keeps_different_entry_costs(evidence, importer, tmp_path):
     snapshot_dir = _write_minimal_snapshot(
         tmp_path,
         decisions=(
             "1,2026-10-10 13:00:00+00,m-cost,q1,YES,0.2,100,20.00,,,,,,,,crypto_eth,0.6,crypto_daily\n"
             "2,2026-10-10 14:00:00+00,m-cost,q1,YES,0.8,100,80.00,,,,,,,,crypto_eth,0.6,crypto_daily\n"
         ),
-        resolutions="m-cost,2026-10-20 00:00:00+00,YES,200.00,100.00,Combined #1 and #2\n",
+        resolutions=f"m-cost,2026-10-20 00:00:00+00,YES,200.00,100.00,{evidence}\n",
         bankroll="2026-10-10 12:00:00+00,1000.00,0.00,initial\n",
     )
     plan = importer.build_import_plan(importer.load_snapshot(snapshot_dir))
@@ -601,10 +605,17 @@ def test_cli_blocks_a_settlement_before_a_single_decision(importer, tmp_path, ca
         ("Only decision #102 was settled.", True),
         ("The only decision that was settled was #102.", True),
         ("Resolution for decisions #101 and #102.", True),
+        ("This settlement does not settle decision #101.", True),
+        ("Decision #101 was not settled.", True),
+        ("Decision #101 hasn't been settled.", True),
+        ("This settlement is not for decision #101.", True),
+        ("This settlement does not apply to decision #101.", True),
+        ("Settles decision #101. Decision #101 was not settled.", True),
         ("Settles decision #101. Same fixture as open #102 and #103.", False),
         ("Only decision #101 was settled. Compare previous market from decision #102.", False),
         ("Compare previous market from decision #102.", False),
         ("This settlement does not settle decision #102.", False),
+        ("Decision #102 was not settled. Settles decision #101.", False),
         ("Same fixture as open #102 and #103.", False),
         ("Match confirmed by the published final score.", False),
         ("", False),

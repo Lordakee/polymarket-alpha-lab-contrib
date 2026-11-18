@@ -20,7 +20,15 @@ _DECISION_LIST = (
 )
 _EXCLUSIVE = r"(?:(?:only|solely|exclusively)\s+)?"
 _BE = r"(?:is|are|was|were|(?:has|have|had)\s+been)"
+_BE_WITH_NEGATION = (
+    r"(?:is|are|was|were|has|have|had)(?P<negated>n['’]t|\s+(?:not|never))?"
+    r"\s+(?:been\s+)?"
+)
 _CLOSED = r"(?:settled|voided|refunded|exited)"
+_DECISION_TARGET = (
+    rf"{_EXCLUSIVE}(?:the\s+)?(?:{_POSITION_NOUN}\s*:?\s*)?"
+    rf"(?P<decisions>{_DECISION_LIST})"
+)
 # In free-form notes, IDs can be the target of a settlement claim or the
 # subject of a closure statement. Capture those IDs separately from references
 # to other decisions in the surrounding prose.
@@ -28,16 +36,19 @@ _SETTLEMENT_ATTRIBUTION_PATTERNS = (
     re.compile(
         rf"\b(?:(?P<negated>(?:not|never|\w+n['’]t)\s+))?"
         rf"(?:settles?|{_CLOSED}|covers?|"
-        rf"(?:settlement|resolution|payout)(?:\s+{_BE})?\s+{_EXCLUSIVE}(?:for|of)|"
-        rf"(?:applies|applied|attributed|belongs)\s+{_EXCLUSIVE}to|"
+        rf"(?:apply|applies|applied|attributed|belongs)\s+{_EXCLUSIVE}to|"
         rf"only\s+{_POSITION_NOUN}\s+(?:that\s+{_BE}\s+)?{_CLOSED}\s+{_BE})\s+"
-        rf"{_EXCLUSIVE}(?:the\s+)?(?:{_POSITION_NOUN}\s*:?\s*)?"
-        rf"(?P<decisions>{_DECISION_LIST})",
+        rf"{_DECISION_TARGET}",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"\b(?:settlement|resolution|payout)\s+(?:{_BE_WITH_NEGATION})?"
+        rf"{_EXCLUSIVE}(?:for|of)\s+{_DECISION_TARGET}",
         re.IGNORECASE,
     ),
     re.compile(
         rf"\b{_EXCLUSIVE}{_POSITION_NOUN}\s+(?P<decisions>{_DECISION_LIST})"
-        rf"(?:\s+(?:only|alone))?\s+{_BE}\s+{_EXCLUSIVE}{_CLOSED}\b",
+        rf"(?:\s+(?:only|alone))?\s+{_BE_WITH_NEGATION}{_EXCLUSIVE}{_CLOSED}\b",
         re.IGNORECASE,
     ),
 )
@@ -106,15 +117,23 @@ def attribute_resolution(
         )
     evidence = str(resolution.get("evidence") or "")
     decision_ids = {str(row.get("id")) for row in decisions}
-    if any(
-        set(_DECISION_REFERENCE.findall(claim["decisions"])) != decision_ids
+    claims = (
+        claim
         for pattern in _SETTLEMENT_ATTRIBUTION_PATTERNS
         for claim in pattern.finditer(evidence)
-        if not claim.groupdict().get("negated")
-    ):
-        raise LegacyResolutionError(
-            "papersim_legacy_resolution_evidence_conflict", market_id, decisions
-        )
+    )
+    negated_spans = []
+    for claim in claims:
+        claimed_ids = set(_DECISION_REFERENCE.findall(claim["decisions"]))
+        if claim["negated"]:
+            conflicts = not claimed_ids.isdisjoint(decision_ids)
+            negated_spans.append(claim.span())
+        else:
+            conflicts = claimed_ids != decision_ids
+        if conflicts:
+            raise LegacyResolutionError(
+                "papersim_legacy_resolution_evidence_conflict", market_id, decisions
+            )
     if len(decisions) < 2:
         return None
     if resolved_at is None or None in entered_at:
@@ -131,6 +150,10 @@ def attribute_resolution(
         )
 
     outcome = str(resolution.get("outcome") or "").strip()
+    # Exclusions of unrelated entries carry no positive scope information for
+    # the pooled row's free-form references or closure description.
+    for start, end in negated_spans:
+        evidence = evidence[:start] + " " * (end - start) + evidence[end:]
     references = set(_DECISION_REFERENCE.findall(evidence))
     if (
         (references and not rows.keys() <= references)
